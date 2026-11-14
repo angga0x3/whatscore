@@ -356,9 +356,11 @@ Backends: `storage/sqlite` (`modernc.org/sqlite`, SDK/development default) and `
 (`pgx/v5`, server deployment) implement the same aggregate; all access is keyed lookups of `[]byte`
 — no crypto structures leak into SQL schemas.
 
-**Status.** Interfaces and PostgreSQL migrations exist; `storage/envelope` provides credential
-encryption at rest. Concrete store implementations land with the core/session work; until then
-`server/*` has nothing to persist.
+**Status.** Interfaces and PostgreSQL migrations exist; `storage/envelope` provides the envelope
+cipher, `storage/credentials` the encrypting vault plus an in-memory backend, and
+`storage/postgres.CredentialBackend` the `credentials` table. The Signal-addressed stores and the
+engine credential manager land with the core/session work; until then `server/*` has nothing to
+persist.
 
 ## 5. Dependency policy
 
@@ -485,9 +487,11 @@ middleware as a second line of defense for unexpected fields.
 - **Credentials at rest.** Server: credential blobs and stores are encrypted with a key derived from
   `ENCRYPTION_KEY`. `storage/envelope` implements the AES-256-GCM envelope
   (`version(1) ‖ nonce(12) ‖ ciphertext ‖ tag(16)`, random per-record nonce, associated data binds
-  the record key, key parsed from the base64 32-byte secret). Wiring it into session stores lands
-  with the concrete store implementation. SDK: optional passphrase-derived encryption of the SQLite
-  store, Phase 3. Unencrypted stores: development only, never in `server/*`.
+  the record key, key parsed from the base64 32-byte secret). `storage/credentials.Vault` seals
+  before writing and opens after reading; `storage/postgres.CredentialBackend` persists the
+  ciphertext in the `credentials` table. Wiring the engine's credential manager still lands with the
+  core/session work. SDK: optional passphrase-derived encryption of the SQLite store, Phase 3.
+  Unencrypted stores: development only, never in `server/*`.
 - **Key-material separation.** Noise transport keys and Signal E2E keys never share roots, HKDF info
   strings, or stores (§2 decision 4, §4.7); a test asserts no byte overlap across derived key sets.
 - **Key zeroing hygiene.** Private key buffers are zeroed after use; keys never appear in `String()`,

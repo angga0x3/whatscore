@@ -16,7 +16,7 @@ whatscore/
 ├── observability/
 ├── protocol/               # transport, noise, binary, protobuf
 ├── server/                 # http/{router,handlers}, middleware, auth
-├── storage/                # interface.go, envelope/, postgres/{pool,migrate,migrations/}
+├── storage/                # interface.go, credentials/, envelope/, postgres/{...}
 ├── core/                   # reserved, Phase 5
 ├── docs/                   # architecture/, api/, protocol/, reverse-engineering/
 ├── examples/               # rest-api/ (curl scripts)
