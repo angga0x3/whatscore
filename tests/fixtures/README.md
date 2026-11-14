@@ -18,6 +18,8 @@ Shared, deterministic test data for the protocol engine and its tests.
 |---------|------------|-------|
 | `noise_vectors.json` | PF-004…PF-008 | JSON records: hash chain, key schedule after every mix, handshake ciphertexts, final transport keys, one frame per direction |
 | `generate_noise_vectors.py` | PF-004…PF-008 | Generator: implements the algorithm from the finding text, independent of the Go code; fixed public seed strings only |
+| `binary_vectors.json` | PF-010…PF-014 | JSON records: synthetic token table, one node per vector, exact frame hex |
+| `generate_binary_vectors.py` | PF-010…PF-014 | Generator: implements the wire rules from the finding text, independent of the Go code |
 
 `noise_vectors.json` is regenerated with:
 
@@ -29,11 +31,19 @@ The script needs the `cryptography` package for AES-256-GCM; X25519 is
 cross-checked against a self-contained RFC 7748 ladder. `protocol/noise`
 asserts every value byte-for-byte, so a change to either side fails CI.
 
-## Golden wire fixtures (Phase 2)
+## Binary fixtures
 
-Once the binary codec lands, byte-exact fixtures use the original
-convention: `tests/fixtures/<area>/<id>.hex` for the wire bytes plus a
-parallel `.json` describing the decoded node and its `provenance` (`source`,
-`observation_date`, `confidence`, `proving_test`). The JSON-vector form used
-by the Noise handshake stays for state-machine values that are not a single
-byte stream.
+`binary_vectors.json` carries the synthetic token table and, per vector, both
+the decoded node and the exact frame hex. Regenerate with:
+
+```bash
+python3 tests/fixtures/generate_binary_vectors.py > tests/fixtures/binary_vectors.json
+```
+
+`protocol/binary` decodes every hex, compares the node, re-encodes it, and
+requires byte equality — so the Python and Go encoders must agree.
+
+If a future area needs a byte-blob fixture that is not a JSON node (e.g. a
+protobuf message), use the original convention: `tests/fixtures/<area>/<id>.hex`
+for the bytes plus a `.json` mirror describing the decoded value and its
+`provenance` (`source`, `observation_date`, `confidence`, `proving_test`).

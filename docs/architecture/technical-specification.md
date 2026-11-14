@@ -159,10 +159,11 @@ loopback handshake; tampered-ciphertext tests fail closed; key-separation test (
 
 ### 4.3 `protocol/binary`
 
-**Responsibility.** The WhatsApp binary protocol: `Node` tree model, ordered attribute lists, token
-dictionary, byte-level codec. The codec is the single place wire bytes are interpreted.
+**Responsibility.** The WhatsApp binary protocol: `Node` tree model, token
+dictionary, byte-level codec. The codec is the single place wire bytes are interpreted, including the
+one-byte frame flag (PF-010).
 
-**Public surface** (verbatim contract skeleton, `protocol/binary`):
+**Public surface** (`protocol/binary`):
 
 ```go
 // Node is one element of the WhatsApp binary protocol tree.
@@ -174,18 +175,32 @@ type Node struct {
 }
 
 // Codec converts nodes to and from the wire format. Encode is
-// deterministic; Decode consumes exactly one encoded node.
+// deterministic; Decode consumes exactly one encoded frame.
 type Codec interface {
     Encode(n *Node) ([]byte, error)
     Decode(r io.Reader) (*Node, error)
 }
+
+// Dictionary maps strings to wire tokens; NewCodec(nil) uses an empty one.
+type Dictionary struct{ /* ... */ }
+func NewDictionaryFromTokens(single []string, double [][]string) (*Dictionary, error)
+func NewCodec(dict *Dictionary) Codec
 ```
 
 **Invariants.** (a) Symmetry: `Decode(Encode(n)) == n` for every representable node. (b)
-Determinism: identical nodes → identical bytes; attribute order preserved, never map-iterated.
-(c) `Decode` consumes exactly one node; (d) unknown tokens produce typed errors, never guesses (§8).
+Determinism: identical nodes → identical bytes; attributes are emitted in lexicographic key order and
+maps are never iterated directly. (c) `Decode` consumes exactly one frame; (d) unknown tokens produce
+typed errors, never guesses (§8); (e) decode limits bound depth, node count, list size, and byte
+length.
 
-**Allowed deps.** stdlib only (`io`, `errors`, `fmt`).
+**Dictionary.** The token tables are injected rather than compiled in: the real table's licensing
+question is still open (§10.2). `DefaultDictionary()` is empty, so every string encodes raw. Tests and
+fixtures use a small synthetic table.
+
+**Status.** Phase 2 implemented: codec, synthetic vectors, round-trip/fuzz tests. The real token table
+and protobuf golden-wire tests remain.
+
+**Allowed deps.** stdlib only (`io`, `errors`, `fmt`, `sort`, `compress/zlib`).
 **Tests.** Byte-exact golden fixtures (§6); round-trip property tests; native fuzzing on `Decode`;
 adversarial-input table (deep nesting, huge lists, invalid tag lengths).
 
@@ -484,7 +499,8 @@ middleware as a second line of defense for unexpected fields.
    unknown-field passthrough? The pinned generator solves reproducibility; scope decides review
    surface. Target: before Phase 2 exit.
 2. **Token dictionary derivation & licensing.** Clean-room reconstruction vs derivation from
-   observed tables, and license constraints on extracted tables. Target: before Phase 2.
+   observed tables, and license constraints on extracted tables. Target: before live interop. The
+   Phase 2 codec takes an injected dictionary, so codec mechanics are not blocked by this question.
 3. **SQLite WAL vs SDK concurrency.** WAL with multiple sessions per process: acceptable contention,
    or does the actor model (§4.12) already serialize enough? Target: Phase 5, with benchmarks.
 4. **Legacy vs multi-device protocol paths.** Multi-device flows are current; some operations may

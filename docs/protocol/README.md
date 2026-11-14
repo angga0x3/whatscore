@@ -56,14 +56,13 @@ Confidence and Status are deliberately separate axes:
   and Probable findings may inform experiments, prototypes, and discussions —
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
-- **Exception — transport wiring (PF-002, PF-003).** The endpoint, dial
-  headers, intro header, and frame layout are necessarily implemented before
-  a live connection exists. They may be coded while **Probable**, behind
-  `transport.FrameConn`, because our own codec and the fake-server test prove
-  the implementation matches this record. They must not be described as
-  compatible with the live service until a manual interop observation is
-  recorded here. Algorithm-internal findings (noise, signal) have no such
-  exception.
+- **Exception — wire-format wiring (PF-002, PF-003, PF-010…PF-014).** The
+  endpoint, framing, and binary encoding are necessarily implemented before a
+  live connection exists. They may be coded while **Probable**, because our
+  own codec, synthetic vectors, and the fake-server test prove the
+  implementation matches the record. They must not be described as compatible
+  with the live service until a manual interop observation is recorded here.
+  Algorithm-internal findings (noise, signal) have no such exception.
 - **Findings are never deleted.** When an observation or test contradicts a
   finding, mark it **Retired**, keep its index row, and record the reason
   plus the contradicting evidence in Notes. History stays auditable.
@@ -90,6 +89,11 @@ Confidence and Status are deliberately separate axes:
 | PF-007 | noise | Handshake message sequence (protobuf frames, msg1–msg3) | Confirmed | Verified-by-test | `protocol/noise` (handshake round-trip), `tests/integration` (fake server) |
 | PF-008 | noise | Transport key derivation and post-handshake framing | Confirmed | Verified-by-test | `protocol/noise` (vectors, conn), `tests/integration` (fake server) |
 | PF-009 | noise | Server certificate chain and XEdDSA signatures | Confirmed | Verified-by-test | `protocol/noise` (cert tests) |
+| PF-010 | binary | Frame flag and zlib compression | Probable | Verified-by-test | `protocol/binary` (compressed frame, vectors) |
+| PF-011 | binary | Node layout and list encoding | Probable | Verified-by-test | `protocol/binary` (round-trip, vectors) |
+| PF-012 | binary | String and byte encodings | Probable | Verified-by-test | `protocol/binary` (vectors, large values) |
+| PF-013 | binary | Packed nibble and hex strings | Probable | Verified-by-test | `protocol/binary` (packed tests, vectors) |
+| PF-014 | binary | JID wire forms | Probable | Verified-by-test | `protocol/binary` (JID table) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -138,10 +142,11 @@ in CI.
 
 ---
 
-Status: first real findings recorded 2026-11-15 (reference study:
-whatsmeow + Baileys; see [transport.md](transport.md) and
-[noise.md](noise.md)). Algorithm findings are Confirmed by vector tests;
-live-server-facing findings (PF-002, PF-003) stay Probable until manual
-interop. `tests/integration` now runs the fake-server path end to end
-(WebSocket dial → handshake → encrypted frames), which is what the Proving
-test column cites.
+Status: findings recorded 2026-11-15 from reference study
+(whatsmeow + Baileys; see [transport.md](transport.md),
+[noise.md](noise.md), and [binary.md](binary.md)). Algorithm findings are
+Confirmed by vector tests; live-server-facing findings (PF-002, PF-003,
+PF-010…PF-014) stay Probable until manual interop. `tests/integration` now
+runs the fake-server path end to end (WebSocket dial → handshake → encrypted
+frames), which is what the Proving test column cites. The binary token table
+itself is not reproduced (spec §10.2); the codec takes an injected dictionary.

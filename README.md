@@ -22,15 +22,14 @@ implemented from first principles, documented in the open.
 
 ## Status
 
-> **Phase 2 — Binary protocol: next.** Transport and Noise are implemented
-> and proven end to end against a fake server (real WebSocket + handshake +
-> encrypted frames). The engine still cannot talk to WhatsApp: live interop
-> is pending, and the binary node codec, pairing, and Signal layers are not
-> written yet.
+> **Phase 2 — Binary protocol: in progress.** Transport, Noise, and the
+> binary node codec are implemented. The codec is proven against synthetic
+> vectors; the real WhatsApp token table and live interop are still pending.
+> Pairing and Signal are not started.
 
 | Layer | Status |
 |-------|--------|
-| Protocol engine | Transport + Noise implemented, fake-server proven; binary/pairing/Signal not started |
+| Protocol engine | Transport, Noise, and binary codec implemented; token table, pairing, Signal pending |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
 
@@ -85,7 +84,7 @@ Three layers, dependencies pointing downward only:
 |-------|-----------|--------|
 | 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
-| 2 | Binary protocol — node encode/decode | Next |
+| 2 | Binary protocol — node encode/decode | **In progress** — codec, vectors, fuzz done; token table and protobuf goldens pending |
 | 3 | Pairing & authentication — QR / pairing code | Planned |
 | 4 | Messaging (Signal) — send/receive with E2E | Planned |
 | 5 | Public SDK — idiomatic Go client | Planned |
@@ -96,12 +95,14 @@ Three layers, dependencies pointing downward only:
 
 - [x] WebSocket transport runs
 - [x] Noise handshake succeeds
-- [ ] Binary node encode/decode works
+- [x] Binary node encode/decode works
 - [x] Fake-server integration test passes
 - [x] Protocol docs available
 
-v0.0.1 is not cut yet: the binary node codec (Phase 2) is the remaining
-deliverable. No compatibility with the live WhatsApp endpoint is claimed
+v0.0.1 is not cut yet. "Binary node encode/decode works" means the codec is
+symmetric and deterministic over the synthetic golden fixtures; the real
+WhatsApp token table is still an open licensing question (technical
+specification §10.2), and no compatibility with the live endpoint is claimed
 before manual interop is recorded as a protocol finding.
 
 ## SDK
