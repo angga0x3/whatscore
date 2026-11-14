@@ -1,0 +1,48 @@
+name: whatscore
+
+# Milestone 1 stack: WhatsCore API + PostgreSQL. No Redis, no Kafka, no
+# Kubernetes — the spec is explicit about that (§11).
+
+services:
+  whatscore:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile
+      args:
+        VERSION: ${APP_VERSION:-dev}
+    image: whatscore:local
+    restart: unless-stopped
+    env_file:
+      # Optional so `docker compose up` works even before `cp .env.example .env`;
+      # the defaults below match .env.example.
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      DATABASE_URL: ${DATABASE_URL:-postgres://whatscore:password@postgres:5432/whatscore?sslmode=disable}
+      # The container always listens on 8080; APP_PORT (host side) only
+      # controls the published port mapping below.
+      APP_PORT: "8080"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-whatscore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-whatscore}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-whatscore} -d ${POSTGRES_DB:-whatscore}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:

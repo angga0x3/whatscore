@@ -1,0 +1,12 @@
+# Keep the build context small; the image only needs Go sources.
+.git
+.github
+.env
+bin
+dist
+storage
+docs
+examples
+test
+docker-compose.yml
+*.md

@@ -1,0 +1,22 @@
+# Binaries
+/bin/
+/dist/
+*.exe
+
+# Local environment and secrets
+.env
+*.env.local
+
+# Runtime data
+/storage/
+*.log
+coverage.out
+coverage.html
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# Go tooling
+vendor/

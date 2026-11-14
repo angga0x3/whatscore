@@ -1,0 +1,18 @@
+# golangci-lint v2 configuration. CI runs the same command as `make lint`.
+version: "2"
+
+linters:
+  # standard = errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - misspell
+    - revive
+  settings:
+    revive:
+      # Default rule set; we keep the opinionated defaults out (no exported
+      # symbol doc requirements for tests).
+      enable-all-rules: false
+
+formatters:
+  enable:
+    - gofmt
