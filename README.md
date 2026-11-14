@@ -153,6 +153,7 @@ Every environment variable is documented in
 | Document | What it covers |
 |----------|----------------|
 | [docs/architecture/technical-specification.md](docs/architecture/technical-specification.md) | Detailed architecture — the source of truth |
+| [docs/architecture/roadmap.md](docs/architecture/roadmap.md) | Execution plan: workstreams, boundaries, acceptance criteria |
 | [docs/architecture/overview.md](docs/architecture/overview.md) | Short public architecture overview |
 | [docs/protocol/README.md](docs/protocol/README.md) | Protocol provenance policy — source, date, confidence, proving tests |
 | [docs/reverse-engineering/README.md](docs/reverse-engineering/README.md) | Reverse-engineering methodology and ethics rules |
