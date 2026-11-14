@@ -23,14 +23,15 @@ implemented from first principles, documented in the open.
 ## Status
 
 > **Phase 3 — Pairing & authentication: in progress.** Transport, Noise, and
-> the binary codec are complete. QR payload, stanza parsers, and device-identity
-> authentication are implemented; device-signature generation and credential
-> provisioning are next. The real token table, live interop, and Signal remain
-> open.
+> the binary codec are complete. QR payload, stanza parsers, device-identity
+> authentication, and the credential envelope are implemented;
+> device-signature generation and store wiring are next. The real token table,
+> live interop, and Signal remain open.
 
 | Layer | Status |
 |-------|--------|
 | Protocol engine | Transport, Noise, binary, pairing QR + stanzas + identity verification; device signature, provisioning, token table, Signal pending |
+| Storage | Interfaces + migrations; `storage/envelope` AES-256-GCM credential encryption |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
 
@@ -86,7 +87,7 @@ Three layers, dependencies pointing downward only:
 | 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
 | 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
-| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification done; device signature/provisioning pending |
+| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, credential envelope done; device signature/store wiring pending |
 | 4 | Messaging (Signal) — send/receive with E2E | Planned |
 | 5 | Public SDK — idiomatic Go client | Planned |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |
