@@ -1,12 +1,14 @@
 # Keep the build context small; the image only needs Go sources.
+# NOTE: storage/, protocol/, core/, server/, config/ are build inputs —
+# never exclude them here.
 .git
 .github
 .env
 bin
 dist
-storage
 docs
 examples
-test
+tests
 docker-compose.yml
 *.md
+coverage.out

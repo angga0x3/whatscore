@@ -32,7 +32,7 @@ test-integration: ## Run integration tests against a throwaway PostgreSQL (Docke
 	trap "docker rm -f whatscore-test-pg >/dev/null 2>&1" EXIT; \
 	until docker exec whatscore-test-pg pg_isready -U postgres >/dev/null 2>&1; do sleep 1; done; \
 	TEST_DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable" \
-	go test -race -tags=integration ./test/integration/...'
+	go test -race -tags=integration ./tests/integration/...'
 
 fmt: ## Format all Go code
 	gofmt -s -w .

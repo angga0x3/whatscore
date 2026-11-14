@@ -5,40 +5,116 @@
 </p>
 
 <p align="center">
-  <a href="#quickstart">Quickstart</a> ·
-  <a href="#api">API</a> ·
-  <a href="docs/architecture.md">Architecture</a> ·
-  <a href="docs/configuration.md">Configuration</a> ·
-  <a href="docs/development.md">Development</a> ·
-  <a href="#roadmap">Roadmap</a>
-</p>
-
-<p align="center">
-  <a href="https://pkg.go.dev/github.com/angga0x3/whatscore"><img alt="Go Reference" src="https://img.shields.io/badge/go-reference-00ADD8?logo=go&logoColor=white"></a>
+  <a href="https://pkg.go.dev/github.com/angga0x3/whatscore"><img alt="Go Reference" src="https://pkg.go.dev/badge/github.com/angga0x3/whatscore.svg"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
-  <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-✓-green">
+  <img alt="Self-hosted" src="https://img.shields.io/badge/self--hosted-%E2%9C%93-green">
 </p>
 
 ---
 
-**WhatsCore** is an open-source REST API server that lets your applications
-connect to WhatsApp through session management and a messaging engine. One
-server handles multiple WhatsApp accounts, self-hosted, on your own
-infrastructure.
+**WhatsCore** is an independent WhatsApp Web protocol implementation written in
+pure Go. The project owns its own protocol engine — WebSocket transport, Noise
+handshake, binary node codec, pairing, and Signal-style end-to-end encryption —
+and ships two public interfaces on top of the same application core: an
+idiomatic **Go SDK** and a **self-hosted REST API server**. It is not a port of
+an existing library and not a wrapper around one; the wire protocol is
+implemented from first principles, documented in the open.
 
-- **Modular monolith in Go** — one binary, clear module boundaries
-- **Stable REST API** — versioned contract, OpenAPI 3.1 (`api/openapi.yaml`)
-- **Engine-agnostic** — whatsmeow today, pluggable engines tomorrow
-- **Secure by design** — hashed API keys, HMAC-signed webhooks, QR never logged
-- **Event-driven** — normalized events, transactional outbox, retry with backoff
-- **Easy to run** — `docker compose up -d`, no Redis/Kafka/Kubernetes required
+## Status
 
-> ⚠️ **Disclaimer** — WhatsCore uses an unofficial WhatsApp protocol
-> implementation ([whatsmeow](https://github.com/tulir/whatsmeow)). This may
-> break with protocol changes and, in rare cases, can lead to account
-> restrictions. Use dedicated numbers for automation, not your personal one.
+> **Phase 1 — Transport & Noise: in progress.** The protocol engine cannot
+> connect to WhatsApp yet. What already works: the server foundation
+> (health/ready/version), CI, migrations, and contract skeletons.
 
-## Quickstart
+| Layer | Status |
+|-------|--------|
+| Protocol engine | **Not functional** — contract skeletons only |
+| Application core | Designed — implementation starts in Phase 4 |
+| REST server | Foundation implemented — `/health`, `/ready`, `/version` |
+
+This project holds itself to one principle: **no fake feature claims —
+demo > promises.** Anything labeled as a target below is design, not a shipped
+capability.
+
+> ⚠️ **Disclaimer**
+>
+> - WhatsCore is an **unofficial** implementation of the WhatsApp Web
+>   protocol. It is not affiliated with, endorsed by, or connected to Meta or
+>   WhatsApp in any way.
+> - The protocol is undocumented and changes without notice. Any
+>   implementation can break at any time.
+> - Automating WhatsApp carries a real risk of **account restriction or ban**.
+> - Use **dedicated accounts you control** for any automation — never your
+>   personal number.
+> - Reverse-engineering the protocol follows ethics rules documented in
+>   [docs/reverse-engineering/README.md](docs/reverse-engineering/README.md).
+
+## Architecture
+
+Three layers, dependencies pointing downward only:
+
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Public interfaces                                            │
+│  Go SDK · REST API · Webhooks                                 │
+└───────────────────────────────┬───────────────────────────────┘
+                                ▼
+┌───────────────────────────────────────────────────────────────┐
+│  Application core                                             │
+│  client · session · messaging · events                        │
+│  (one session, one actor)                                     │
+└───────────────────────────────┬───────────────────────────────┘
+                                ▼
+┌───────────────────────────────────────────────────────────────┐
+│  Protocol engine (pure Go)                                    │
+│  transport · noise · binary · pairing · signal · sync          │
+└───────────────────────────────────────────────────────────────┘
+```
+
+- [docs/architecture/technical-specification.md](docs/architecture/technical-specification.md)
+  — the detailed architecture, source of truth for every rule.
+- [docs/protocol/README.md](docs/protocol/README.md) — the provenance policy:
+  every protocol finding carries its source, date, confidence level, and the
+  tests that prove it. Implementation code depends on Confirmed findings only.
+
+## Roadmap
+
+| Phase | Milestone | Status |
+|-------|-----------|--------|
+| 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **In progress** |
+| 1 | Transport & Noise — WebSocket transport, Noise handshake | Next |
+| 2 | Binary protocol — node encode/decode | Planned |
+| 3 | Pairing & authentication — QR / pairing code | Planned |
+| 4 | Messaging (Signal) — send/receive with E2E | Planned |
+| 5 | Public SDK — idiomatic Go client | Planned |
+| 6 | API server — sessions, messaging, webhooks over the core | Planned |
+| 7 | Release v0.1.0 | Planned |
+
+**v0.0.1 target — protocol foundation preview:**
+
+- [ ] WebSocket transport runs
+- [ ] Noise handshake succeeds
+- [ ] Binary node encode/decode works
+- [ ] Fake-server integration test passes
+- [ ] Protocol docs available
+
+## SDK
+
+The public Go API is being designed now and lands in Phase 5. It is shown here
+so the shape can be discussed before it freezes — **it does not exist yet**.
+
+**Target API — Phase 5 (illustrative, not implemented yet):**
+
+```go
+client, _ := whatscore.NewClient(whatscore.WithStore(store))
+_ = client.Connect(ctx)
+_ = client.SendMessage(ctx, whatscore.Message{To: "628123456789", Text: "Hello!"})
+```
+
+## Quickstart (works today)
+
+Only the REST server foundation runs today. The protocol engine cannot connect
+to WhatsApp yet — see [Status](#status).
 
 ```bash
 git clone https://github.com/angga0x3/whatscore.git
@@ -47,90 +123,46 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Verify the stack:
-
-```bash
-curl http://localhost:8080/health   # {"status":"ok"}
-curl http://localhost:8080/ready    # {"status":"ready","checks":{"database":{"status":"up",...}}}
-curl http://localhost:8080/version
-```
-
 PostgreSQL starts first (healthcheck-gated), WhatsCore connects, applies its
-schema migrations, and begins serving. See
-[docs/configuration.md](docs/configuration.md) for every environment variable.
-
-## API
-
-Full contract: [api/openapi.yaml](api/openapi.yaml) (OpenAPI 3.1).
-Interactive examples: [docs/api-reference.md](docs/api-reference.md).
-
-| Method | Endpoint | Fungsi |
-| ------ | -------- | ------ |
-| GET | `/health` | Liveness |
-| GET | `/ready` | Readiness (checks PostgreSQL) |
-| GET | `/version` | Build info |
-| POST | `/api/v1/sessions` | Create session |
-| GET | `/api/v1/sessions/{id}/qr` | QR auth (SSE) |
-| POST | `/api/v1/sessions/{id}/messages/text` | Send text |
-| POST | `/webhooks` | Register webhook |
-
-Sending is idempotent via the `Idempotency-Key` header, and every send
-returns `202 Accepted` because `QUEUED` does not mean delivered:
-
-```
-QUEUED → SENDING → SENT → DELIVERED → READ   (FAILED on error)
-```
-
-Webhook payloads are signed with HMAC-SHA256 and carry a unique event `id`
-for deduplication on your side.
-
-## Architecture
-
-Modular monolith with strict dependency direction:
-
-```
-HTTP Handler → Application Service → Domain Interface → Infrastructure Adapter → External System
-```
-
-Highlights: whatsmeow device store owns session credentials (WhatsCore never
-sees them), engine events are normalized before processing, webhook delivery
-is asynchronous via a transactional outbox, and QR endpoints are
-authenticated with QR values excluded from logs. Full write-up:
-[docs/architecture.md](docs/architecture.md).
-
-## Roadmap
-
-- [x] **Milestone 1 — Foundation** (this release): Go project, config,
-      PostgreSQL, migrations, Chi router, health/readiness endpoints,
-      Docker Compose, CI
-- [ ] **Milestone 2 — WhatsApp engine**: whatsmeow integration, session
-      manager, QR authentication, connection lifecycle, session persistence
-- [ ] **Milestone 3 — Messaging**: send/receive text, message persistence,
-      status tracking, idempotency
-- [ ] **Milestone 4 — Webhooks**: event normalization, outbox, delivery
-      workers, HMAC signatures, retries
-- [ ] **v0.1.0 release**: OpenAPI docs, integration tests, README, license
-
-## Development
+embedded schema migrations, and begins serving. Verify:
 
 ```bash
-make build          # bin/whatscore
-make test           # unit tests (-race)
-make test-integration  # migrations against a throwaway PostgreSQL
-make check          # fmt + vet + lint + test
+curl -s http://localhost:8080/health
+# {"status":"ok"}
+
+curl -s http://localhost:8080/ready
+# {"status":"ready","checks":{"database":{"status":"up","latency_ms":0.417}}}
+
+curl -s http://localhost:8080/version
+# {"name":"WhatsCore","version":"dev","commit":"none","built_at":"unknown","go_version":"go1.25.7"}
 ```
 
-See [docs/development.md](docs/development.md) and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Every environment variable is documented in
+[docs/architecture/configuration.md](docs/architecture/configuration.md).
 
-## License
+## Documentation
 
-[Apache-2.0](LICENSE). Note that dependencies keep their own licenses —
-whatsmeow is MPL-2.0; its distribution requirements are audited before any
-binary release.
+| Document | What it covers |
+|----------|----------------|
+| [docs/architecture/technical-specification.md](docs/architecture/technical-specification.md) | Detailed architecture — the source of truth |
+| [docs/architecture/overview.md](docs/architecture/overview.md) | Short public architecture overview |
+| [docs/protocol/README.md](docs/protocol/README.md) | Protocol provenance policy — source, date, confidence, proving tests |
+| [docs/reverse-engineering/README.md](docs/reverse-engineering/README.md) | Reverse-engineering methodology and ethics rules |
+| [docs/api/reference.md](docs/api/reference.md) · [docs/api/openapi.yaml](docs/api/openapi.yaml) | REST API reference and OpenAPI 3.1 contract |
+| [docs/architecture/configuration.md](docs/architecture/configuration.md) | Configuration reference (all environment variables) |
+| [docs/architecture/development.md](docs/architecture/development.md) | Development guide (build, test, release) |
+
+## Contributing
+
+Pull requests are welcome — read [CONTRIBUTING.md](CONTRIBUTING.md) first for
+the layer rules, the protocol provenance requirements, and the PR checklist.
 
 ## Security
 
-Report vulnerabilities privately instead of opening a public issue — see
-[CONTRIBUTING.md](CONTRIBUTING.md#security) for the reporting process and
-[docs/architecture.md](docs/architecture.md) for the security model.
+Report vulnerabilities privately, never as public issues — the process, scope,
+and safe harbor statement live in [SECURITY.md](SECURITY.md). Never paste
+credentials, QR codes, or tokens into any issue.
+
+## License
+
+[Apache-2.0](LICENSE).

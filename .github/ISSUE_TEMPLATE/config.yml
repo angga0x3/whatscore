@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discussions
+    url: https://github.com/angga0x3/whatscore/discussions
+    about: Questions, ideas, and protocol research notes — not bug reports.
+  - name: Security vulnerabilities
+    url: https://github.com/angga0x3/whatscore/security/advisories/new
+    about: Report vulnerabilities privately via GitHub security advisories — see SECURITY.md. Never open a public issue.

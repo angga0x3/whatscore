@@ -1,0 +1,867 @@
+openapi: 3.1.0
+info:
+  title: WhatsCore API
+  summary: REST API for self-hosted WhatsApp session and messaging infrastructure
+  description: |
+    WhatsCore connects applications to WhatsApp through a stable REST API:
+    session management, QR authentication, messaging, and webhook delivery.
+
+    **Implementation status**
+
+    | Area | Status |
+    |------|--------|
+    | System endpoints (`/health`, `/ready`, `/version`) | implemented |
+    | Sessions, messaging, webhooks | contract defined, shipping in upcoming milestones |
+
+    Authentication uses Bearer API keys (`wc_live_...`). Send and receive
+    endpoints also accept an `Idempotency-Key` header to make client retries
+    safe.
+  version: 0.1.0
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: System
+    description: Liveness, readiness, and build information
+  - name: Sessions
+    description: WhatsApp session lifecycle
+  - name: Messaging
+    description: Send and list messages
+  - name: Webhooks
+    description: Webhook endpoint configuration and delivery history
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [System]
+      summary: Liveness probe
+      description: |
+        Returns 200 as long as the process can answer requests. It does not
+        check dependencies; use /ready for that. Implemented in Milestone 1.
+      security: []
+      responses:
+        "200":
+          description: The process is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: ok
+
+  /ready:
+    get:
+      operationId: getReadiness
+      tags: [System]
+      summary: Readiness probe
+      description: |
+        Verifies every dependency (PostgreSQL today, the WhatsApp engine
+        later). Returns 503 while draining during graceful shutdown.
+        Implemented in Milestone 1.
+      security: []
+      responses:
+        "200":
+          description: All dependencies are reachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+        "503":
+          description: At least one dependency is down, or the instance is draining
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessStatus"
+
+  /version:
+    get:
+      operationId: getVersion
+      tags: [System]
+      summary: Build information
+      security: []
+      responses:
+        "200":
+          description: Version, commit, and build date
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+
+  /api/v1/sessions:
+    get:
+      operationId: listSessions
+      tags: [Sessions]
+      summary: List sessions
+      parameters:
+        - $ref: "#/components/parameters/StatusFilter"
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Sessions page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+    post:
+      operationId: createSession
+      tags: [Sessions]
+      summary: Create a session
+      responses:
+        "201":
+          description: Session created (status STOPPED)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/sessions/{sessionId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: getSession
+      tags: [Sessions]
+      summary: Get session details
+      responses:
+        "200":
+          description: The session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteSession
+      tags: [Sessions]
+      summary: Delete a session
+      description: |
+        Stops the engine client if connected, removes the device credentials
+        from the engine credential store, and deletes the session record.
+      responses:
+        "204":
+          description: Session deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/sessions/{sessionId}/connect:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: connectSession
+      tags: [Sessions]
+      summary: Start the connection
+      description: |
+        Transitions the session to CONNECTING and starts streaming QR codes
+        when authentication is required. Stream QR updates on
+        GET /api/v1/sessions/{sessionId}/qr (SSE).
+      responses:
+        "202":
+          description: Connection attempt started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    const: CONNECTING
+        "409":
+          description: Session is already connected or connecting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sessions/{sessionId}/disconnect:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: disconnectSession
+      tags: [Sessions]
+      summary: Disconnect without logging out
+      responses:
+        "202":
+          description: Disconnect accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id:
+                    type: string
+                    format: uuid
+                  status:
+                    type: string
+                    const: DISCONNECTED
+
+  /api/v1/sessions/{sessionId}/qr:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: streamQr
+      tags: [Sessions]
+      summary: Stream QR codes (Server-Sent Events)
+      description: |
+        QR codes rotate; each `qr` event carries the newest code. The stream
+        ends with a `connected` event once pairing succeeds. QR values are
+        short-lived credentials and are never logged by WhatsCore.
+      responses:
+        "200":
+          description: SSE stream of QR updates and connection state
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  event: qr
+                  data: {"qr":"2@xxxxxxxx"}
+
+                  event: connected
+                  data: {"status":"CONNECTED"}
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Session is already authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/sessions/{sessionId}/events:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: streamSessionEvents
+      tags: [Sessions]
+      summary: Stream session events (Server-Sent Events)
+      responses:
+        "200":
+          description: SSE stream of events belonging to this session
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/sessions/{sessionId}/messages/text:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: sendText
+      tags: [Messaging]
+      summary: Send a text message
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendTextRequest"
+      responses:
+        "202":
+          description: Message queued (status QUEUED)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "409":
+          description: Session is not connected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/sessions/{sessionId}/messages/image:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: sendImage
+      tags: [Messaging]
+      summary: Send an image message
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendImageRequest"
+      responses:
+        "202":
+          description: Message queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/sessions/{sessionId}/messages/document:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      operationId: sendDocument
+      tags: [Messaging]
+      summary: Send a document message
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendDocumentRequest"
+      responses:
+        "202":
+          description: Message queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/sessions/{sessionId}/messages:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      operationId: listMessages
+      tags: [Messaging]
+      summary: List messages
+      parameters:
+        - name: direction
+          in: query
+          schema:
+            type: string
+            enum: [INBOUND, OUTBOUND]
+        - $ref: "#/components/parameters/PageLimit"
+        - $ref: "#/components/parameters/PageCursor"
+      responses:
+        "200":
+          description: Messages page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageList"
+
+  /api/v1/sessions/{sessionId}/messages/{messageId}:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+      - name: messageId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getMessage
+      tags: [Messaging]
+      summary: Get message details, including delivery status
+      responses:
+        "200":
+          description: The message
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/webhooks:
+    get:
+      operationId: listWebhooks
+      tags: [Webhooks]
+      summary: List webhook endpoints
+      parameters:
+        - name: session_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Webhook endpoints
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookEndpoint"
+    post:
+      operationId: createWebhook
+      tags: [Webhooks]
+      summary: Register a webhook endpoint
+      description: |
+        The signing secret is returned once, at creation time. URL must be
+        HTTP(S); SSRF-protected ranges (loopback, link-local, cloud metadata)
+        are rejected by default.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookEndpointInput"
+      responses:
+        "201":
+          description: Endpoint created, including the signing secret
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/webhooks/{webhookId}:
+    parameters:
+      - name: webhookId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getWebhook
+      tags: [Webhooks]
+      summary: Get webhook endpoint
+      responses:
+        "200":
+          description: The endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateWebhook
+      tags: [Webhooks]
+      summary: Update webhook endpoint
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookEndpointInput"
+      responses:
+        "200":
+          description: Updated endpoint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookEndpoint"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteWebhook
+      tags: [Webhooks]
+      summary: Delete webhook endpoint
+      responses:
+        "204":
+          description: Endpoint deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/webhooks/{webhookId}/deliveries:
+    parameters:
+      - name: webhookId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: listWebhookDeliveries
+      tags: [Webhooks]
+      summary: Delivery history with status and attempts
+      responses:
+        "200":
+          description: Deliveries, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WebhookDelivery"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: WhatsCore API key (wc_live_...).
+
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    StatusFilter:
+      name: status
+      in: query
+      schema:
+        $ref: "#/components/schemas/SessionStatus"
+    PageLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    PageCursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: Makes retried sends safe; same key + same body returns the original response.
+      schema:
+        type: string
+        maxLength: 255
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: Request body failed validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Send rate limit exceeded for this session
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              examples: [not_found, validation_failed, session_not_connected]
+            message:
+              type: string
+          required: [code, message]
+      required: [error]
+
+    SessionStatus:
+      type: string
+      enum: [STOPPED, CONNECTING, QR_PENDING, CONNECTED, DISCONNECTED, LOGGED_OUT, ERROR]
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          maxLength: 100
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        engine:
+          type: string
+          examples: [builtin]
+        phone_number:
+          type: [string, "null"]
+          examples: ["6281234567890"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, name, status, engine, created_at, updated_at]
+
+    SessionList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Session"
+        next_cursor:
+          type: [string, "null"]
+      required: [data]
+
+    SendTextRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          description: Phone number in international format, digits only.
+          examples: ["6281234567890"]
+        text:
+          type: string
+          maxLength: 65536
+      required: [to, text]
+
+    SendImageRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          examples: ["6281234567890"]
+        image_url:
+          type: string
+          description: HTTPS URL of the image, or a media storage key.
+        caption:
+          type: [string, "null"]
+      required: [to, image_url]
+
+    SendDocumentRequest:
+      type: object
+      properties:
+        to:
+          type: string
+          examples: ["6281234567890"]
+        document_url:
+          type: string
+        filename:
+          type: string
+        caption:
+          type: [string, "null"]
+      required: [to, document_url, filename]
+
+    MessageStatus:
+      type: string
+      description: |
+        QUEUED -> SENDING -> SENT -> DELIVERED -> READ. FAILED on terminal
+        error. SENT only means WhatsApp accepted the message, not that the
+        recipient read it.
+      enum: [QUEUED, SENDING, SENT, DELIVERED, READ, FAILED]
+
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: [INBOUND, OUTBOUND]
+        chat_id:
+          type: string
+          examples: ["6281234567890@s.whatsapp.net"]
+        provider_message_id:
+          type: [string, "null"]
+        type:
+          type: string
+          examples: [text, image, document]
+        payload:
+          type: object
+          additionalProperties: true
+        status:
+          $ref: "#/components/schemas/MessageStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, session_id, direction, chat_id, type, payload, status, created_at]
+
+    MessageList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        next_cursor:
+          type: [string, "null"]
+      required: [data]
+
+    WebhookEndpointInput:
+      type: object
+      properties:
+        session_id:
+          type: [string, "null"]
+          format: uuid
+          description: Null creates a global webhook that receives all session events.
+        url:
+          type: string
+          format: uri
+          description: HTTPS URL recommended; HTTP allowed only in development.
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventType"
+          description: Empty array subscribes to all events.
+      required: [url]
+
+    WebhookEndpoint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: [string, "null"]
+          format: uuid
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventType"
+        enabled:
+          type: boolean
+        secret:
+          type: [string, "null"]
+          description: HMAC-SHA256 signing secret. Returned only on creation.
+        created_at:
+          type: string
+          format: date-time
+      required: [id, url, events, enabled, created_at]
+
+    WebhookDeliveryStatus:
+      type: string
+      enum: [PENDING, DELIVERED, FAILED, EXHAUSTED]
+
+    WebhookDelivery:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        endpoint_id:
+          type: string
+          format: uuid
+        event_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/WebhookDeliveryStatus"
+        attempts:
+          type: integer
+        response_code:
+          type: [integer, "null"]
+        last_error:
+          type: [string, "null"]
+        delivered_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+      required: [id, endpoint_id, event_id, status, attempts, created_at]
+
+    EventType:
+      type: string
+      description: Event catalog (spec §6).
+      enum:
+        - session.created
+        - session.qr
+        - session.connected
+        - session.disconnected
+        - session.logged_out
+        - message.received
+        - message.sent
+        - message.delivered
+        - message.read
+        - message.failed
+
+    Event:
+      type: object
+      description: Envelope of every webhook payload and SSE event.
+      properties:
+        id:
+          type: string
+          description: Unique event id (evt_...); use it to deduplicate deliveries.
+        event:
+          $ref: "#/components/schemas/EventType"
+        timestamp:
+          type: string
+          format: date-time
+        session_id:
+          type: string
+          format: uuid
+        data:
+          type: object
+          additionalProperties: true
+      required: [id, event, timestamp, session_id, data]
+
+    ReadinessStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ready, unavailable, shutting_down]
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [up, down]
+              latency_ms:
+                type: number
+                format: double
+              error:
+                type: string
+      required: [status]
+
+    VersionInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        version:
+          type: string
+        commit:
+          type: string
+        built_at:
+          type: string
+        go_version:
+          type: string
+      required: [name, version, commit, built_at, go_version]

@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose a feature — ideally one that advances a phase of the roadmap.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature proposals are weighed against the roadmap (README): a
+        proposal that advances the current phase is far more likely to be
+        accepted than one that jumps ahead of it.
+
+        **Never paste credentials, QR codes, tokens, or API keys** in examples.
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Which phase of the roadmap does this advance?
+      options:
+        - "Phase 0 — Foundation"
+        - "Phase 1 — Transport & Noise"
+        - "Phase 2 — Binary protocol"
+        - "Phase 3 — Pairing & authentication"
+        - "Phase 4 — Messaging (Signal)"
+        - "Phase 5 — Public SDK"
+        - "Phase 6 — API server"
+        - "Phase 7 — Release v0.1.0"
+        - None / project-level
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What can you not do today? What is the concrete use case?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should happen instead? Sketches, target API shapes, and trade-offs welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you evaluated, and why this one wins.
+    validations:
+      required: false
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and discussions for duplicates
+          required: true

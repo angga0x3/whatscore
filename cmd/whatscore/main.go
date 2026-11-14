@@ -9,9 +9,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/angga0x3/whatscore/internal/app"
-	"github.com/angga0x3/whatscore/internal/buildinfo"
-	"github.com/angga0x3/whatscore/internal/config"
+	"github.com/angga0x3/whatscore/buildinfo"
+	"github.com/angga0x3/whatscore/config"
 )
 
 // Overridden at build time via -ldflags (see Makefile / Dockerfile).
@@ -46,7 +45,7 @@ func run(build buildinfo.Info) error {
 	initCtx, cancelInit := context.WithCancel(context.Background())
 	defer cancelInit()
 
-	core, err := app.New(initCtx, cfg, build)
+	core, err := newApp(initCtx, cfg, build)
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)
 	}

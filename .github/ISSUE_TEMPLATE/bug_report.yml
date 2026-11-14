@@ -1,0 +1,70 @@
+name: Bug report
+description: Something is broken or behaves contrary to the documented contract.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug.
+
+        - **Never paste credentials, QR codes, pairing codes, session tokens, or API keys** into this form — including in logs. Redact them first. Reports containing real credentials will be deleted.
+        - The protocol engine is **not functional yet** (Phase 1 — see the README status table). "It cannot connect to WhatsApp" is the documented status, not a bug.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which layer does the bug belong to?
+      options:
+        - Protocol engine (protocol/*)
+        - Application core (core/*)
+        - REST server (server/*)
+        - Storage (storage/*)
+        - Docs
+        - CI / build
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: "`GET /version` output or `git rev-parse HEAD`."
+      placeholder: "e.g. v0.0.1 or 1a2b3c4"
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Expected behavior vs actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, deterministic steps so a maintainer can reproduce it.
+      placeholder: |
+        1. cp .env.example .env
+        2. docker compose up -d
+        3. curl ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        ⚠️ **Warning: never paste credentials, QR codes, pairing codes, tokens, or API keys here.**
+        Redact or truncate before pasting.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: hygiene
+    attributes:
+      label: Checklist
+      options:
+        - label: I redacted all credentials, QR codes, and tokens from this report
+          required: true
+        - label: I searched existing issues for duplicates
+          required: true
