@@ -13,6 +13,11 @@ import (
 	"github.com/angga0x3/whatscore/protocol/protobuf"
 )
 
+var p25519 = func() *big.Int {
+	p := new(big.Int).Lsh(big.NewInt(1), 255)
+	return p.Sub(p, big.NewInt(19))
+}()
+
 // buildTestCertChainOpts carries the material for one synthetic
 // two-certificate chain (PF-009): the test root signs the intermediate
 // details, the intermediate key signs the leaf details, and the leaf key

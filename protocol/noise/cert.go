@@ -1,22 +1,15 @@
 package noise
 
 import (
-	"crypto/ed25519"
 	"crypto/hmac"
 	"fmt"
-	"math/big"
 	"time"
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/angga0x3/whatscore/internal/xeddsa"
 	"github.com/angga0x3/whatscore/protocol/protobuf"
 )
-
-// p25519 is the field prime of Curve25519/Ed25519: 2^255 - 19 (PF-009).
-var p25519 = func() *big.Int {
-	p := new(big.Int).Lsh(big.NewInt(1), 255)
-	return p.Sub(p, big.NewInt(19))
-}()
 
 // CertError is the typed error for server certificate chain verification
 // failures (PF-009). Stage names the PF-009 validation step that failed;
@@ -160,53 +153,8 @@ func parseCertDetails(details []byte) (*protobuf.CertChain_NoiseCertificate_Deta
 // required and are not provided (documented deviation from general
 // crypto-code review policy, per PF-009).
 func verifyXEdDSA(pub [32]byte, msg, sig []byte) error {
-	y, err := edwardsYFromMontgomeryU(pub)
-	if err != nil {
-		return err
-	}
-	if !ed25519.Verify(ed25519.PublicKey(y), msg, sig) {
-		return fmt.Errorf("noise: ed25519 signature verification failed")
+	if err := xeddsa.Verify(pub, msg, sig); err != nil {
+		return fmt.Errorf("noise: %w", err)
 	}
 	return nil
-}
-
-// edwardsYFromMontgomeryU converts a Curve25519 Montgomery u coordinate
-// to the corresponding Edwards y coordinate (PF-009):
-//
-//	y = (u − 1) · (u + 1)⁻¹ mod p,  p = 2^255 − 19
-//
-// u is decoded little-endian; the result is encoded little-endian with
-// the Ed25519 sign bit (high bit of byte 31) cleared, i.e. it assumes the
-// Edwards x coordinate is even, as it is for the WhatsApp server keys
-// this conversion targets. An error is returned when u ≡ −1 (mod p),
-// where u + 1 is not invertible.
-func edwardsYFromMontgomeryU(pub [32]byte) ([]byte, error) {
-	uLE := make([]byte, 32)
-	for i := range pub {
-		uLE[i] = pub[31-i] // decode little-endian into big.Int
-	}
-	u := new(big.Int).SetBytes(uLE)
-
-	uPlus1 := new(big.Int).Add(u, big.NewInt(1))
-	uPlus1.Mod(uPlus1, p25519)
-	if uPlus1.Sign() == 0 {
-		return nil, fmt.Errorf("noise: montgomery u + 1 is not invertible mod p")
-	}
-	inv := new(big.Int).ModInverse(uPlus1, p25519)
-	if inv == nil {
-		return nil, fmt.Errorf("noise: montgomery u + 1 is not invertible mod p")
-	}
-
-	uMinus1 := new(big.Int).Sub(u, big.NewInt(1))
-	y := new(big.Int).Mul(uMinus1, inv)
-	y.Mod(y, p25519)
-
-	// Encode y as 32-byte little-endian and clear the Ed25519 sign bit.
-	be := y.FillBytes(make([]byte, 32))
-	yBytes := make([]byte, 32)
-	for i := range be {
-		yBytes[i] = be[31-i]
-	}
-	yBytes[31] &= 0x7f
-	return yBytes, nil
 }
