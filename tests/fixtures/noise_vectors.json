@@ -1,0 +1,119 @@
+{
+  "meta": {
+    "generator": "tests/fixtures/generate_noise_vectors.py",
+    "backend": "python-cryptography + rfc7748-ladder-crosscheck",
+    "findings": [
+      "PF-004",
+      "PF-005",
+      "PF-006",
+      "PF-007",
+      "PF-008"
+    ],
+    "note": "SYNTHETIC deterministic vectors: all keys derive from the fixed public seed 'whatscore-vector-seed-*'; they are not credentials. Algorithm per docs/protocol/noise.md PF-004..PF-008."
+  },
+  "inputs": {
+    "conn_header": "57410603",
+    "client_ephemeral_priv": "00f2235d9a619131a57b732df21dcb4c27f65a049145fb7337e7b121f2aa5c50",
+    "client_ephemeral_pub": "4045161fd4803913b58d8477e075371c830e70b1ffddbd1c87c6e199fae50410",
+    "server_ephemeral_priv": "d83ad648e4980e5c5fe5272041a20d462dc93db1031c3024935a9bf8bac6ca78",
+    "server_ephemeral_pub": "4536272cf02e027fb759ad8eee1f6b817777ae5f3df47994afe7d26a38c50b59",
+    "server_static_priv": "182e50c8b1a7961c3ad4a06022dca0ad43d0370d407d067a6892efca1b62d56a",
+    "server_static_pub": "14bffe8299ccf9a979d238343a5099c8744486e12296c14df1353bb78ea0c104",
+    "client_noise_priv": "f03f140e177218f6d3ead3bea00999bee71a210efc3eda545bd587b8df6e415b",
+    "client_noise_pub": "18d7bacac5b7321c86db182b8ff8182147dcdca625ea0193f78fcd8303b2b33f",
+    "client_payload": "7768617473636f72652d766563746f722d636c69656e742d7061796c6f61642d31",
+    "server_cert_payload": "7768617473636f72652d766563746f722d73796e7468657469632d636572742d636861696e2d7061796c6f6164"
+  },
+  "hash_chain": {
+    "after_conn_header": "ffff0c9267310966f1311170c04b38c79504285bf5edf763e5c946492a50a755",
+    "after_client_ephemeral": "1322478ddb5ec0f4e951c9af4018d539620363e8bbc3a79490bd9f858f7587b4",
+    "server_after_conn_header": "ffff0c9267310966f1311170c04b38c79504285bf5edf763e5c946492a50a755",
+    "server_after_client_ephemeral": "1322478ddb5ec0f4e951c9af4018d539620363e8bbc3a79490bd9f858f7587b4",
+    "after_server_ephemeral": "d0b5ad8d5347f9930011809783a5f6dec6a166b4d26f1a2d3289c1c53c47ce5a",
+    "after_server_static_ciphertext": "664deb40efa55396ca26173ff9010cadd87633b78ef59b4d915aace77180d224",
+    "after_server_payload_ciphertext": "68dabe77e9848f1bedf4f1570fabcc596fe295d850e31fbd2dfcbc95d9cf57d5",
+    "client_after_server_ephemeral": "d0b5ad8d5347f9930011809783a5f6dec6a166b4d26f1a2d3289c1c53c47ce5a",
+    "client_after_server_static_ciphertext": "664deb40efa55396ca26173ff9010cadd87633b78ef59b4d915aace77180d224",
+    "client_after_server_payload_ciphertext": "68dabe77e9848f1bedf4f1570fabcc596fe295d850e31fbd2dfcbc95d9cf57d5",
+    "after_client_static_ciphertext": "9af5483c44fbfb2311a09b4848c18d384e2319d5b3771d493b213729a9de9e74",
+    "after_client_payload_ciphertext": "ddbc95a0a3a7818c2d717ac72193e10ac4f8fd19611b0558ae238f201fb3da94"
+  },
+  "mixes": [
+    {
+      "label": "ee",
+      "dh_secret": "692c04f05f4cf6b454eb9fb1b4202a0952718a63aac9cc8e7766b67404f7c410",
+      "write": "fadba0bd393f60fb010b57d32546413fe64def2d7f62f4311e136d99ca0b3aff",
+      "read": "ee6a35961af48fcb516d2d81136488c24f05c0fcc9f28f0a9578411197cbbc94"
+    },
+    {
+      "label": "es",
+      "dh_secret": "95437a58ecf27e7b6ddf026a33b79f6e3d712cfd6b27caea70d266b5f91ce90e",
+      "write": "e9ae4838727522d03cd61f37e42bc4131ca0bb43eadea7ede9a74a716c68b42a",
+      "read": "946d43efd6d27f295d67701dc2b641f4c8fe1bf8248001e484f51bd912222d65"
+    },
+    {
+      "label": "client_ee",
+      "dh_secret": "692c04f05f4cf6b454eb9fb1b4202a0952718a63aac9cc8e7766b67404f7c410",
+      "write": "fadba0bd393f60fb010b57d32546413fe64def2d7f62f4311e136d99ca0b3aff",
+      "read": "ee6a35961af48fcb516d2d81136488c24f05c0fcc9f28f0a9578411197cbbc94"
+    },
+    {
+      "label": "client_es",
+      "dh_secret": "95437a58ecf27e7b6ddf026a33b79f6e3d712cfd6b27caea70d266b5f91ce90e",
+      "write": "e9ae4838727522d03cd61f37e42bc4131ca0bb43eadea7ede9a74a716c68b42a",
+      "read": "946d43efd6d27f295d67701dc2b641f4c8fe1bf8248001e484f51bd912222d65"
+    },
+    {
+      "label": "se",
+      "dh_secret": "95e44f1df3d67d081ac0a8fd4576d12d42373446406c7db09510f320b7a6383f",
+      "write": "3f6ceeb533f05f24a780a869adac85e81be5c3148420c1877f7b3484df08857d",
+      "read": "72b4152451d598682340eb73a7bf307d3a5ac16e13551af3e7c026ba60666f74"
+    },
+    {
+      "label": "server_se",
+      "dh_secret": "95e44f1df3d67d081ac0a8fd4576d12d42373446406c7db09510f320b7a6383f",
+      "write": "3f6ceeb533f05f24a780a869adac85e81be5c3148420c1877f7b3484df08857d",
+      "read": "72b4152451d598682340eb73a7bf307d3a5ac16e13551af3e7c026ba60666f74"
+    }
+  ],
+  "handshake_ciphertexts": {
+    "server_hello_static": {
+      "nonce": "000000000000000000000000",
+      "ciphertext": "7cd75918a27ed2be131b0d2a5d9575ea88c414e7d58ce66418b45440d28bfbd52442ecb73623a0986acc60a37b3f9374"
+    },
+    "server_hello_payload": {
+      "nonce": "000000000000000000000000",
+      "ciphertext": "21a31fc9fdedb832f4382eefc51a198658f1152cc6ec4707e0940ac7378fd2a23c65846b335e2a47dacd67db3dba7c2cb4b860d4c4557a80f5e9220f1c"
+    },
+    "client_finish_static": {
+      "nonce": "000000000000000000000001",
+      "ciphertext": "1445ad808a72a88217674d3e219ade9c33be9119883bd373b7f6f4f999fbe696998fa2b9d9fc3fe9f8490b2cb717ae41"
+    },
+    "client_finish_payload": {
+      "nonce": "000000000000000000000000",
+      "ciphertext": "aa635b31f4a6bc2747eb5325b3eb87b8d15b751e95ca2c9ec86634d8e682ecb759cec3871ec167bfc9b8d899522864cca4"
+    }
+  },
+  "final_keys": {
+    "client_write": "387dbaa0e07c8a78a9a472d046ec841eca228d388d54879094eed7f713e01bd2",
+    "client_read": "47edbab621bc7c990018ef3f7465a5bccc72629b8d590c05916e1a1e1dffb7f1"
+  },
+  "transport_frames": [
+    {
+      "direction": "client_to_server",
+      "key": "client_write",
+      "counter": 0,
+      "plaintext": "7768617473636f72652d766563746f722d7472616e73706f72742d6672616d652d636c69656e742d31",
+      "nonce": "000000000000000000000000",
+      "ciphertext": "673fe3fa7a7d39fa67c649cc283bd4d883ce783b663ac3a5319f69ad69b113f57d19e46162014c41d6ea9512036fcef4a05fb4fd44713680b0"
+    },
+    {
+      "direction": "server_to_client",
+      "key": "client_read",
+      "counter": 0,
+      "plaintext": "7768617473636f72652d766563746f722d7472616e73706f72742d6672616d652d7365727665722d31",
+      "nonce": "000000000000000000000000",
+      "ciphertext": "9055ddf83b42a3ad656ca6ce32fff62b067b70352c0e55a35978555dbe8f17989e5d02dd219e624f92376e039d5cf0e2df0ce08325d1943d7d"
+    }
+  ]
+}
