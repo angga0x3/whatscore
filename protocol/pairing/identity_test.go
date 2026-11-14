@@ -34,7 +34,7 @@ func testAccountKey(t *testing.T) (ed25519.PrivateKey, [32]byte) {
 		for i := range pub {
 			yBytes[i] = pub[31-i]
 		}
-		yBytes[31] &= 0x7f
+		yBytes[0] &= 0x7f
 		y := new(big.Int).SetBytes(yBytes)
 		denom := new(big.Int).Sub(big.NewInt(1), y)
 		denom.Mod(denom, testP25519)

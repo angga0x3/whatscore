@@ -102,7 +102,7 @@ func generateTestSigningKeypair(t *testing.T) (ed25519.PrivateKey, [32]byte) {
 		for i := range pub {
 			yBytes[i] = pub[31-i]
 		}
-		yBytes[31] &= 0x7f
+		yBytes[0] &= 0x7f
 		y := new(big.Int).SetBytes(yBytes)
 
 		// Edwards→Montgomery (PF-009 inverse map): u = (1+y)/(1-y) mod p.
