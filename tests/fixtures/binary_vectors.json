@@ -1,0 +1,138 @@
+{
+  "finding": "PF-010..PF-014",
+  "dictionary": {
+    "single": [
+      "",
+      "s.whatsapp.net",
+      "type",
+      "id",
+      "message",
+      "from",
+      "to",
+      "get"
+    ],
+    "double": [
+      [
+        "read-self",
+        "reaction"
+      ],
+      [
+        "w:gp2"
+      ],
+      [],
+      []
+    ]
+  },
+  "vectors": [
+    {
+      "name": "tag only",
+      "hex": "00f801fc0470696e67",
+      "node": {
+        "tag": "ping"
+      }
+    },
+    {
+      "name": "single-byte token tag",
+      "hex": "00f80104",
+      "node": {
+        "tag": "message"
+      }
+    },
+    {
+      "name": "double-byte token and hex value",
+      "hex": "00f8050403fb03abc12302ec00",
+      "node": {
+        "tag": "message",
+        "attrs": {
+          "id": "ABC123",
+          "type": "read-self"
+        }
+      }
+    },
+    {
+      "name": "nibble and hex values",
+      "hex": "00f8050403fb04deadbeef02ff04123a45b6",
+      "node": {
+        "tag": "message",
+        "attrs": {
+          "id": "DEADBEEF",
+          "type": "123-45.6"
+        }
+      }
+    },
+    {
+      "name": "children",
+      "hex": "00f802fc026971f802f801fc0470696e67f8030703fc00",
+      "node": {
+        "tag": "iq",
+        "children": [
+          {
+            "tag": "ping"
+          },
+          {
+            "tag": "get",
+            "attrs": {
+              "id": ""
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "bytes content",
+      "hex": "00f802fc056d65646961fc0300ff10",
+      "node": {
+        "tag": "media",
+        "bytes_base64": "AP8Q"
+      }
+    },
+    {
+      "name": "empty bytes content",
+      "hex": "00f802fc056d65646961fc00",
+      "node": {
+        "tag": "media",
+        "bytes_base64": ""
+      }
+    },
+    {
+      "name": "jid pair",
+      "hex": "00f8030406faff0362812301",
+      "node": {
+        "tag": "message",
+        "attrs": {
+          "to": "628123@s.whatsapp.net"
+        }
+      }
+    },
+    {
+      "name": "empty jid user",
+      "hex": "00f8030405fa0001",
+      "node": {
+        "tag": "message",
+        "attrs": {
+          "from": "@s.whatsapp.net"
+        }
+      }
+    },
+    {
+      "name": "raw and unicode strings",
+      "hex": "00f8030404fc0e68616c6f2064756e696120e29c93",
+      "node": {
+        "tag": "message",
+        "attrs": {
+          "message": "halo dunia ✓"
+        }
+      }
+    },
+    {
+      "name": "second double-byte dictionary",
+      "hex": "00f803fc02697106ed00",
+      "node": {
+        "tag": "iq",
+        "attrs": {
+          "to": "w:gp2"
+        }
+      }
+    }
+  ]
+}
