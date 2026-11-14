@@ -1,0 +1,34 @@
+// Handshake protobuf messages for the WhatsApp transport-encryption
+// handshake. Field numbers follow the wire format recorded in
+// docs/protocol/noise.md (PF-007), extracted from reference study of
+// whatsmeow and Baileys on 2026-11-15.
+//
+// Only the subset WhatsCore uses is defined here; additional fields may be
+// appended later with the same numbering as the reference schema — never
+// renumber existing fields.
+syntax = "proto2";
+
+package whatscore.protocol.protobuf;
+
+option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
+
+message HandshakeMessage {
+  message ClientHello {
+    optional bytes ephemeral = 1;
+  }
+
+  message ServerHello {
+    optional bytes ephemeral = 1;
+    optional bytes static = 2;
+    optional bytes payload = 3;
+  }
+
+  message ClientFinish {
+    optional bytes static = 1;
+    optional bytes payload = 2;
+  }
+
+  optional ClientHello clientHello = 2;
+  optional ServerHello serverHello = 3;
+  optional ClientFinish clientFinish = 4;
+}
