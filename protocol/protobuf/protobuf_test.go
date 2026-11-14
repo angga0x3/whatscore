@@ -116,6 +116,40 @@ func TestHandshakeMessageWireFields(t *testing.T) {
 	}
 }
 
+func TestAdvIdentityWireFields(t *testing.T) {
+	hmacMessage := &protobuf.ADVSignedDeviceIdentityHMAC{
+		Details:     []byte{0x01},
+		HMAC:        bytes.Repeat([]byte{0x02}, 32),
+		AccountType: protobuf.ADVEncryptionType_HOSTED.Enum(),
+	}
+	raw := roundTrip(t, hmacMessage)
+	if fields := splitFields(t, raw); fields[1] != protowire.BytesType || fields[2] != protowire.BytesType || fields[3] != protowire.VarintType {
+		t.Fatalf("HMAC container fields = %v", fields)
+	}
+
+	signed := &protobuf.ADVSignedDeviceIdentity{
+		Details:             []byte{0x03},
+		AccountSignatureKey: bytes.Repeat([]byte{0x04}, 32),
+		AccountSignature:    bytes.Repeat([]byte{0x05}, 64),
+		DeviceSignature:     bytes.Repeat([]byte{0x06}, 64),
+	}
+	raw = roundTrip(t, signed)
+	for number := protowire.Number(1); number <= 4; number++ {
+		if splitFields(t, raw)[number] != protowire.BytesType {
+			t.Fatalf("signed identity field %d missing or not bytes: %v", number, splitFields(t, raw))
+		}
+	}
+
+	rawID, timestamp, keyIndex := uint32(1), uint64(2), uint32(3)
+	device := &protobuf.ADVDeviceIdentity{RawID: &rawID, Timestamp: &timestamp, KeyIndex: &keyIndex}
+	raw = roundTrip(t, device)
+	for number := protowire.Number(1); number <= 3; number++ {
+		if splitFields(t, raw)[number] != protowire.VarintType {
+			t.Fatalf("device identity field %d missing or not varint: %v", number, splitFields(t, raw))
+		}
+	}
+}
+
 func TestCertChainWireFields(t *testing.T) {
 	serial, issuer, notBefore, notAfter := uint32(2), uint32(1), uint64(100), uint64(200)
 	details, err := proto.Marshal(&protobuf.CertChain_NoiseCertificate_Details{
