@@ -8,7 +8,7 @@
 *.env.local
 
 # Runtime data
-/storage/
+/storage/media/
 *.log
 coverage.out
 coverage.html
