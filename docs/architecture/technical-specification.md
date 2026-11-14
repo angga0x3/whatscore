@@ -218,8 +218,9 @@ round-trip per message type; golden wire bytes; unknown-field preservation.
 handshake over the Noise channel, identity provisioning records; QR rendering is a caller concern.
 **Allowed deps.** stdlib, `protocol/noise`, `protocol/binary`, `protocol/protobuf`. **Tests.**
 Synthetic vectors only (§6 hard rule); payload round-trips; malformed-payload negatives.
-**Status.** QR payload (`QRPayload`, `Encode`, `ParseQR`) implemented per PF-015. The
-`<pair-device>`/`<pair-success>` exchange and credential provisioning remain.
+**Status.** QR payload (`QRPayload`, `Encode`, `ParseQR`, PF-015) and the
+pair-device/pair-success stanza parsers (PF-016) are implemented. Device-identity
+authentication and credential provisioning remain.
 
 ### 4.6 `protocol/auth`
 

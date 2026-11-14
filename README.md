@@ -23,13 +23,14 @@ implemented from first principles, documented in the open.
 ## Status
 
 > **Phase 3 — Pairing & authentication: in progress.** Transport, Noise, and
-> the binary codec are complete. The pairing QR payload is implemented; the
-> `pair-device`/`pair-success` exchange and credential provisioning are next.
-> The real token table, live interop, and Signal remain open.
+> the binary codec are complete. QR payload plus the pair-device/pair-success
+> stanza parsers are implemented; device-identity authentication and
+> credential provisioning are next. The real token table, live interop, and
+> Signal remain open.
 
 | Layer | Status |
 |-------|--------|
-| Protocol engine | Transport, Noise, binary, pairing QR payload; pair exchange, token table, Signal pending |
+| Protocol engine | Transport, Noise, binary, pairing QR + stanza parsers; identity verification, token table, Signal pending |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
 
@@ -85,7 +86,7 @@ Three layers, dependencies pointing downward only:
 | 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
 | 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
-| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR payload done; pair exchange and provisioning pending |
+| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR + stanza parsers done; identity verification and provisioning pending |
 | 4 | Messaging (Signal) — send/receive with E2E | Planned |
 | 5 | Public SDK — idiomatic Go client | Planned |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |
