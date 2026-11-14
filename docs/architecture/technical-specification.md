@@ -154,7 +154,7 @@ type Handshaker interface {
 ```
 
 **Allowed deps.** stdlib `crypto/*` (AES-GCM, SHA-256), `golang.org/x/crypto` (`curve25519`,
-`hkdf`), `protocol/transport`; never `protocol/signal`. **Tests.** Noise framework XX vectors;
+`hkdf`), `internal/xeddsa`, `protocol/transport`; never `protocol/signal`. **Tests.** Noise framework XX vectors;
 loopback handshake; tampered-ciphertext tests fail closed; key-separation test (§9).
 
 ### 4.3 `protocol/binary`
@@ -216,11 +216,11 @@ round-trip per message type; golden wire bytes; unknown-field preservation.
 
 **Responsibility.** Device pairing (Phase 3): QR pairing payload construction/parsing, pairing
 handshake over the Noise channel, identity provisioning records; QR rendering is a caller concern.
-**Allowed deps.** stdlib, `protocol/noise`, `protocol/binary`, `protocol/protobuf`. **Tests.**
-Synthetic vectors only (§6 hard rule); payload round-trips; malformed-payload negatives.
-**Status.** QR payload (`QRPayload`, `Encode`, `ParseQR`, PF-015) and the
-pair-device/pair-success stanza parsers (PF-016) are implemented. Device-identity
-authentication and credential provisioning remain.
+**Allowed deps.** stdlib, `internal/xeddsa`, `protocol/noise`, `protocol/binary`, `protocol/protobuf`.
+**Tests.** Synthetic vectors only (§6 hard rule); payload round-trips; malformed-payload negatives.
+**Status.** QR payload (PF-015), pair-device/pair-success parsers (PF-016), and device-identity
+authentication (PF-017) are implemented. Device-signature generation and credential provisioning
+remain.
 
 ### 4.6 `protocol/auth`
 

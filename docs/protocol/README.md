@@ -56,7 +56,7 @@ Confidence and Status are deliberately separate axes:
   and Probable findings may inform experiments, prototypes, and discussions —
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
-- **Exception — wire and pairing wiring (PF-002, PF-003, PF-010…PF-016).**
+- **Exception — wire and pairing wiring (PF-002, PF-003, PF-010…PF-017).**
   The endpoint, framing, binary encoding, and pairing QR payload are
   necessarily implemented before a live connection exists. They may be coded
   while **Probable**, because our own codec, synthetic vectors, and the
@@ -97,6 +97,7 @@ Confidence and Status are deliberately separate axes:
 | PF-014 | binary | JID wire forms | Probable | Verified-by-test | `protocol/binary` (JID table) |
 | PF-015 | pairing | QR payload format | Probable | Verified-by-test | `protocol/pairing` (golden QR, round-trip) |
 | PF-016 | pairing | pair-device and pair-success stanzas | Probable | Verified-by-test | `protocol/pairing` (stanza table, binary round-trip) |
+| PF-017 | pairing | Device-identity authentication | Probable | Verified-by-test | `protocol/pairing` (identity table) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -149,7 +150,7 @@ Status: findings recorded 2026-11-15 from reference study
 (whatsmeow + Baileys; see [transport.md](transport.md),
 [noise.md](noise.md), [binary.md](binary.md), and
 [pairing.md](pairing.md)). Algorithm findings are Confirmed by vector tests;
-live-server-facing findings (PF-002, PF-003, PF-010…PF-016) stay Probable
+live-server-facing findings (PF-002, PF-003, PF-010…PF-017) stay Probable
 until manual interop. `tests/integration` now runs the fake-server path end
 to end (WebSocket dial → handshake → encrypted frames), which is what the
 Proving test column cites. The binary token table itself is not reproduced
