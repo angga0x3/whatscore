@@ -14,10 +14,10 @@ whatscore/
 ├── buildinfo/
 ├── config/
 ├── observability/
-├── protocol/               # transport, noise, binary, protobuf
+├── protocol/               # transport, noise, binary, protobuf, auth, pairing, messaging, media
 ├── server/                 # http/{router,handlers}, middleware, auth
 ├── storage/                # interface.go, credentials/, envelope/, postgres/{...}
-├── core/                   # reserved, Phase 5
+├── core/                   # events, session (SDK facade pending)
 ├── docs/                   # architecture/, api/, protocol/, reverse-engineering/
 ├── examples/               # rest-api/ (curl scripts)
 ├── tests/                  # integration/, architecture/, protocol/, fixtures/

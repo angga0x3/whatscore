@@ -228,6 +228,8 @@ remain.
 metadata, version strings), server hello validation, challenge handling, version registry (§7).
 **Allowed deps.** stdlib, `protocol/noise`, `protocol/binary`, `protocol/protobuf`. **Tests.**
 Payload golden fixtures; registry tables; fake-server auth flow in `tests/integration`.
+**Status.** Registration subset implemented (`BuildClientPayload`/`ParseClientPayload`, PF-020…025).
+Login payloads, challenge handling, and registration crypto remain.
 
 ### 4.7 `protocol/signal`
 
@@ -244,6 +246,9 @@ serialization (byte blobs handed to the stores, §4.19). **Decided:** never shar
 normalization, wrapping Signal ciphertext in stanzas. Knows stanza shapes; does not ratchet.
 **Allowed deps.** stdlib, `protocol/binary`, `protocol/protobuf`, `protocol/signal` (ciphertext
 in/out only). **Tests.** Stanza golden fixtures; JID normalization tables; build-parse round-trips.
+**Status.** JID parsing/rendering/normalization, the `<message type="text">` envelope, and
+`<receipt>` are implemented (PF-030…035). The plaintext `<body>` carrier is a scoped deviation
+(PF-034); Signal `<enc>` wrapping lands with `protocol/signal`.
 
 ### 4.9 `protocol/sync`
 
@@ -258,6 +263,8 @@ Synthetic app-state fixtures; truncated/corrupt patch tables; deterministic deco
 integrity sidecar computation via stdlib `crypto/aes`/`crypto/hmac`/`crypto/sha256`; bytes move over
 injected transport interfaces, not a hardcoded HTTP client. **Allowed deps.** stdlib,
 `protocol/binary`. **Tests.** Round-trip with synthetic keys; corruption tables; fake media endpoint.
+**Status.** Byte envelope implemented (PF-040…045): HKDF-SHA256, AES-256-CBC/PKCS#7, truncated
+HMAC. Streaming uploads, sidecar hashes, and download range handling remain.
 
 ### 4.11 `core/client`
 
@@ -295,6 +302,9 @@ drives reconnection via `transport.ReconnectPolicy`, is the single writer for se
 records. **Allowed deps.** `protocol/*` via interfaces, `core/events`, storage interfaces, stdlib.
 **Tests.** `-race` mandatory; deterministic actor tests with fake `FrameConn`; shutdown liveness;
 channels and contexts only — no sleeps.
+**Status.** Actor runtime implemented: Connect/Disconnect/State/Stop, injected Dialer/ReconnectPolicy/
+Bus, lifecycle events, late-dial cleanup, reconnect after drops. A frame sink for `core/messaging`
+remains.
 
 ### 4.13 `core/messaging`
 
@@ -310,6 +320,8 @@ tables.
 Receipt, GroupUpdate, …), subscription handles, in-process bus. Guarantees: ordered per session,
 non-blocking fan-out, protocol types never appear in event values. **Allowed deps.** stdlib only.
 **Tests.** Ordering and backpressure tables; slow-subscriber behavior.
+**Status.** Taxonomy and bus implemented: bounded per-subscriber buffers, drop counters, ordered
+non-blocking fan-out, subscription lifecycle.
 
 ### 4.15 `core/contacts`
 

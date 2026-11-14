@@ -33,7 +33,7 @@ Each finding is one section using the exact record below. Copy
 |-------|---------|
 | **ID** | `PF-NNN` — three digits, sequential, never reused |
 | **Title** | One specific line: the protocol behavior this record describes |
-| **Layer** | `transport` / `noise` / `binary` / `pairing` / `signal` / `sync` / `media` |
+| **Layer** | `transport` / `noise` / `binary` / `auth` / `pairing` / `messaging` / `signal` / `sync` / `media` |
 | **Source** | One of: `direct observation of own session` · `captured handshake of own device` · `derived from test` · `inferred` |
 | **Observed date** | Date of the observation(s) backing the record, `YYYY-MM-DD`; updated when the finding is reopened |
 | **Confidence** | **Confirmed** = proven by automated test · **Probable** = consistent repeated observation · **Speculative** = single observation or inference |
@@ -56,14 +56,16 @@ Confidence and Status are deliberately separate axes:
   and Probable findings may inform experiments, prototypes, and discussions —
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
-- **Exception — wire and pairing wiring (PF-002, PF-003, PF-010…PF-017).**
-  The endpoint, framing, binary encoding, and pairing QR payload are
+- **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
+  PF-020…PF-025, PF-030…PF-035, PF-040…PF-045).** Framing, binary encoding,
+  pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
-  while **Probable**, because our own codec, synthetic vectors, and the
-  fake-server test prove the implementation matches the record. They must not
-  be described as compatible with the live service until a manual interop
-  observation is recorded here. Algorithm-internal findings (noise, signal)
-  have no such exception.
+  while **Probable** because our own codec, synthetic vectors, independent
+  reference generators, and per-package round-trips prove the implementation
+  matches the record. They must not be described as compatible with the live
+  service until a manual interop observation is recorded here. This does not
+  apply to new cryptographic primitives: Signal's X3DH/ratchet findings must
+  reach Confirmed with known-answer vectors before code depends on them.
 - **Findings are never deleted.** When an observation or test contradicts a
   finding, mark it **Retired**, keep its index row, and record the reason
   plus the contradicting evidence in Notes. History stays auditable.
@@ -98,6 +100,24 @@ Confidence and Status are deliberately separate axes:
 | PF-015 | pairing | QR payload format | Probable | Verified-by-test | `protocol/pairing` (golden QR, round-trip) |
 | PF-016 | pairing | pair-device and pair-success stanzas | Probable | Verified-by-test | `protocol/pairing` (stanza table, binary round-trip) |
 | PF-017 | pairing | Device-identity authentication | Probable | Verified-by-test | `protocol/pairing` (identity table) |
+| PF-020 | auth | Registration ClientPayload envelope | Probable | Verified-by-test | `protocol/auth`, `protocol/protobuf` (wire fields) |
+| PF-021 | auth | ClientPayload.UserAgent schema | Probable | Verified-by-test | `protocol/auth`, `protocol/protobuf` (wire fields) |
+| PF-022 | auth | WebInfo and connection metadata | Probable | Verified-by-test | `protocol/auth` (round-trip, validation) |
+| PF-023 | auth | DevicePairingRegistrationData encoding | Probable | Verified-by-test | `protocol/auth` (round-trip, validation) |
+| PF-024 | auth | DeviceProps schema | Probable | Verified-by-test | `protocol/auth` (round-trip) |
+| PF-025 | auth | Registration versus login payloads | Probable | Verified-by-test | `protocol/auth` (validation table) |
+| PF-030 | messaging | JID textual grammar | Probable | Verified-by-test | `protocol/messaging` (JID table) |
+| PF-031 | messaging | JID normalization | Probable | Verified-by-test | `protocol/messaging` (normalization table) |
+| PF-032 | messaging | JID rendering | Probable | Verified-by-test | `protocol/messaging` (round-trip) |
+| PF-033 | messaging | `<message>` envelope | Probable | Verified-by-test | `protocol/messaging` (stanza round-trip) |
+| PF-034 | messaging | Text payload carrier | Probable | Verified-by-test | `protocol/messaging` (stanza round-trip) |
+| PF-035 | messaging | `<receipt>` stanza | Probable | Verified-by-test | `protocol/messaging` (stanza round-trip) |
+| PF-040 | media | Media key expansion and key layout | Probable | Verified-by-test | `protocol/media` (independent vectors) |
+| PF-041 | media | Media-type HKDF info strings | Probable | Verified-by-test | `protocol/media` (per-type vectors) |
+| PF-042 | media | AES-256-CBC with always-on PKCS#7 | Probable | Verified-by-test | `protocol/media` (ciphertext vectors) |
+| PF-043 | media | Truncated HMAC-SHA256 over IV and ciphertext | Probable | Verified-by-test | `protocol/media` (MAC vectors) |
+| PF-044 | media | Download framing and verification order | Probable | Verified-by-test | `protocol/media` (tamper sweep) |
+| PF-045 | media | Media key size, unused expansion tail | Probable | Verified-by-test | `protocol/media` (key vectors) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -148,10 +168,13 @@ in CI.
 
 Status: findings recorded 2026-11-15 from reference study
 (whatsmeow + Baileys; see [transport.md](transport.md),
-[noise.md](noise.md), [binary.md](binary.md), and
-[pairing.md](pairing.md)). Algorithm findings are Confirmed by vector tests;
-live-server-facing findings (PF-002, PF-003, PF-010…PF-017) stay Probable
-until manual interop. `tests/integration` now runs the fake-server path end
-to end (WebSocket dial → handshake → encrypted frames), which is what the
-Proving test column cites. The binary token table itself is not reproduced
-(spec §10.2); the codec takes an injected dictionary.
+[noise.md](noise.md), [binary.md](binary.md), [pairing.md](pairing.md),
+[auth.md](auth.md), [messaging.md](messaging.md), and
+[media.md](media.md)). Algorithm findings are Confirmed by vector tests;
+live-server-facing findings (PF-002, PF-003, PF-010…PF-017, PF-020…PF-025,
+PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
+`tests/integration` runs the fake-server path end to end (WebSocket dial →
+handshake → encrypted frames), which is what the Proving test column cites.
+The binary token table itself is not reproduced (spec §10.2); the codec takes
+an injected dictionary. PF-034 records that the plaintext `<body>` carrier is
+a scoped deviation from the references' encrypted `<enc>` payload.

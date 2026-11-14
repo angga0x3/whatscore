@@ -9,9 +9,12 @@ its **Proving test** field.
 ## Where the tests live
 
 - **Package-local tests** (`protocol/transport/*_test.go`,
-  `protocol/noise/*_test.go`) are the primary home: framing tables,
+  `protocol/noise/*_test.go`, `protocol/auth/*_test.go`,
+  `protocol/pairing/*_test.go`, `protocol/messaging/*_test.go`,
+  `protocol/media/*_test.go`) are the primary home: framing tables,
   in-memory `FrameConn` loopbacks, handshake round-trips, certificate
-  negatives, and the deterministic vector checks.
+  negatives, payload/stanza round-trips, media vectors, and the deterministic
+  vector checks.
 - **`tests/integration/`** (build tag `integration`) runs the cross-package
   fake-server test: real WebSocket dial → Noise handshake → encrypted frame
   exchange. It must never contact a real WhatsApp endpoint.

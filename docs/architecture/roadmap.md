@@ -1,6 +1,6 @@
 # Roadmap — execution plan
 
-Status snapshot: Phase 0–2 complete; Phase 3 partially implemented. This file
+Status snapshot: Phase 0–2 complete; Phases 3–5 in progress. This file
 turns the phase table in the technical specification into workstreams with
 owners, file boundaries, acceptance criteria, and dependencies. It is updated
 as workstreams land.
@@ -13,8 +13,23 @@ as workstreams land.
 | Noise | XX handshake, cert chain, secure conn, fake server | live interop |
 | Binary | node codec, vectors, fuzz, dictionary loader | real token table |
 | Pairing | QR payload, pair-device/pair-success, identity verification | device signature, manager wiring |
+| Auth | registration ClientPayload + DeviceProps | login payload, challenge handling |
+| Messaging | JID, text `<message>`, `<receipt>` | encrypted `<enc>` carrier (PF-034) |
+| Media | HKDF + CBC/HMAC byte envelope | streaming, sidecar hashes |
 | Storage | envelope, credential vault, PostgreSQL backend | Signal-addressed stores, engine manager |
-| Core / SDK / API | — | everything |
+| Core | event bus, single-actor session runtime | SDK facade, orchestration |
+| SDK / API | — | everything |
+
+## Execution log
+
+| Date | Workstream | Result |
+|------|------------|--------|
+| 2026-11-15 | Auth payloads | `protocol/auth` + `auth.proto`, PF-020…025 |
+| 2026-11-15 | Messaging | `protocol/messaging`, PF-030…035 (PF-034 deviation documented) |
+| 2026-11-15 | Media | `protocol/media`, PF-040…045 |
+| 2026-11-15 | Core | `core/events`, `core/session` |
+
+Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
 ## Workstreams
 
