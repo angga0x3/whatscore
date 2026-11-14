@@ -66,7 +66,7 @@ curl -s http://localhost:8080/version
   "version": "dev",
   "commit": "none",
   "built_at": "unknown",
-  "go_version": "go1.25.7"
+  "go_version": "go1.26.0"
 }
 ```
 
@@ -106,7 +106,7 @@ Events arrive as `HTTP POST` with `X-Whatscore-Signature` =
 ```
 
 Delivery rules: exponential backoff, max 10 attempts, 10s timeout, HTTP 2xx
-counts as success — see [docs/architecture.md](architecture.md).
+counts as success — see [docs/architecture/overview.md](../architecture/overview.md).
 
 ## Examples
 

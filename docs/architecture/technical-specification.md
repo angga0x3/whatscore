@@ -6,7 +6,7 @@ Normative technical specification for WhatsCore: an independent implementation o
 protocol in pure Go. The engine is owned by this project — no whatsmeow, no Baileys, no libsignal
 binding anywhere. Items marked **decided** are locked (a change requires a new spec version).
 
-Module: `github.com/angga0x3/whatscore` · Go 1.25.x · single Go module · semantic versioning.
+Module: `github.com/angga0x3/whatscore` · Go 1.26.x · single Go module · semantic versioning.
 
 ## 1. Purpose & scope
 
@@ -32,7 +32,7 @@ a fake server, not the production endpoint. A release is cut only when all five 
 
 | Phase | Name | Packages | Exit criteria |
 |-------|------|----------|---------------|
-| 0 | Foundation | repo skeleton, CI, lint, contract skeletons, this spec | `go test ./...` green on Go 1.25.x; import-rule check passes |
+| 0 | Foundation | repo skeleton, CI, lint, contract skeletons, this spec | `go test ./...` green on Go 1.26.x; import-rule check passes |
 | 1 | Transport & Noise | `protocol/transport`, `protocol/noise` | loopback handshake over in-memory `FrameConn` pair; reconnect policy table tests |
 | 2 | Binary protocol | `protocol/binary`, `protocol/protobuf` | codec round-trips fixtures; fuzz corpus has no untriaged crashes; protobuf round-trip |
 | 3 | Pairing & authentication | `protocol/pairing`, `protocol/auth` | full pairing flow against the fake server; credentials encrypted at rest |
@@ -47,7 +47,7 @@ Phases are strictly ordered: a phase starts only when the previous exit criteria
 
 | # | Decision | Status | Justification |
 |---|----------|--------|---------------|
-| 1 | Go 1.25.x, single Go module, semantic versioning | **decided** | One module keeps layer boundaries enforceable by import checks; SemVer lets the SDK make stability promises independently of the server |
+| 1 | Go 1.26.x, single Go module, semantic versioning | **decided** | One module keeps layer boundaries enforceable by import checks; SemVer lets the SDK make stability promises independently of the server |
 | 2 | Layers `protocol/*` → `core/*` → public interfaces (`core/client` SDK + `server/*` REST adapter); one-way dependency direction; protocol MUST NOT import core/server/storage/config; core imports protocol only via the interfaces in §4; storage backends implement `storage.Store` interfaces | **decided** | The engine must be reusable and testable without application or persistence concerns; one-way flow enables both the fake server and the SDK |
 | 3 | One session, one actor: each WhatsApp session is owned by a single goroutine (actor) that serializes all state mutations; callers interact via context, channels, and an event bus — never shared mutable state | **decided** | Ratchet and connection state are inherently sequential; an actor eliminates data races by construction and gives deterministic replay in tests |
 | 4 | Crypto: Go standard library + `golang.org/x/crypto` primitives only, no custom crypto. Transport encryption = `Noise_XX_25519_AESGCM_SHA256` ([Noise spec](https://noiseprotocol.org/noise.html)). E2E message encryption = Signal-style (X3DH + Double Ratchet), Phase 4, proven via test vectors. Noise and Signal layers must never share key material | **decided** | Vetted primitives only; domain separation (distinct HKDF info strings, distinct key stores) prevents cross-layer key reuse |
@@ -92,9 +92,10 @@ Phases are strictly ordered: a phase starts only when the previous exit criteria
 
 ### 3.2 Violation policy
 
-Import rules are enforced mechanically (a `go list`-based check in CI) and by review: **a PR that
-imports engine internals from handlers is rejected.** Reintroducing a forbidden edge requires a spec
-change, not a workaround; if the interfaces are insufficient, extend them behind the same boundary.
+Import rules are enforced mechanically by `tests/architecture/imports_test.go` (runs with every
+`go test`, parses imports with `go/parser`) and by review: **a PR that imports engine internals from
+handlers is rejected.** Reintroducing a forbidden edge requires a spec change, not a workaround; if
+the interfaces are insufficient, extend them behind the same boundary.
 
 ## 4. Package contract
 
@@ -396,8 +397,9 @@ Backends: `storage/sqlite` (`modernc.org/sqlite`, SDK/development default) and `
 
 ### 7.1 Version registry
 
-All version-sensitive constants live in one code-owned registry (single package, one documented
-struct). Values change only in a PR that updates the proving fixtures in the same commit.
+**Planned (Phase 2).** All version-sensitive constants will live in one code-owned registry (single
+package, one documented struct). Values change only in a PR that updates the proving fixtures in the
+same commit. Until the registry exists, each constant carries its provenance in `docs/protocol/`.
 
 | Field | Owner package | Example content | Documented how |
 |-------|---------------|-----------------|----------------|

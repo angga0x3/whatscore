@@ -1,7 +1,7 @@
 // Package httpapi assembles the Chi router, middleware chain, and all
 // endpoint handlers. Handlers never import the WhatsApp engine directly;
 // everything arrives here through application services (architectural rule
-// #1 and #2 in docs/architecture.md).
+// #1 and #2 in docs/architecture/overview.md).
 package httpapi
 
 import (

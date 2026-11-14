@@ -16,6 +16,10 @@ info:
     Authentication uses Bearer API keys (`wc_live_...`). Send and receive
     endpoints also accept an `Idempotency-Key` header to make client retries
     safe.
+
+    Until an area ships, every path under `/api/v1` answers `501 Not
+    Implemented` with the standard `Error` envelope, so clients can tell
+    "not shipped yet" apart from "wrong URL" (`404`).
   version: 0.1.0
   license:
     name: Apache-2.0

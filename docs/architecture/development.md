@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Go 1.25+
+- Go 1.26+
 - Docker (integration tests, full stack)
 - [golangci-lint](https://golangci-lint.run/welcome/install/) v2 (for `make lint`)
 
@@ -14,13 +14,13 @@ whatscore/
 ├── buildinfo/
 ├── config/
 ├── observability/
-├── protocol/               # transport, noise, binary — contract skeletons
+├── protocol/               # transport, noise, binary, protobuf
 ├── server/                 # http/{router,handlers}, middleware, auth
 ├── storage/                # interface.go, postgres/{pool,migrate,migrations/}
-├── core/                   # reserved, Phase 4-5
+├── core/                   # reserved, Phase 5
 ├── docs/                   # architecture/, api/, protocol/, reverse-engineering/
-├── examples/               # basic-client, rest-api/
-├── tests/                  # integration/, protocol/, fixtures/
+├── examples/               # rest-api/ (curl scripts)
+├── tests/                  # integration/, architecture/, protocol/, fixtures/
 ├── deployments/docker/
 └── .github/                # workflows, ISSUE_TEMPLATE
 ```
@@ -57,10 +57,15 @@ Migrations apply automatically on startup (`DB_MIGRATE_ON_STARTUP=true`).
 
 - **Unit tests** live next to the code; they never touch the network or a
   database.
+- **Architecture tests** (`tests/architecture/`) parse every package's
+  imports and fail when a layer dependency from the technical specification
+  §3.1 is crossed. They run with plain `go test ./...`.
 - **Integration tests** are behind the `integration` build tag and live in
-  `tests/integration/`. They create a scratch database, apply all migrations
-  **up**, verify the schema, roll them **down**, verify the schema is gone,
-  and apply them **up** again:
+  `tests/integration/`. The migration test creates a scratch database,
+  applies all migrations **up**, verifies the schema, rolls them **down**,
+  verifies the schema is gone, and applies them **up** again; the fake-server
+  test runs a real WebSocket dial → Noise handshake → encrypted frames with
+  no database at all:
 
   ```bash
   TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable \
@@ -100,5 +105,6 @@ go mod tidy
 ## CI
 
 - `ci.yml` — tests (with PostgreSQL service), lint, and a Docker build on
-  main pushes.
+  main pushes. The test step includes `tests/architecture`, which enforces
+  the §3.1 import rules.
 - `release.yml` — tag-triggered binary + container release.

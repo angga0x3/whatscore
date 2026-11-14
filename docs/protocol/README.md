@@ -56,6 +56,14 @@ Confidence and Status are deliberately separate axes:
   and Probable findings may inform experiments, prototypes, and discussions —
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
+- **Exception — transport wiring (PF-002, PF-003).** The endpoint, dial
+  headers, intro header, and frame layout are necessarily implemented before
+  a live connection exists. They may be coded while **Probable**, behind
+  `transport.FrameConn`, because our own codec and the fake-server test prove
+  the implementation matches this record. They must not be described as
+  compatible with the live service until a manual interop observation is
+  recorded here. Algorithm-internal findings (noise, signal) have no such
+  exception.
 - **Findings are never deleted.** When an observation or test contradicts a
   finding, mark it **Retired**, keep its index row, and record the reason
   plus the contradicting evidence in Notes. History stays auditable.
@@ -74,6 +82,14 @@ Confidence and Status are deliberately separate axes:
 |----|-------|-------|------------|--------|--------------|
 | PF-000 | noise | EXAMPLE (synthetic): handshake frame header layout | Speculative | Observed-only | — |
 | PF-001 | transport | EXAMPLE (synthetic): WebSocket keepalive ping cadence | Speculative | Observed-only | — |
+| PF-002 | transport | WebSocket endpoint and dial headers | Probable | Observed-only | — |
+| PF-003 | transport | One-time intro header + 3-byte length framing across WS messages | Probable | Observed-only | `protocol/transport`, `tests/integration` |
+| PF-004 | noise | Handshake initialization and hash chain | Confirmed | Verified-by-test | `protocol/noise` (vectors) |
+| PF-005 | noise | Handshake AEAD operations (AES-256-GCM, counter IV, hash AAD) | Confirmed | Verified-by-test | `protocol/noise` (vectors, handshake), `tests/integration` (fake server) |
+| PF-006 | noise | Key mixing via HKDF after each X25519 | Confirmed | Verified-by-test | `protocol/noise` (vectors) |
+| PF-007 | noise | Handshake message sequence (protobuf frames, msg1–msg3) | Confirmed | Verified-by-test | `protocol/noise` (handshake round-trip), `tests/integration` (fake server) |
+| PF-008 | noise | Transport key derivation and post-handshake framing | Confirmed | Verified-by-test | `protocol/noise` (vectors, conn), `tests/integration` (fake server) |
+| PF-009 | noise | Server certificate chain and XEdDSA signatures | Confirmed | Verified-by-test | `protocol/noise` (cert tests) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -122,5 +138,10 @@ in CI.
 
 ---
 
-Status: empty — the index contains synthetic placeholders only. First real
-findings are expected with Phase 1 (Transport & Noise).
+Status: first real findings recorded 2026-11-15 (reference study:
+whatsmeow + Baileys; see [transport.md](transport.md) and
+[noise.md](noise.md)). Algorithm findings are Confirmed by vector tests;
+live-server-facing findings (PF-002, PF-003) stay Probable until manual
+interop. `tests/integration` now runs the fake-server path end to end
+(WebSocket dial → handshake → encrypted frames), which is what the Proving
+test column cites.

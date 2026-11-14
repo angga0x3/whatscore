@@ -32,12 +32,13 @@ and [golangci-lint](https://golangci-lint.run/welcome/install/) for `make lint`.
 - [ ] `make check` passes locally (fmt, vet, lint, tests)
 - [ ] New behavior has tests; bug fixes have a regression test
 - [ ] Protocol claims cite a finding ID from
-      [docs/protocol/README.md](docs/protocol/README.md) (Confirmed only)
+      [docs/protocol/README.md](docs/protocol/README.md) (Confirmed, or the
+      documented transport-wiring exception for PF-002/PF-003)
 - [ ] New dependencies pass the dependency policy in the
       [technical specification](docs/architecture/technical-specification.md)
 - [ ] Conventional Commits kept (`feat:`, `fix:`, `docs:`, `refactor:`,
       `test:`, `chore:`) — they feed the release changelog
-- [ ] Public API changes are reflected in `docs/api/openapi.yaml`
+- [ ] **Public API** changes are reflected in `docs/api/openapi.yaml`
 - [ ] New configuration is documented in
       [docs/architecture/configuration.md](docs/architecture/configuration.md)
       and `.env.example`

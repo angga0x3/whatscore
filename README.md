@@ -22,14 +22,16 @@ implemented from first principles, documented in the open.
 
 ## Status
 
-> **Phase 1 — Transport & Noise: in progress.** The protocol engine cannot
-> connect to WhatsApp yet. What already works: the server foundation
-> (health/ready/version), CI, migrations, and contract skeletons.
+> **Phase 2 — Binary protocol: next.** Transport and Noise are implemented
+> and proven end to end against a fake server (real WebSocket + handshake +
+> encrypted frames). The engine still cannot talk to WhatsApp: live interop
+> is pending, and the binary node codec, pairing, and Signal layers are not
+> written yet.
 
 | Layer | Status |
 |-------|--------|
-| Protocol engine | **Not functional** — contract skeletons only |
-| Application core | Designed — implementation starts in Phase 4 |
+| Protocol engine | Transport + Noise implemented, fake-server proven; binary/pairing/Signal not started |
+| Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
 
 This project holds itself to one principle: **no fake feature claims —
@@ -81,9 +83,9 @@ Three layers, dependencies pointing downward only:
 
 | Phase | Milestone | Status |
 |-------|-----------|--------|
-| 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **In progress** |
-| 1 | Transport & Noise — WebSocket transport, Noise handshake | Next |
-| 2 | Binary protocol — node encode/decode | Planned |
+| 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
+| 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
+| 2 | Binary protocol — node encode/decode | Next |
 | 3 | Pairing & authentication — QR / pairing code | Planned |
 | 4 | Messaging (Signal) — send/receive with E2E | Planned |
 | 5 | Public SDK — idiomatic Go client | Planned |
@@ -92,11 +94,15 @@ Three layers, dependencies pointing downward only:
 
 **v0.0.1 target — protocol foundation preview:**
 
-- [ ] WebSocket transport runs
-- [ ] Noise handshake succeeds
+- [x] WebSocket transport runs
+- [x] Noise handshake succeeds
 - [ ] Binary node encode/decode works
-- [ ] Fake-server integration test passes
-- [ ] Protocol docs available
+- [x] Fake-server integration test passes
+- [x] Protocol docs available
+
+v0.0.1 is not cut yet: the binary node codec (Phase 2) is the remaining
+deliverable. No compatibility with the live WhatsApp endpoint is claimed
+before manual interop is recorded as a protocol finding.
 
 ## SDK
 
@@ -134,7 +140,7 @@ curl -s http://localhost:8080/ready
 # {"status":"ready","checks":{"database":{"status":"up","latency_ms":0.417}}}
 
 curl -s http://localhost:8080/version
-# {"name":"WhatsCore","version":"dev","commit":"none","built_at":"unknown","go_version":"go1.25.7"}
+# {"name":"WhatsCore","version":"dev","commit":"none","built_at":"unknown","go_version":"go1.26.0"}
 ```
 
 Every environment variable is documented in

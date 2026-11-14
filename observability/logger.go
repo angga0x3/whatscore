@@ -12,7 +12,7 @@ import (
 //
 // Development uses a human friendly text handler; production emits JSON so
 // log aggregators can parse it without regex. Credential values must never
-// be passed to this logger (see docs/architecture.md, "Log hygiene").
+// be passed to this logger (see docs/architecture/overview.md, "Log hygiene").
 func NewLogger(cfg *config.Config) *slog.Logger {
 	var level slog.Level
 	switch cfg.App.LogLevel {

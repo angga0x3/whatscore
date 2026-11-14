@@ -86,7 +86,7 @@ Never logged, without exception: **QR codes, pairing codes, private keys,
 tokens, API keys, session credentials**. Secrets flow through the engine and
 core without entering log fields; the request logger carries only structured,
 non-sensitive metadata. Tests and issue reports follow the same rule —
-synthetic keys only ([tests/fixtures/README.md](../tests/fixtures/README.md)).
+synthetic keys only ([tests/fixtures/README.md](../../tests/fixtures/README.md)).
 
 ## From protocol findings to code
 

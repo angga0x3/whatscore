@@ -2,7 +2,7 @@
 
 All configuration is provided through environment variables — the same
 binary works unchanged in Docker, bare metal, and CI. Copy
-[`.env.example`](../.env.example) to `.env` and adjust.
+[`.env.example`](../../.env.example) to `.env` and adjust.
 
 ## Reference
 
