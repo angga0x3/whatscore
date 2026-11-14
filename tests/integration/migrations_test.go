@@ -24,7 +24,7 @@ import (
 	"github.com/angga0x3/whatscore/storage/postgres/migrations"
 )
 
-const expectedMigrationVersion = 6
+const expectedMigrationVersion = 7
 
 var wantTables = []string{
 	"sessions",
@@ -35,6 +35,7 @@ var wantTables = []string{
 	"webhook_endpoints",
 	"webhook_deliveries",
 	"idempotency_keys",
+	"credentials",
 }
 
 func TestMigrationsUpDownUp(t *testing.T) {
