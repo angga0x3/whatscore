@@ -2,11 +2,13 @@
 // engine: establishing the WebSocket connection, reading and writing framed
 // messages, and recovering from disconnects.
 //
-// The package depends only on the Go standard library. It must never import
-// core, server, storage, or config packages — see the dependency rules in
+// The package depends on the Go standard library plus github.com/gorilla/
+// websocket for the WebSocket wire layer. It must never import core, server,
+// storage, or config packages — see the dependency rules in
 // docs/architecture/technical-specification.md.
 //
-// Status: contract skeleton (Phase 1 implements it).
+// Status: WebSocket transport implemented (Phase 1); contract types below
+// are stable and consumed by protocol/noise and the test fake server.
 package transport
 
 import (
