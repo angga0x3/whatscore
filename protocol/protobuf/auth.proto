@@ -1,0 +1,193 @@
+// ClientPayload and DeviceProps subset used for companion-device
+// registration. Field numbers follow docs/protocol/auth.md (PF-020..PF-025),
+// extracted from reference study of whatsmeow
+// proto/waWa6/WAWebProtobufsWa6.proto and
+// proto/waCompanionReg/WACompanionReg.proto on 2026-11-15.
+//
+// Only the registration subset WhatsCore emits is defined. Fields outside
+// this subset (login fields, product, history-sync config) are intentionally
+// omitted; never renumber the fields that are present.
+syntax = "proto2";
+
+package whatscore.protocol.protobuf;
+
+option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
+
+message ClientPayload {
+  enum ConnectType {
+    CELLULAR_UNKNOWN = 0;
+    WIFI_UNKNOWN = 1;
+    CELLULAR_EDGE = 100;
+    CELLULAR_IDEN = 101;
+    CELLULAR_UMTS = 102;
+    CELLULAR_EVDO = 103;
+    CELLULAR_GPRS = 104;
+    CELLULAR_HSDPA = 105;
+    CELLULAR_HSUPA = 106;
+    CELLULAR_HSPA = 107;
+    CELLULAR_CDMA = 108;
+    CELLULAR_1XRTT = 109;
+    CELLULAR_EHRPD = 110;
+    CELLULAR_LTE = 111;
+    CELLULAR_HSPAP = 112;
+  }
+
+  enum ConnectReason {
+    PUSH = 0;
+    USER_ACTIVATED = 1;
+    SCHEDULED = 2;
+    ERROR_RECONNECT = 3;
+    NETWORK_SWITCH = 4;
+    PING_RECONNECT = 5;
+    UNKNOWN = 6;
+  }
+
+  message UserAgent {
+    enum Platform {
+      ANDROID = 0;
+      IOS = 1;
+      WINDOWS_PHONE = 2;
+      BLACKBERRY = 3;
+      BLACKBERRYX = 4;
+      S40 = 5;
+      S60 = 6;
+      PYTHON_CLIENT = 7;
+      TIZEN = 8;
+      ENTERPRISE = 9;
+      SMB_ANDROID = 10;
+      KAIOS = 11;
+      SMB_IOS = 12;
+      WINDOWS = 13;
+      WEB = 14;
+      PORTAL = 15;
+      GREEN_ANDROID = 16;
+      GREEN_IPHONE = 17;
+      BLUE_ANDROID = 18;
+      BLUE_IPHONE = 19;
+      FBLITE_ANDROID = 20;
+      MLITE_ANDROID = 21;
+      IGLITE_ANDROID = 22;
+      PAGE = 23;
+      MACOS = 24;
+      OCULUS_MSG = 25;
+      OCULUS_CALL = 26;
+      MILAN = 27;
+      CAPI = 28;
+      WEAROS = 29;
+      ARDEVICE = 30;
+      VRDEVICE = 31;
+      BLUE_WEB = 32;
+      IPAD = 33;
+      TEST = 34;
+      SMART_GLASSES = 35;
+      BLUE_VR = 36;
+      AR_WRIST = 37;
+      WAIL = 38;
+      WORK_ANDROID = 39;
+      WORK_IOS = 40;
+      AUTOMOTIVE = 41;
+    }
+
+    enum ReleaseChannel {
+      RELEASE = 0;
+      BETA = 1;
+      ALPHA = 2;
+      DEBUG = 3;
+    }
+
+    message AppVersion {
+      optional uint32 primary = 1;
+      optional uint32 secondary = 2;
+      optional uint32 tertiary = 3;
+      optional uint32 quaternary = 4;
+      optional uint32 quinary = 5;
+    }
+
+    optional Platform platform = 1;
+    optional AppVersion appVersion = 2;
+    optional string mcc = 3;
+    optional string mnc = 4;
+    optional string osVersion = 5;
+    optional string manufacturer = 6;
+    optional string device = 7;
+    optional string osBuildNumber = 8;
+    optional ReleaseChannel releaseChannel = 10;
+    optional string localeLanguageIso6391 = 11;
+    optional string localeCountryIso31661Alpha2 = 12;
+  }
+
+  message WebInfo {
+    enum WebSubPlatform {
+      WEB_BROWSER = 0;
+      APP_STORE = 1;
+      WIN_STORE = 2;
+      DARWIN = 3;
+      WIN32 = 4;
+      WIN_HYBRID = 5;
+    }
+
+    optional WebSubPlatform webSubPlatform = 4;
+  }
+
+  message DevicePairingRegistrationData {
+    optional bytes eRegid = 1;
+    optional bytes eKeytype = 2;
+    optional bytes eIdent = 3;
+    optional bytes eSkeyID = 4;
+    optional bytes eSkeyVal = 5;
+    optional bytes eSkeySig = 6;
+    optional bytes buildHash = 7;
+    optional bytes deviceProps = 8;
+  }
+
+  optional bool passive = 3;
+  optional UserAgent userAgent = 5;
+  optional WebInfo webInfo = 6;
+  optional ConnectType connectType = 12;
+  optional ConnectReason connectReason = 13;
+  optional DevicePairingRegistrationData devicePairingData = 19;
+  optional bool pull = 33;
+}
+
+message DeviceProps {
+  enum PlatformType {
+    UNKNOWN = 0;
+    CHROME = 1;
+    FIREFOX = 2;
+    IE = 3;
+    OPERA = 4;
+    SAFARI = 5;
+    EDGE = 6;
+    DESKTOP = 7;
+    IPAD = 8;
+    ANDROID_TABLET = 9;
+    OHANA = 10;
+    ALOHA = 11;
+    CATALINA = 12;
+    TCL_TV = 13;
+    IOS_PHONE = 14;
+    IOS_CATALYST = 15;
+    ANDROID_PHONE = 16;
+    ANDROID_AMBIGUOUS = 17;
+    WEAR_OS = 18;
+    AR_WRIST = 19;
+    AR_DEVICE = 20;
+    UWP = 21;
+    VR = 22;
+    CLOUD_API = 23;
+    SMARTGLASSES = 24;
+  }
+
+  message AppVersion {
+    optional uint32 primary = 1;
+    optional uint32 secondary = 2;
+    optional uint32 tertiary = 3;
+    optional uint32 quaternary = 4;
+    optional uint32 quinary = 5;
+  }
+
+  optional string os = 1;
+  optional AppVersion version = 2;
+  optional PlatformType platformType = 3;
+  optional bool requireFullSync = 4;
+}
