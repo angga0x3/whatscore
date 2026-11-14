@@ -22,14 +22,14 @@ implemented from first principles, documented in the open.
 
 ## Status
 
-> **Phase 2 — Binary protocol: in progress.** Transport, Noise, and the
-> binary node codec are implemented. The codec is proven against synthetic
-> vectors; the real WhatsApp token table and live interop are still pending.
-> Pairing and Signal are not started.
+> **Phase 3 — Pairing & authentication: in progress.** Transport, Noise, and
+> the binary codec are complete. The pairing QR payload is implemented; the
+> `pair-device`/`pair-success` exchange and credential provisioning are next.
+> The real token table, live interop, and Signal remain open.
 
 | Layer | Status |
 |-------|--------|
-| Protocol engine | Transport, Noise, and binary codec implemented; token table, pairing, Signal pending |
+| Protocol engine | Transport, Noise, binary, pairing QR payload; pair exchange, token table, Signal pending |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
 
@@ -84,8 +84,8 @@ Three layers, dependencies pointing downward only:
 |-------|-----------|--------|
 | 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
-| 2 | Binary protocol — node encode/decode | **In progress** — codec, vectors, fuzz done; token table and protobuf goldens pending |
-| 3 | Pairing & authentication — QR / pairing code | Planned |
+| 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
+| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR payload done; pair exchange and provisioning pending |
 | 4 | Messaging (Signal) — send/receive with E2E | Planned |
 | 5 | Public SDK — idiomatic Go client | Planned |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |
@@ -99,9 +99,8 @@ Three layers, dependencies pointing downward only:
 - [x] Fake-server integration test passes
 - [x] Protocol docs available
 
-v0.0.1 is not cut yet. "Binary node encode/decode works" means the codec is
-symmetric and deterministic over the synthetic golden fixtures; the real
-WhatsApp token table is still an open licensing question (technical
+v0.0.1 is not cut yet. The codec and protobuf messages round-trip, but the
+real WhatsApp token table is still an open licensing question (technical
 specification §10.2), and no compatibility with the live endpoint is claimed
 before manual interop is recorded as a protocol finding.
 

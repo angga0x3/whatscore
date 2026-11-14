@@ -197,8 +197,8 @@ length.
 question is still open (§10.2). `DefaultDictionary()` is empty, so every string encodes raw. Tests and
 fixtures use a small synthetic table.
 
-**Status.** Phase 2 implemented: codec, synthetic vectors, round-trip/fuzz tests. The real token table
-and protobuf golden-wire tests remain.
+**Status.** Phase 2 implemented: codec, synthetic vectors, fuzz tests, and a JSON dictionary loader
+(`LoadDictionary` / `LoadDictionaryFile`). The real token table remains open (§10.2).
 
 **Allowed deps.** stdlib only (`io`, `errors`, `fmt`, `sort`, `compress/zlib`).
 **Tests.** Byte-exact golden fixtures (§6); round-trip property tests; native fuzzing on `Decode`;
@@ -210,6 +210,7 @@ adversarial-input table (deep nesting, huge lists, invalid tag lengths).
 generator version pinned in the package doc; regeneration is a standalone PR touching only generated
 files. **Allowed deps.** `google.golang.org/protobuf`, `protocol/binary`. **Tests.** Generated
 round-trip per message type; golden wire bytes; unknown-field preservation.
+**Status.** Generated messages are covered by round-trip and field-number wire tests (PF-007, PF-009).
 
 ### 4.5 `protocol/pairing`
 
@@ -217,6 +218,8 @@ round-trip per message type; golden wire bytes; unknown-field preservation.
 handshake over the Noise channel, identity provisioning records; QR rendering is a caller concern.
 **Allowed deps.** stdlib, `protocol/noise`, `protocol/binary`, `protocol/protobuf`. **Tests.**
 Synthetic vectors only (§6 hard rule); payload round-trips; malformed-payload negatives.
+**Status.** QR payload (`QRPayload`, `Encode`, `ParseQR`) implemented per PF-015. The
+`<pair-device>`/`<pair-success>` exchange and credential provisioning remain.
 
 ### 4.6 `protocol/auth`
 
