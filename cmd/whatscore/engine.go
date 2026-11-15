@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/curve25519"
@@ -187,8 +188,8 @@ type sessionFactoryOptions struct {
 	codec binary.Codec
 }
 
-// sessionFactory builds one core/session per API session. It holds no
-// per-session state, so it is safe for concurrent use.
+// sessionFactory builds one core/session per API session and keeps the
+// session's inbound runtime for the REST send path.
 type sessionFactory struct {
 	credentials *corecredentials.Manager
 	vault       *storagecredentials.Vault
@@ -199,6 +200,32 @@ type sessionFactory struct {
 	rootPub     []byte
 	handler     session.FrameHandler
 	codec       binary.Codec
+
+	mu       sync.Mutex
+	runtimes map[string]*sessionRuntime
+}
+
+// runtimeFor returns the inbound runtime of a session, or nil. Entries appear
+// at session creation and live for the process.
+func (f *sessionFactory) runtimeFor(id string) *sessionRuntime {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.runtimes[id]
+}
+
+func (f *sessionFactory) setRuntime(id string, rt *sessionRuntime) {
+	f.mu.Lock()
+	f.runtimes[id] = rt
+	f.mu.Unlock()
+}
+
+// deliverText implements the REST text-delivery boundary.
+func (f *sessionFactory) deliverText(ctx context.Context, sessionID, to, text string) (string, error) {
+	rt := f.runtimeFor(sessionID)
+	if rt == nil {
+		return "", fmt.Errorf("cmd/whatscore: session %s is not running", sessionID)
+	}
+	return rt.DeliverText(ctx, to, text)
 }
 
 // newSessionFactory validates its dependencies once, so a misconfigured
@@ -248,6 +275,7 @@ func newSessionFactory(opts sessionFactoryOptions) (*sessionFactory, error) {
 		rootPub:     append([]byte(nil), rootPub...),
 		handler:     opts.handler,
 		codec:       opts.codec,
+		runtimes:    make(map[string]*sessionRuntime),
 	}, nil
 }
 
@@ -278,7 +306,7 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity.Public, keys.preKeys, keys.registrationID, signedIdentity, f.bus)
+	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, signedIdentity, f.bus)
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: runtime: %w", id, err)
 	}
@@ -296,6 +324,7 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 		return nil, fmt.Errorf("cmd/whatscore: build session %s: %w", id, err)
 	}
 	runtime.attach(sess)
+	f.setRuntime(id, runtime)
 	return sess, nil
 }
 

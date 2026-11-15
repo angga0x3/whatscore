@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/prekeys"
 	"github.com/angga0x3/whatscore/protocol/binary"
+	"github.com/angga0x3/whatscore/protocol/signal"
 )
 
 // ServerJID is the WhatsApp service address client-facing stanzas address.
@@ -46,8 +48,11 @@ type sessionRuntime struct {
 	// uploaded tracks the one-time prekey ids already pushed to the server,
 	// so reconnects upload only the delta instead of repeating the pool.
 	uploaded map[uint32]bool
-	// identity is this device's Signal identity public key.
-	identity [32]byte
+	// identity is this device's full Signal identity key pair: the receiver
+	// uses the public half, the sender signs with the private half.
+	identity signal.KeyPair
+	// sender delivers outbound text over the same write path.
+	sender *coremessaging.Sender
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
@@ -63,12 +68,12 @@ type sessionRuntime struct {
 
 // newSessionRuntime wires the receiver with the session's key material and
 // starts the bus loop that answers message events with delivery receipts.
-func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity [32]byte, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, bus *events.Bus) (*sessionRuntime, error) {
+func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, bus *events.Bus) (*sessionRuntime, error) {
 	receiver, err := coremessaging.NewReceiver(bus, id, coremessaging.WithReceiverCodec(codec))
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: receiver: %w", id, err)
 	}
-	receiver.SetReceiverIdentity(identity)
+	receiver.SetReceiverIdentity(identity.Public)
 	receiver.SetPreKeySource(preKeys)
 	receiver.SetPreKeyConsumer(func(id uint32) {
 		// The key is spent; removing it is what stops a replay.
@@ -95,6 +100,22 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 	// receipt asks the sender to re-encrypt with the inline keys.
 	receiver.SetDecryptFailureHandler(r.sendRetryReceipt)
 
+	// The sender shares the runtime's write path and the receiver's peer
+	// sessions: a session the receiver bootstrapped is one the sender can
+	// continue, and a ratchet advance on either side updates both.
+	sender, err := coremessaging.NewSender(&runtimeWrite{r: r}, coremessaging.WithCodec(codec))
+	if err != nil {
+		return nil, fmt.Errorf("cmd/whatscore: session %s: sender: %w", id, err)
+	}
+	sender.SetIdentityPair(identity)
+	sender.SetPreKeyBundleSource(&runtimeBundles{r: r})
+	r.sender = sender
+	receiver.SetSessionObserver(func(peer string, ps *coremessaging.PeerSession) {
+		if err := sender.SetPeer(peer, ps); err != nil {
+			logger.Warn("could not mirror peer session to the sender", "session", id, "peer", peer, "error", err)
+		}
+	})
+
 	// Delivery receipts follow the decrypt, not the stanza: the server keeps
 	// a message it has no receipt for, so a failed decrypt can be recovered
 	// instead of erased (the probe learned this the hard way).
@@ -117,6 +138,31 @@ func (r *sessionRuntime) attach(sess writeFrameSession) {
 // writeFrameSession is the slice of *session.Session the runtime needs.
 type writeFrameSession interface {
 	WriteFrame(ctx context.Context, frame []byte) error
+}
+
+// runtimeWrite adapts the runtime's write path to core/messaging.FrameWriter.
+// The writer is registered at attach time; before that, writes fail.
+type runtimeWrite struct {
+	r *sessionRuntime
+}
+
+func (w *runtimeWrite) WriteFrame(ctx context.Context, frame []byte) error {
+	if w.r == nil || w.r.write == nil {
+		return fmt.Errorf("runtime not attached to a session")
+	}
+	return w.r.write(ctx, frame)
+}
+
+// runtimeBundles serves peer prekey bundles from the runtime's iq path.
+type runtimeBundles struct {
+	r *sessionRuntime
+}
+
+func (b *runtimeBundles) PreKeyBundle(ctx context.Context, peer string) (*signal.PreKeyBundle, error) {
+	if b.r == nil {
+		return nil, fmt.Errorf("runtime not attached to a session")
+	}
+	return b.r.fetchPreKeyBundle(ctx, peer)
 }
 
 // receiptLoop answers every successfully decrypted message with a delivery
@@ -436,7 +482,7 @@ func (r *sessionRuntime) sendRetryReceipt(node *binary.Node) {
 		bundle := r.preKeys.Bundle(false)
 		children := []binary.Node{
 			{Tag: "type", Bytes: []byte{5}},
-			{Tag: "identity", Bytes: r.identity[:]},
+			{Tag: "identity", Bytes: r.identity.Public[:]},
 			{Tag: "key", Children: []binary.Node{
 				{Tag: "id", Bytes: []byte{byte(prekey.id >> 16), byte(prekey.id >> 8), byte(prekey.id)}},
 				{Tag: "value", Bytes: prekey.pub[:]},
@@ -485,4 +531,29 @@ func (r *sessionRuntime) newRequestID() string {
 		return strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	return strconv.FormatUint(uint64(buf[0])<<24|uint64(buf[1])<<16|uint64(buf[2])<<8|uint64(buf[3]), 10)
+}
+
+// DeliverText sends one text message. On an established session it continues
+// the ratchet; on first contact it fetches the peer's bundle and initiates a
+// prekey session, which is also installed for inbound decryption — the peer's
+// next message rides the same chain.
+func (r *sessionRuntime) DeliverText(ctx context.Context, to, text string) (string, error) {
+	if r.write == nil {
+		return "", fmt.Errorf("session %s: runtime not attached", r.id)
+	}
+	id, _, err := r.sender.SendEncryptedText(ctx, to, text)
+	if errors.Is(err, coremessaging.ErrNoSession) {
+		var peerSession *coremessaging.PeerSession
+		id, peerSession, err = r.sender.SendPreKeyText(ctx, to, text, r.registrationID)
+		if err == nil && peerSession != nil {
+			// The initiator holds the same chain the peer's replies will ride.
+			if err := r.receiver.SetReceiverPeer(to, peerSession); err != nil {
+				r.logger.Warn("could not install the initiator session for inbound", "session", r.id, "peer", to, "error", err)
+			}
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("session %s: deliver: %w", r.id, err)
+	}
+	return id, nil
 }

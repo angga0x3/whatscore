@@ -18,6 +18,26 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- The server delivers. POST /sessions/{id}/messages/text now sends over the
+  session connection — an established ratchet continues it, first contact
+  fetches the peer's prekey bundle and initiates — and stores the message
+  under the wire id, so receipts and events correlate with the REST entry.
+  Inbound messages land in the same store (GET /sessions/{id}/messages now
+  reflects what the session actually received), and without a deliverer the
+  route keeps its record-only behavior.
+- The server pairs over REST. POST /sessions/{id}/connect on an unpaired
+  session runs the whole exchange inside one Connect: registration payload →
+  QR codes streamed on GET /sessions/{id}/qr → scan → pair-success verified
+  and signed (pair-device-sign written, PF-073) → credentials persisted
+  (vault-sealed) → a fresh connection logs in (PF-077's two-connection shape)
+  → CONNECTED.
+- A connected server session finally hears: the factory passes a session
+  runtime as the FrameHandler — decoded stanzas, keepalive answers, the
+  offline batch answer (PF-087), the receiver fed with the session's key
+  material, retry receipts with inline keys on failures, delivery receipts
+  after successful decrypts, and the post-connect sequence (active, presence,
+  prekey pool top-up). core/session discards frames by design; without this
+  handler a connected session heard nothing.
 - A message this device cannot open is not a dead end. The receiver exposes
   `SetDecryptFailureHandler`, and the probe answers every failure with the
   retry receipt whatsmeow sends (receipt `type="retry"` + `<retry count id t

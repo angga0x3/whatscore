@@ -282,7 +282,7 @@ paths:
               $ref: "#/components/schemas/SendTextRequest"
       responses:
         "202":
-          description: Message queued (status QUEUED)
+          description: Message recorded and, when a deliverer is configured for this deployment, delivered over the session connection (status SENT, wire_id set)
           content:
             application/json:
               schema:

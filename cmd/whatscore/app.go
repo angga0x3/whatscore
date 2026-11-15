@@ -116,6 +116,16 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 	// routes stream them instead of answering 501.
 	apiHandler.SetBus(bus)
 
+	// Inbound and outbound traffic lands in the message store, and text
+	// delivers over the session connection: the REST surface is a client,
+	// not a ledger of intents.
+	messages := api.NewMemoryMessageStore()
+	apiHandler.SetMessages(messages)
+	apiHandler.SetTextDeliverer(textDelivererFunc(func(ctx context.Context, sessionID, to, text string) (string, error) {
+		return factory.deliverText(ctx, sessionID, to, text)
+	}))
+	go appendInboundMessages(ctx, bus, messages, logger)
+
 	a := &App{
 		cfg:      cfg,
 		logger:   logger,
@@ -142,6 +152,44 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 	}
 
 	return a, nil
+}
+
+// textDelivererFunc adapts the factory's delivery to the API boundary.
+type textDelivererFunc func(ctx context.Context, sessionID, to, text string) (string, error)
+
+func (f textDelivererFunc) DeliverText(ctx context.Context, sessionID, to, text string) (string, error) {
+	return f(ctx, sessionID, to, text)
+}
+
+// appendInboundMessages stores every decrypted inbound message, so
+// GET /sessions/{id}/messages reflects what the session actually received.
+func appendInboundMessages(ctx context.Context, bus *events.Bus, store api.MessageAppender, logger *slog.Logger) {
+	sub := bus.Subscribe()
+	defer sub.Close()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-sub.C:
+			if !ok {
+				return
+			}
+			if ev.Type != events.TypeMessage || ev.Message == nil {
+				continue
+			}
+			if _, err := store.Append(ctx, api.MessageView{
+				ID:        ev.Message.ID,
+				SessionID: ev.SessionID,
+				Chat:      ev.Message.Chat,
+				Sender:    ev.Message.Sender,
+				Direction: api.DirectionInbound,
+				Type:      api.MessageTypeText,
+				Text:      ev.Message.Text,
+			}); err != nil {
+				logger.Warn("could not store inbound message", "session", ev.SessionID, "message", ev.Message.ID, "error", err)
+			}
+		}
+	}
 }
 
 // Run serves HTTP until ctx is cancelled (SIGINT/SIGTERM), then drains.

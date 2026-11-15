@@ -22,6 +22,8 @@ type Handler struct {
 	// messages is optional: when it is nil the messaging routes are not
 	// mounted and /api/v1 keeps answering 501 for them.
 	messages MessageLister
+	// textDeliverer is the optional send boundary; nil records only.
+	textDeliverer TextDeliverer
 	// media is optional: when it is nil the media routes are not mounted and
 	// /api/v1 keeps answering 501 for them.
 	media MediaStore
@@ -75,6 +77,12 @@ func (h *Handler) SetMessages(messages MessageLister) {
 // SetMedia installs the media store after construction. Mount must be called
 // afterwards for the media routes to be registered. A nil store leaves the
 // routes unmounted, so they keep answering 501.
+// SetTextDeliverer installs the send boundary. Nil keeps the record-only
+// behavior.
+func (h *Handler) SetTextDeliverer(d TextDeliverer) {
+	h.textDeliverer = d
+}
+
 func (h *Handler) SetMedia(store MediaStore) {
 	h.media = store
 }

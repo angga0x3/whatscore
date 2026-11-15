@@ -89,6 +89,14 @@ type MessageLister interface {
 	ListMessages(ctx context.Context, sessionID string, limit int, cursor string) ([]MessageView, string, error)
 }
 
+// TextDeliverer is the optional send boundary: when set, POST /messages/text
+// delivers over the session connection and returns the wire message id;
+// when nil, the route records only and answers "queued" (the pre-delivery
+// behavior).
+type TextDeliverer interface {
+	DeliverText(ctx context.Context, sessionID, to, text string) (string, error)
+}
+
 // MessageGetter is the optional single-message read boundary. Handlers answer
 // 501 when the configured MessageLister does not implement it.
 type MessageGetter interface {
@@ -273,6 +281,9 @@ type sendTextRequest struct {
 type queuedMessage struct {
 	MessageID string `json:"message_id"`
 	Status    string `json:"status"`
+	// WireID is the id the message carried on the WhatsApp wire; delivery
+	// receipts and events reference it. Empty when the store did not deliver.
+	WireID string `json:"wire_id,omitempty"`
 }
 
 type messageListResponse struct {
@@ -375,7 +386,24 @@ func (h *Handler) sendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delivery happens before the record: the stored id IS the wire id, so
+	// receipts and events correlate with the REST entry. When no deliverer is
+	// configured, the route keeps its record-only behavior.
+	status := "queued"
+	wireID := ""
+	if h.textDeliverer != nil {
+		id, err := h.textDeliverer.DeliverText(r.Context(), sessionID, req.To, req.Text)
+		if err != nil {
+			discard()
+			writeError(w, http.StatusBadGateway, "delivery_failed", err.Error())
+			return
+		}
+		wireID = id
+		status = "sent"
+	}
+
 	msg, err := appender.Append(r.Context(), MessageView{
+		ID:        wireID,
 		SessionID: sessionID,
 		Chat:      req.To,
 		Direction: DirectionOutbound,
@@ -388,7 +416,7 @@ func (h *Handler) sendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := json.Marshal(queuedMessage{MessageID: msg.ID, Status: "queued"})
+	body, err := json.Marshal(queuedMessage{MessageID: msg.ID, Status: status, WireID: wireID})
 	if err != nil {
 		// Marshalling two strings cannot fail in practice. The message is
 		// already stored, so keep the key burned rather than risk a retry
