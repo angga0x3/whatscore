@@ -1,6 +1,7 @@
-// Package auth builds and parses the post-handshake ClientPayload used to
-// register a companion device. Only the registration subset is covered
-// (PF-020..PF-025); login payloads and registration crypto are out of scope.
+// Package auth builds and parses the post-handshake ClientPayload: the
+// registration form a companion device sends while pairing (PF-020..PF-025)
+// and the login form a paired device sends when reconnecting (PF-026,
+// PF-027). Registration crypto is out of scope.
 package auth
 
 import (
@@ -139,24 +140,8 @@ func BuildClientPayload(in Input) ([]byte, error) {
 
 	passive, pull := false, false
 	payload := &protobuf.ClientPayload{
-		Passive: &passive,
-		UserAgent: &protobuf.ClientPayload_UserAgent{
-			Platform:       in.UserAgent.Platform.Enum(),
-			ReleaseChannel: in.UserAgent.ReleaseChannel.Enum(),
-			AppVersion: &protobuf.ClientPayload_UserAgent_AppVersion{
-				Primary:   proto.Uint32(in.Version.Primary),
-				Secondary: proto.Uint32(in.Version.Secondary),
-				Tertiary:  proto.Uint32(in.Version.Tertiary),
-			},
-			Mcc:                         proto.String(in.UserAgent.MCC),
-			Mnc:                         proto.String(in.UserAgent.MNC),
-			OsVersion:                   proto.String(in.UserAgent.OSVersion),
-			Manufacturer:                proto.String(in.UserAgent.Manufacturer),
-			Device:                      proto.String(in.UserAgent.Device),
-			OsBuildNumber:               proto.String(in.UserAgent.OSBuildNumber),
-			LocaleLanguageIso6391:       proto.String(in.UserAgent.LocaleLanguage),
-			LocaleCountryIso31661Alpha2: proto.String(in.UserAgent.LocaleCountry),
-		},
+		Passive:   &passive,
+		UserAgent: newUserAgentProto(in.UserAgent, in.Version),
 		WebInfo: &protobuf.ClientPayload_WebInfo{
 			WebSubPlatform: in.WebInfo.SubPlatform.Enum(),
 		},
@@ -191,61 +176,27 @@ func ParseClientPayload(raw []byte) (*ClientPayload, error) {
 	if err := proto.Unmarshal(raw, &payload); err != nil {
 		return nil, fmt.Errorf("%w: unmarshaling: %w", ErrInvalidClientPayload, err)
 	}
+	// A paired-device login carries username=1/device=18 and no
+	// devicePairingData=19; reject it here rather than reporting a missing
+	// registration block (PF-027).
+	if payload.Username != nil || payload.Device != nil {
+		return nil, fmt.Errorf("%w: login payload has no devicePairingData", ErrInvalidClientPayload)
+	}
 
-	userAgent := payload.GetUserAgent()
-	if userAgent == nil {
-		return nil, fmt.Errorf("%w: missing userAgent", ErrInvalidUserAgent)
-	}
-	if userAgent.Platform == nil || userAgent.AppVersion == nil || userAgent.ReleaseChannel == nil {
-		return nil, fmt.Errorf("%w: incomplete userAgent", ErrInvalidUserAgent)
-	}
-	ua := UserAgent{
-		Platform:       userAgent.GetPlatform(),
-		ReleaseChannel: userAgent.GetReleaseChannel(),
-		MCC:            userAgent.GetMcc(),
-		MNC:            userAgent.GetMnc(),
-		OSVersion:      userAgent.GetOsVersion(),
-		Manufacturer:   userAgent.GetManufacturer(),
-		Device:         userAgent.GetDevice(),
-		OSBuildNumber:  userAgent.GetOsBuildNumber(),
-		LocaleLanguage: userAgent.GetLocaleLanguageIso6391(),
-		LocaleCountry:  userAgent.GetLocaleCountryIso31661Alpha2(),
-	}
-	if err := validateUserAgent(ua); err != nil {
+	ua, version, err := parseEnvelope(&payload)
+	if err != nil {
 		return nil, err
 	}
-
 	if payload.Passive != nil && payload.GetPassive() {
 		return nil, fmt.Errorf("%w: registration payload is passive", ErrInvalidClientPayload)
 	}
 	if payload.Pull != nil && payload.GetPull() {
 		return nil, fmt.Errorf("%w: registration payload requests pull", ErrInvalidClientPayload)
 	}
-	if payload.ConnectType == nil || payload.ConnectReason == nil {
-		return nil, fmt.Errorf("%w: missing connection metadata", ErrInvalidClientPayload)
-	}
-	if !knownConnectType(payload.GetConnectType()) {
-		return nil, fmt.Errorf("%w: unknown connect type %d", ErrInvalidClientPayload, payload.GetConnectType())
-	}
-	if !knownConnectReason(payload.GetConnectReason()) {
-		return nil, fmt.Errorf("%w: unknown connect reason %d", ErrInvalidClientPayload, payload.GetConnectReason())
-	}
-	if payload.WebInfo == nil || payload.GetWebInfo().WebSubPlatform == nil {
-		return nil, fmt.Errorf("%w: missing webInfo", ErrInvalidClientPayload)
-	}
-	if !knownWebSubPlatform(payload.GetWebInfo().GetWebSubPlatform()) {
-		return nil, fmt.Errorf("%w: unknown web sub-platform %d",
-			ErrInvalidClientPayload, payload.GetWebInfo().GetWebSubPlatform())
-	}
 
 	registration, err := parseRegistration(payload.GetDevicePairingData())
 	if err != nil {
 		return nil, err
-	}
-	version := Version{
-		Primary:   userAgent.GetAppVersion().GetPrimary(),
-		Secondary: userAgent.GetAppVersion().GetSecondary(),
-		Tertiary:  userAgent.GetAppVersion().GetTertiary(),
 	}
 	if version.Primary == 0 {
 		return nil, fmt.Errorf("%w: client version primary component is zero", ErrInvalidUserAgent)
@@ -279,6 +230,78 @@ func ParseClientPayload(raw []byte) (*ClientPayload, error) {
 type parsedRegistration struct {
 	Registration
 	deviceProps []byte
+}
+
+// newUserAgentProto renders the user agent and app version (PF-021).
+func newUserAgentProto(ua UserAgent, version Version) *protobuf.ClientPayload_UserAgent {
+	return &protobuf.ClientPayload_UserAgent{
+		Platform:       ua.Platform.Enum(),
+		ReleaseChannel: ua.ReleaseChannel.Enum(),
+		AppVersion: &protobuf.ClientPayload_UserAgent_AppVersion{
+			Primary:   proto.Uint32(version.Primary),
+			Secondary: proto.Uint32(version.Secondary),
+			Tertiary:  proto.Uint32(version.Tertiary),
+		},
+		Mcc:                         proto.String(ua.MCC),
+		Mnc:                         proto.String(ua.MNC),
+		OsVersion:                   proto.String(ua.OSVersion),
+		Manufacturer:                proto.String(ua.Manufacturer),
+		Device:                      proto.String(ua.Device),
+		OsBuildNumber:               proto.String(ua.OSBuildNumber),
+		LocaleLanguageIso6391:       proto.String(ua.LocaleLanguage),
+		LocaleCountryIso31661Alpha2: proto.String(ua.LocaleCountry),
+	}
+}
+
+// parseEnvelope validates the fields shared by the registration and login
+// forms: user agent (PF-021), connection metadata, and WebInfo (PF-022).
+func parseEnvelope(payload *protobuf.ClientPayload) (UserAgent, Version, error) {
+	userAgent := payload.GetUserAgent()
+	if userAgent == nil {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: missing userAgent", ErrInvalidUserAgent)
+	}
+	if userAgent.Platform == nil || userAgent.AppVersion == nil || userAgent.ReleaseChannel == nil {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: incomplete userAgent", ErrInvalidUserAgent)
+	}
+	ua := UserAgent{
+		Platform:       userAgent.GetPlatform(),
+		ReleaseChannel: userAgent.GetReleaseChannel(),
+		MCC:            userAgent.GetMcc(),
+		MNC:            userAgent.GetMnc(),
+		OSVersion:      userAgent.GetOsVersion(),
+		Manufacturer:   userAgent.GetManufacturer(),
+		Device:         userAgent.GetDevice(),
+		OSBuildNumber:  userAgent.GetOsBuildNumber(),
+		LocaleLanguage: userAgent.GetLocaleLanguageIso6391(),
+		LocaleCountry:  userAgent.GetLocaleCountryIso31661Alpha2(),
+	}
+	if err := validateUserAgent(ua); err != nil {
+		return UserAgent{}, Version{}, err
+	}
+	if payload.ConnectType == nil || payload.ConnectReason == nil {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: missing connection metadata", ErrInvalidClientPayload)
+	}
+	if !knownConnectType(payload.GetConnectType()) {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: unknown connect type %d",
+			ErrInvalidClientPayload, payload.GetConnectType())
+	}
+	if !knownConnectReason(payload.GetConnectReason()) {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: unknown connect reason %d",
+			ErrInvalidClientPayload, payload.GetConnectReason())
+	}
+	if payload.WebInfo == nil || payload.GetWebInfo().WebSubPlatform == nil {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: missing webInfo", ErrInvalidClientPayload)
+	}
+	if !knownWebSubPlatform(payload.GetWebInfo().GetWebSubPlatform()) {
+		return UserAgent{}, Version{}, fmt.Errorf("%w: unknown web sub-platform %d",
+			ErrInvalidClientPayload, payload.GetWebInfo().GetWebSubPlatform())
+	}
+	appVersion := userAgent.GetAppVersion()
+	return ua, Version{
+		Primary:   appVersion.GetPrimary(),
+		Secondary: appVersion.GetSecondary(),
+		Tertiary:  appVersion.GetTertiary(),
+	}, nil
 }
 
 func parseRegistration(raw *protobuf.ClientPayload_DevicePairingRegistrationData) (parsedRegistration, error) {

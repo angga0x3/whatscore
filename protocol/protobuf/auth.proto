@@ -1,12 +1,13 @@
 // ClientPayload and DeviceProps subset used for companion-device
-// registration. Field numbers follow docs/protocol/auth.md (PF-020..PF-025),
-// extracted from reference study of whatsmeow
-// proto/waWa6/WAWebProtobufsWa6.proto and
+// registration and paired-device login. Field numbers follow
+// docs/protocol/auth.md (PF-020..PF-027), extracted from reference study of
+// whatsmeow proto/waWa6/WAWebProtobufsWa6.proto and
 // proto/waCompanionReg/WACompanionReg.proto on 2026-11-15.
 //
-// Only the registration subset WhatsCore emits is defined. Fields outside
-// this subset (login fields, product, history-sync config) are intentionally
-// omitted; never renumber the fields that are present.
+// Only the subset WhatsCore emits is defined: the registration form
+// (devicePairingData) and the login form (username, device, lidDbMigrated).
+// Fields outside this subset (product, lc, history-sync config) are
+// intentionally omitted; never renumber the fields that are present.
 syntax = "proto2";
 
 package whatscore.protocol.protobuf;
@@ -140,13 +141,16 @@ message ClientPayload {
     optional bytes deviceProps = 8;
   }
 
+  optional uint64 username = 1;
   optional bool passive = 3;
   optional UserAgent userAgent = 5;
   optional WebInfo webInfo = 6;
   optional ConnectType connectType = 12;
   optional ConnectReason connectReason = 13;
+  optional uint32 device = 18;
   optional DevicePairingRegistrationData devicePairingData = 19;
   optional bool pull = 33;
+  optional bool lidDbMigrated = 41;
 }
 
 message DeviceProps {

@@ -4,11 +4,12 @@ Findings for the post-handshake `ClientPayload` that a companion device sends
 inside the Noise `clientFinish` message (PF-007), plus the `DeviceProps`
 message it carries. Extracted from read-only reference study of whatsmeow
 `store/clientpayload.go`, `proto/waWa6/WAWebProtobufsWa6.proto`, and
-`proto/waCompanionReg/WACompanionReg.proto` on 2026-11-15. Only the
-registration subset is covered; ADVSignedDeviceIdentity signing and other
-registration crypto are out of scope. (The reference repository names the
-schema files `WAWebProtobufsWa6.proto` and `WACompanionReg.proto`; the older
-paths `Wa6.proto` and `CompanionReg.proto` no longer resolve.)
+`proto/waCompanionReg/WACompanionReg.proto` on 2026-11-15. The registration
+form (PF-020…PF-025) and the paired-device login form (PF-026, PF-027) are
+both covered; ADVSignedDeviceIdentity signing and other registration crypto
+are out of scope. (The reference repository names the schema files
+`WAWebProtobufsWa6.proto` and `WACompanionReg.proto`; the older paths
+`Wa6.proto` and `CompanionReg.proto` no longer resolve.)
 
 ## PF-020: Registration ClientPayload envelope
 
@@ -98,13 +99,44 @@ paths `Wa6.proto` and `CompanionReg.proto` no longer resolve.)
 | **Status** | Verified-by-test |
 | **Proving test** | `protocol/auth` (round-trip, rejection of passive/pull and missing registration data) |
 | **Related findings** | PF-007, PF-020, PF-023 |
-| **Notes** | whatsmeow `store/clientpayload.go` selects `getRegistrationPayload` when no JID is stored and `getLoginPayload` afterwards: registration sets `DevicePairingData`, `passive=false`, `pull=false`; login sets `username` to the user part, `device` to the device ID, `passive=true`, `pull=true`, `lidDbMigrated=true`. The registration payload is the plaintext encrypted into Noise `msg3.payload` (PF-007). WhatsCore currently implements the registration form only: `ParseClientPayload` rejects `passive=true`/`pull=true`, a missing `devicePairingData`, and a missing connection/WebInfo envelope. Login payload support is future work. |
+| **Notes** | whatsmeow `store/clientpayload.go` selects `getRegistrationPayload` when no JID is stored and `getLoginPayload` afterwards: registration sets `DevicePairingData`, `passive=false`, `pull=false`; login sets `username` to the user part, `device` to the device ID, `passive=true`, `pull=true`, `lidDbMigrated=true`. The registration payload is the plaintext encrypted into Noise `msg3.payload` (PF-007). WhatsCore implements both forms: `ParseClientPayload` rejects `passive=true`/`pull=true`, a missing `devicePairingData`, and a missing connection/WebInfo envelope; the login form is covered by PF-026 and the cross-form discrimination by PF-027. |
+
+## PF-026: Login ClientPayload envelope
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-026 |
+| **Title** | A paired-device login `ClientPayload` sets `username=1`, `passive=3`, `userAgent=5`, `webInfo=6`, `connectType=12`, `connectReason=13`, `device=18`, `pull=33` and `lidDbMigrated=41`; `devicePairingData=19` is absent |
+| **Layer** | auth |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/auth` (`TestBuildParseLoginRoundTrip`, `TestLoginWireFieldPresence`, `TestParseLoginMalformed`) |
+| **Related findings** | PF-007, PF-020, PF-021, PF-022, PF-025, PF-027 |
+| **Notes** | Field numbers verified against whatsmeow `proto/waWa6/WAWebProtobufsWa6.proto` (`ClientPayload`: `optional uint64 username = 1`, `optional uint32 device = 18`, `optional bool lidDbMigrated = 41`, alongside `passive=3`, `userAgent=5`, `webInfo=6`, `connectType=12`, `connectReason=13`, `pull=33`). Construction verified against whatsmeow `store/clientpayload.go` (`getLoginPayload`), which starts from `BaseClientPayload` and sets `username` to `device.ID.UserInt()` (the user part of the account JID), `device` to `device.ID.Device`, `passive=true`, `pull=true`, `lidDbMigrated=true`. `BaseClientPayload` supplies `userAgent`, `webInfo`, `connectType=WIFI_UNKNOWN=1`, and `connectReason=USER_ACTIVATED=1`. The reference also sets `lc=24` to `1` when unset; WhatsCore does not model field 24 and omits it, so server acceptance without `lc` is unverified. `device` is a `uint16` in the reference (`types.JID.Device`), so WhatsCore rejects IDs above `0xFFFF`; `username` is a `uint64` and zero is rejected. |
+
+## PF-027: Registration versus login discrimination
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-027 |
+| **Title** | The two `ClientPayload` forms are discriminated by the presence of `devicePairingData=19` (registration) versus `username=1`/`device=18` (login); each parser rejects the other form |
+| **Layer** | auth |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/auth` (`TestRegistrationLoginMutualRejection`, `TestParseLoginMalformed`, `TestParseMalformed`) |
+| **Related findings** | PF-020, PF-025, PF-026 |
+| **Notes** | whatsmeow `store/clientpayload.go` (`Device.GetClientPayload`) selects `getLoginPayload` when a JID is stored and `getRegistrationPayload` otherwise, so the two forms never carry each other's discriminator fields: registration sets `devicePairingData=19` with `passive=false`/`pull=false` and no `username`/`device`; login sets `username=1`/`device=18` with `passive=true`/`pull=true`/`lidDbMigrated=41` and no `devicePairingData`. WhatsCore enforces this in both directions: `ParseClientPayload` rejects any payload carrying `username` or `device` as a login form, and `ParseLoginPayload` rejects any payload carrying `devicePairingData` or lacking `username`/`device`. A payload carrying both discriminators is rejected by both parsers as ambiguous; parsing fails closed rather than guessing (§8). |
 
 ---
 
 Status: registration `ClientPayload` construction/parsing and its embedded
-`DeviceProps` are implemented and proven with synthetic key material
+`DeviceProps` are implemented, and login `ClientPayload` construction/parsing
+is implemented alongside it, proven with synthetic key material
 (`protocol/auth`) and wire field-number tests (`protocol/protobuf`). No live
-registration or pairing run is recorded, so findings stay Probable.
-ADVSignedDeviceIdentity signing, credential provisioning, and login-form
-payloads remain out of scope.
+registration, pairing, or login run is recorded, so findings stay Probable.
+ADVSignedDeviceIdentity signing and credential provisioning remain out of
+scope.
