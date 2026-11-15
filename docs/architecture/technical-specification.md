@@ -369,10 +369,10 @@ Backends: `storage/sqlite` (`modernc.org/sqlite`, SDK/development default) and `
 — no crypto structures leak into SQL schemas.
 
 **Status.** Interfaces and PostgreSQL migrations exist; `storage/envelope` provides the envelope
-cipher, `storage/credentials` the encrypting vault plus an in-memory backend, and
-`storage/postgres.CredentialBackend` the `credentials` table. The Signal-addressed stores and the
-engine credential manager land with the core/session work; until then `server/*` has nothing to
-persist.
+cipher, `storage/credentials` the encrypting vault plus an in-memory backend,
+`storage/postgres.CredentialBackend` the `credentials` table, and `core/credentials` the versioned
+record encoding and session-keyed manager. The Signal-addressed stores land with the core/session
+work; until then `server/*` has nothing to persist.
 
 ## 5. Dependency policy
 

@@ -23,16 +23,17 @@ implemented from first principles, documented in the open.
 ## Status
 
 > **Phases 3–5 — in progress.** Phase 3 has QR payloads, stanza parsers,
-> device-identity authentication, the credential vault, and registration
-> payloads; device-signature generation and manager wiring remain. Phase 4 has
-> the messaging stanza layer and the media envelope; Signal and sync remain.
-> Phase 5 has the event bus and session actor; the SDK facade remains. The real
-> token table and live interop are still open.
+> device-identity authentication, the credential vault, registration
+> payloads, and the credential manager; device-signature generation (ADR
+> 0001) remains. Phase 4 has the messaging stanza layer and the media
+> envelope; Signal and sync remain. Phase 5 has the event bus and session
+> actor; the SDK facade remains. The real token table and live interop are
+> still open.
 
 | Layer | Status |
 |-------|--------|
 | Protocol engine | Transport, Noise, binary, pairing + auth payloads, messaging stanzas, media envelope; device signature, Signal/sync, token table pending |
-| Application core | `core/events` + `core/session` implemented; SDK facade and orchestration pending |
+| Application core | `core/events`, `core/session`, `core/credentials`; SDK facade and orchestration pending |
 | Storage | Interfaces + migrations; `storage/envelope`, `storage/credentials` vault, PostgreSQL credential backend |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
@@ -89,7 +90,7 @@ Three layers, dependencies pointing downward only:
 | 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
 | 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
-| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, auth payloads, credential vault done; device signature/manager pending |
+| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, auth payloads, credential vault, credential manager done; device signature (ADR 0001) pending |
 | 4 | Messaging (Signal) — send/receive with E2E | **In progress** — messaging stanzas + media envelope done; Signal/sync pending |
 | 5 | Public SDK — idiomatic Go client | **In progress** — event bus + session actor done; SDK facade pending |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |

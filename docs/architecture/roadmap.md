@@ -16,8 +16,8 @@ as workstreams land.
 | Auth | registration ClientPayload + DeviceProps | login payload, challenge handling |
 | Messaging | JID, text `<message>`, `<receipt>` | encrypted `<enc>` carrier (PF-034) |
 | Media | HKDF + CBC/HMAC byte envelope | streaming, sidecar hashes |
-| Storage | envelope, credential vault, PostgreSQL backend | Signal-addressed stores, engine manager |
-| Core | event bus, single-actor session runtime | SDK facade, orchestration |
+| Storage | envelope, credential vault, PostgreSQL backend, `core/credentials` manager | Signal-addressed stores |
+| Core | event bus, single-actor session runtime, credential manager | SDK facade, orchestration |
 | SDK / API | — | everything |
 
 ## Execution log
@@ -28,6 +28,7 @@ as workstreams land.
 | 2026-11-15 | Messaging | `protocol/messaging`, PF-030…035 (PF-034 deviation documented) |
 | 2026-11-15 | Media | `protocol/media`, PF-040…045 |
 | 2026-11-15 | Core | `core/events`, `core/session` |
+| 2026-11-15 | Credential manager | `core/credentials` + ADR 0001 |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
@@ -39,9 +40,8 @@ Depends on: pairing stanzas, credential vault.
 
 1. Device-signature generation (`0x06 0x01` prefix) for `pair-device-sign`.
    Blocked on a crypto decision: XEdDSA signing is not in the standard
-   library. Options: (a) a small reviewed XEdDSA signer over `ed25519`,
-   (b) an existing pure-Go Signal implementation under the dependency policy,
-   (c) defer and keep pairing read-only. Decision owner: maintainer.
+   library. See
+   [decisions/0001-xeddsa-signing.md](decisions/0001-xeddsa-signing.md).
 2. Credential manager: persist `DeviceIdentity`, noise key, identity key, adv
    secret through `storage/credentials.Vault`; all-or-nothing write.
 3. Fake-server pairing test: pair-device → QR → pair-success → verify →
