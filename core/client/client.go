@@ -296,6 +296,12 @@ func (c *Client) SetReceiveSignalIdentity(identity [32]byte) {
 	c.receiver.SetReceiverIdentity(identity)
 }
 
+// SetPreKeySource installs the prekey provider used to bootstrap inbound
+// prekey messages.
+func (c *Client) SetPreKeySource(source coremessaging.PreKeySource) {
+	c.receiver.SetPreKeySource(source)
+}
+
 // SendReceipt writes a delivery/read/played receipt for a message id.
 func (c *Client) SendReceipt(ctx context.Context, to, id, receiptType string) error {
 	return c.sender.SendReceipt(ctx, to, id, receiptType)
