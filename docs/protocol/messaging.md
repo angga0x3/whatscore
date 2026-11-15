@@ -148,3 +148,24 @@ deliberate deviation: the reference wire carries protobuf inside `<enc>`,
 while this package builds the plaintext `<body>` carrier until
 `protocol/signal` exists. Live interop and the `<enc>` wrapping reopen
 PF-033/PF-034 when they land.
+
+## PF-036: Encrypted payload envelope
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-036 |
+| **Title** | A text message may carry `<enc v="2" type="msg|pkmsg|skmsg">` with Signal ciphertext bytes instead of a plaintext `<body>` child |
+| **Layer** | messaging |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/messaging` (build/parse round-trip, negative table) |
+| **Related findings** | PF-033, PF-034 |
+| **Notes** | whatsmeow `send.go` builds `<message id type to><enc v="2" type="msg">ciphertext</enc></message>`; the carrier is `pkmsg` for a PreKeySignalMessage, `msg` for an established session, and `skmsg` for group sender-key messages. WhatsCore implements the envelope only; choosing the carrier and producing the ciphertext belongs to `core/messaging`. |
+
+---
+
+Status update: the encrypted text carrier is implemented as a stanza shape;
+plaintext `<body>` remains for unencrypted runs until core wiring lands.
+

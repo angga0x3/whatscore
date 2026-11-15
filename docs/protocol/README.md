@@ -57,7 +57,7 @@ Confidence and Status are deliberately separate axes:
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
-  PF-020…PF-025, PF-030…PF-035, PF-040…PF-045, PF-057…PF-059,
+  PF-020…PF-025, PF-030…PF-036, PF-040…PF-045, PF-057…PF-059,
   PF-064).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
@@ -113,6 +113,7 @@ Confidence and Status are deliberately separate axes:
 | PF-033 | messaging | `<message>` envelope | Probable | Verified-by-test | `protocol/messaging` (stanza round-trip) |
 | PF-034 | messaging | Text payload carrier | Probable | Verified-by-test | `protocol/messaging` (stanza round-trip) |
 | PF-035 | messaging | `<receipt>` stanza | Probable | Verified-by-test | `protocol/messaging` (stanza round-trip) |
+| PF-036 | messaging | Encrypted payload envelope | Probable | Verified-by-test | `protocol/messaging` (enc round-trip) |
 | PF-040 | media | Media key expansion and key layout | Probable | Verified-by-test | `protocol/media` (independent vectors) |
 | PF-041 | media | Media-type HKDF info strings | Probable | Verified-by-test | `protocol/media` (per-type vectors) |
 | PF-042 | media | AES-256-CBC with always-on PKCS#7 | Probable | Verified-by-test | `protocol/media` (ciphertext vectors) |

@@ -251,9 +251,10 @@ chain/skipped-key limits (`MarshalBinary`/`ParseState`). Prekey generation/rotat
 normalization, wrapping Signal ciphertext in stanzas. Knows stanza shapes; does not ratchet.
 **Allowed deps.** stdlib, `protocol/binary`, `protocol/protobuf`, `protocol/signal` (ciphertext
 in/out only). **Tests.** Stanza golden fixtures; JID normalization tables; build-parse round-trips.
-**Status.** JID parsing/rendering/normalization, the `<message type="text">` envelope, and
-`<receipt>` are implemented (PF-030…035). The plaintext `<body>` carrier is a scoped deviation
-(PF-034); Signal `<enc>` wrapping lands with `protocol/signal`.
+**Status.** JID parsing/rendering/normalization, the `<message type="text">` envelope, `<receipt>`,
+and the `<enc>` ciphertext carrier are implemented (PF-030…036). Choosing the carrier and producing
+ciphertext from a stored session belongs to `core/messaging`; plaintext `<body>` remains for
+unencrypted runs.
 
 ### 4.9 `protocol/sync`
 
@@ -384,9 +385,9 @@ Backends: `storage/sqlite` (`modernc.org/sqlite`, SDK/development default) and `
 
 **Status.** Interfaces and PostgreSQL migrations exist; `storage/envelope` provides the envelope
 cipher, `storage/credentials` the encrypting vault plus an in-memory backend,
-`storage/postgres.CredentialBackend` the `credentials` table, and `core/credentials` the versioned
-record encoding and session-keyed manager. The Signal-addressed stores land with the core/session
-work; until then `server/*` has nothing to persist.
+`storage/postgres.CredentialBackend` the `credentials` table, `core/credentials` the versioned
+device-record manager, and `core/signalsession` the per-peer ratchet-state manager. Signal-addressed
+stores for the remaining record types land with the core work.
 
 ## 5. Dependency policy
 

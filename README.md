@@ -28,15 +28,16 @@ implemented from first principles, documented in the open.
 > 0001) remains. Phase 4 has the messaging stanza layer, plaintext text send
 > inbound text events, and receipts, and the media envelope; Signal X3DH is
 > implemented, along with the key schedule, ratchet state machine, message
-> framing/encryption, prekey bootstrap, and versioned ratchet-state persistence
-> (signing/store wiring pending); sync remains.
+> framing/encryption, prekey bootstrap, versioned ratchet-state persistence, and
+> an encrypted per-peer session store (signing and send-path wiring pending);
+> sync remains.
 > Phase 5 has the event bus, session actor, credentials, and SDK facade;
 > orchestration remains. The real token table and live interop are still open.
 
 | Layer | Status |
 |-------|--------|
 | Protocol engine | Transport, Noise, binary, pairing + auth payloads, messaging stanzas, media envelope; device signature, Signal/sync, token table pending |
-| Application core | `core/events`, `core/session`, `core/credentials`, `core/messaging`, `core/client` (plaintext send); inbound events/orchestration pending |
+| Application core | `core/events`, `core/session`, `core/credentials`, `core/signalsession`, `core/messaging`, `core/client` (plaintext send); Signal send path pending |
 | Storage | Interfaces + migrations; `storage/envelope`, `storage/credentials` vault, PostgreSQL credential backend |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
@@ -94,7 +95,7 @@ Three layers, dependencies pointing downward only:
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
 | 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
 | 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, auth payloads, credential vault, credential manager done; device signature (ADR 0001) pending |
-| 4 | Messaging (Signal) — send/receive with E2E | **In progress** — plaintext send, inbound text, receipts, X3DH + ratchet + encryption + prekey bootstrap + state serialization done; prekey signing/store wiring/sync pending |
+| 4 | Messaging (Signal) — send/receive with E2E | **In progress** — X3DH, ratchet, encryption, prekey bootstrap, state serialization, per-peer store, and `<enc>` done; Signal send path + signing + sync pending |
 | 5 | Public SDK — idiomatic Go client | **In progress** — events/session/credentials + client facade + plaintext send; inbound/orchestration pending |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |
 | 7 | Release v0.1.0 | Planned |
