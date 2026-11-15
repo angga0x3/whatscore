@@ -17,7 +17,7 @@ as workstreams land.
 | Messaging | JID, text `<message>`, `<receipt>` | encrypted `<enc>` carrier (PF-034) |
 | Media | HKDF + CBC/HMAC byte envelope | streaming, sidecar hashes |
 | Storage | envelope, credential vault, PostgreSQL backend, `core/credentials` manager | Signal-addressed stores |
-| Core | event bus, single-actor session runtime with connector/frame handler, credential manager, SDK facade with plaintext send + inbound text events | receipts, contacts/groups/media, SQLite |
+| Core | event bus, single-actor session runtime with connector/frame handler, credential manager, SDK facade with plaintext send, inbound text, receipts | contacts/groups/media, SQLite |
 | SDK / API | — | everything |
 
 ## Execution log
@@ -33,6 +33,7 @@ as workstreams land.
 | 2026-11-15 | Session wiring | `Connector` + `FrameHandler` in `core/session` |
 | 2026-11-15 | Text send | `Session.WriteFrame`, `core/messaging.Sender`, `client.SendMessage`, noise connector |
 | 2026-11-15 | Inbound text | `protocol/messaging.ParseIncomingText`, `core/messaging.Receiver` in the client pipeline |
+| 2026-11-15 | Receipts | inbound parse/events + `Sender.SendReceipt` + `client.SendReceipt` |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
