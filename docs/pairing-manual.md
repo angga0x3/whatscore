@@ -26,7 +26,8 @@ The command:
 
 1. dials and completes the Noise handshake with a fresh registration payload;
 2. decodes `pair-device` and prints six `wa.me/settings/linked_devices#…`
-   payloads, each a valid QR string;
+   payloads as scannable terminal QR codes (the raw string is printed beneath
+   each one so it can also be copied);
 3. acknowledges the stanza and answers the server's keepalive pings;
 4. waits for `pair-success`, verifies the device identity HMAC and signature,
    and writes the credential record to `-out` with mode `0600`.

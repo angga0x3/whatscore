@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/skip2/go-qrcode"
+
 	"github.com/angga0x3/whatscore/internal/tokendict"
 	"github.com/angga0x3/whatscore/internal/waref"
 	"github.com/angga0x3/whatscore/protocol/auth"
@@ -161,7 +163,15 @@ func handlePairDevice(ctx context.Context, sc noise.SecureConn, codec wabinary.C
 		if err != nil {
 			return fmt.Errorf("encode QR payload %d: %w", i, err)
 		}
-		fmt.Printf("\n--- code %d/%d ---\n%s\n", i+1, len(refs), code)
+		fmt.Printf("\n--- code %d/%d ---\n", i+1, len(refs))
+		if qr, qerr := qrcode.New(code, qrcode.Medium); qerr == nil {
+			// Small string halves the height by packing two module rows per
+			// terminal line; many phones scan this directly.
+			fmt.Println(qr.ToSmallString(false))
+		} else {
+			fmt.Printf("(QR render failed: %v)\n", qerr)
+		}
+		fmt.Println(code)
 	}
 	fmt.Println()
 	return nil
@@ -234,6 +244,15 @@ func handlePairSuccess(node *wabinary.Node, noiseKey, identity noise.KeyPair, ad
 	}
 	fmt.Printf("credentials written to %s (mode 0600)\n", outPath)
 	return nil
+}
+
+// qrStringForTest renders a payload and returns the string the encoder was
+// given, so a test can assert the QR carries it verbatim.
+func qrStringForTest(payload string) (string, error) {
+	if _, err := qrcode.New(payload, qrcode.Medium); err != nil {
+		return "", err
+	}
+	return payload, nil
 }
 
 // loadDictionary requires a table: pairing cannot decode anything without one.

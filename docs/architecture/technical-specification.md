@@ -445,6 +445,7 @@ stores for the remaining record types land with the core work.
 | `github.com/jackc/pgx/v5` | PostgreSQL driver/pool | server deployment only |
 | `github.com/go-chi/chi/v5` | REST router | `server/*` only |
 | `github.com/golang-migrate/migrate/v4` | schema migrations | storage backends only |
+| `github.com/skip2/go-qrcode` | terminal QR rendering in `cmd/whatscore-probe` | tooling only, never imported by `protocol/*` or `server/*` |
 
 ### 5.2 Rejected
 
