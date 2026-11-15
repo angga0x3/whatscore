@@ -480,27 +480,36 @@ func (h *Handler) writeMessageError(w http.ResponseWriter, err error) {
 	}
 }
 
-// validateSendText enforces the OpenAPI body constraints plus the JID rule:
-// exactly one '@' with a non-empty user and server. Whitespace and control
-// characters are rejected so a chat id cannot smuggle framing into logs.
-func validateSendText(req sendTextRequest) error {
-	if req.To == "" {
+// validateJID enforces the JID rule shared by the text and media routes:
+// exactly one '@' with a non-empty user and server, at most 255 bytes, and no
+// whitespace or control characters.
+func validateJID(jid string) error {
+	if jid == "" {
 		return fmt.Errorf("%w: \"to\" is required", ErrInvalidInput)
 	}
-	if len(req.To) > 255 {
+	if len(jid) > 255 {
 		return fmt.Errorf("%w: \"to\" must be at most 255 bytes", ErrInvalidInput)
 	}
-	if strings.Count(req.To, "@") != 1 {
+	if strings.Count(jid, "@") != 1 {
 		return fmt.Errorf("%w: \"to\" must contain exactly one '@' (user@server)", ErrInvalidInput)
 	}
-	user, server, _ := strings.Cut(req.To, "@")
+	user, server, _ := strings.Cut(jid, "@")
 	if user == "" || server == "" {
 		return fmt.Errorf("%w: \"to\" must have a non-empty user and server", ErrInvalidInput)
 	}
-	for i := 0; i < len(req.To); i++ {
-		if req.To[i] <= 0x20 || req.To[i] == 0x7f {
+	for i := 0; i < len(jid); i++ {
+		if jid[i] <= 0x20 || jid[i] == 0x7f {
 			return fmt.Errorf("%w: \"to\" must not contain whitespace or control characters", ErrInvalidInput)
 		}
+	}
+	return nil
+}
+
+// validateSendText enforces the OpenAPI body constraints plus the JID rule
+// validated by validateJID.
+func validateSendText(req sendTextRequest) error {
+	if err := validateJID(req.To); err != nil {
+		return err
 	}
 	if req.Text == "" {
 		return fmt.Errorf("%w: \"text\" must not be empty", ErrInvalidInput)

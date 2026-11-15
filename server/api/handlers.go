@@ -22,6 +22,12 @@ type Handler struct {
 	// messages is optional: when it is nil the messaging routes are not
 	// mounted and /api/v1 keeps answering 501 for them.
 	messages MessageLister
+	// media is optional: when it is nil the media routes are not mounted and
+	// /api/v1 keeps answering 501 for them.
+	media MediaStore
+	// mediaMaxRequest overrides the multipart request cap. It exists for
+	// tests; a non-positive value restores maxMediaRequestBytes.
+	mediaMaxRequest int64
 	// bus is optional: when it is nil the SSE routes are not mounted and
 	// /api/v1 keeps answering 501 for them.
 	bus *events.Bus
@@ -66,6 +72,23 @@ func (h *Handler) SetMessages(messages MessageLister) {
 	h.messages = messages
 }
 
+// SetMedia installs the media store after construction. Mount must be called
+// afterwards for the media routes to be registered. A nil store leaves the
+// routes unmounted, so they keep answering 501.
+func (h *Handler) SetMedia(store MediaStore) {
+	h.media = store
+}
+
+// SetMediaRequestLimit overrides the multipart request cap. It exists for tests
+// so the 413 boundary can be exercised without a 68 MiB body; a non-positive
+// value restores maxMediaRequestBytes.
+func (h *Handler) SetMediaRequestLimit(limit int64) {
+	if limit <= 0 {
+		limit = maxMediaRequestBytes
+	}
+	h.mediaMaxRequest = limit
+}
+
 // SetBus installs the event bus used by the SSE routes after construction.
 // Mount must be called afterwards for the stream routes to be registered.
 func (h *Handler) SetBus(bus *events.Bus) {
@@ -94,6 +117,12 @@ func (h *Handler) Mount(v1 chi.Router) {
 			r.Post("/messages/text", h.sendText)
 			r.Get("/messages", h.listMessages)
 			r.Get("/messages/{messageId}", h.getMessage)
+		}
+		if h.media != nil {
+			r.Post("/messages/image", h.sendImage)
+			r.Post("/messages/document", h.sendDocument)
+			r.Get("/media", h.listMedia)
+			r.Get("/media/{mediaId}", h.getMedia)
 		}
 		if h.bus != nil {
 			r.Get("/qr", h.streamQR)

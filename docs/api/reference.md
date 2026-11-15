@@ -245,6 +245,124 @@ Wire format and guarantees:
 - Cancelling the request (client disconnect, shutdown) ends the stream; no
   goroutines are left behind.
 
+## Media (implemented)
+
+`/api/v1/sessions/{id}/messages/image`, `/messages/document`, and the media
+read endpoints are live over an in-memory, per-session store. The routes mount
+when the host wires a media store (`Handler.SetMedia`); without one, these
+paths keep answering `501`.
+
+Uploads are `multipart/form-data`. The payload is encrypted with the
+`core/media` envelope (AES-256-CBC plus a truncated HMAC over a fresh 32-byte
+media key) **before** it is stored: the store holds only the encrypted blob and
+the plaintext SHA-256, never the plaintext.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `POST` | `/api/v1/sessions/{id}/messages/image` | upload an image, `202` |
+| `POST` | `/api/v1/sessions/{id}/messages/document` | upload a document, `202` |
+| `GET` | `/api/v1/sessions/{id}/media` | list attachments, newest first, no keys |
+| `GET` | `/api/v1/sessions/{id}/media/{mediaId}` | one attachment's metadata, `200`/`404`, no key |
+
+Multipart fields:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `to` | yes | JID, same rule as `messages/text` (`user@server`) |
+| `file` | yes | the payload; exactly one part is read |
+| `caption` | no | validated (≤ 65536 bytes) but not persisted yet |
+| `file_name` | no | defaults to the part's filename, then the kind; path components are stripped |
+| `mime_type` | no | explicit type; otherwise the part header, then a content sniff |
+
+```bash
+curl -s -X POST \
+  "http://localhost:8080/api/v1/sessions/$SESSION_ID/messages/image" \
+  -H 'Authorization: Bearer wc_live_...' \
+  -F 'to=6281234567890@s.whatsapp.net' \
+  -F 'caption=Halo WhatsCore!' \
+  -F 'file=@photo.png;type=image/png'
+```
+
+```json
+{
+  "message_id": "<uuid>",
+  "media_id": "<uuid>",
+  "status": "queued",
+  "size": 48213,
+  "sha256": "9f2c...",
+  "media_key": "BASE64+32+BYTES="
+}
+```
+
+```bash
+curl -s -X POST \
+  "http://localhost:8080/api/v1/sessions/$SESSION_ID/messages/document" \
+  -H 'Authorization: Bearer wc_live_...' \
+  -F 'to=6281234567890@s.whatsapp.net' \
+  -F 'file_name=invoice.pdf' \
+  -F 'file=@invoice.pdf;type=application/pdf'
+```
+
+```bash
+curl -s "http://localhost:8080/api/v1/sessions/$SESSION_ID/media"
+# {"data":[{"id":"<uuid>","session_id":"<uuid>","message_id":"<uuid>",
+#           "kind":"document","file_name":"invoice.pdf",
+#           "mime_type":"application/pdf","size":182734,
+#           "sha256":"...","created_at":"..."}]}
+
+curl -s "http://localhost:8080/api/v1/sessions/$SESSION_ID/media/<media_id>"
+# the same object, without "media_key"
+```
+
+Limits and rules enforced on upload:
+
+- **Request cap:** 64 MiB payload plus 4 MiB of multipart overhead (68 MiB
+  total), enforced with `http.MaxBytesReader`. A body over the cap is
+  `413 payload_too_large` before anything is stored.
+- **File cap:** 64 MiB (`core/media.MaxMediaSize`).
+- **Image types:** `image/png`, `image/jpeg`, `image/webp`. Anything else —
+  including `image/gif` and `image/svg+xml` — is `415 unsupported_media_type`.
+  Documents accept any MIME type.
+- **Empty `file`:** `400 validation_failed`.
+- **Invalid `to`:** `400 validation_failed` (same JID rule as text).
+- **Unknown session:** `404 not_found`, checked before the body is parsed.
+- **Not connected:** `503 session_not_connected`; reads still work while
+  disconnected.
+- **Store bounds:** 32 attachments per session and 128 MiB of encrypted blobs
+  overall. Both evict **oldest first** (the session's oldest for the
+  per-session bound, the globally oldest for the byte cap), so a later `GET`
+  for an evicted id is `404`. Restarting the process clears everything. A
+  single blob larger than the entire 128 MiB store cap is rejected with
+  `413 payload_too_large` rather than flushing the store; with a smaller
+  store, an otherwise-valid upload can therefore answer `413`.
+
+The `media_key` is returned **only by the `202` create response**. It is a
+write-once value: every list and `GET` response omits the field entirely, so a
+reader can never leak it. Store it if you intend to decrypt the blob — losing
+it makes that attachment permanently unreadable, because the server keeps only
+the ciphertext.
+
+Media messages are recorded in the media store, not the message log: they do
+not appear in `GET /messages` yet, and no WhatsApp frame leaves the process.
+`sha256` is the digest of the plaintext, so a client can verify a download. The
+blob is not served back over HTTP yet: `MediaStore.Get` returns it, but no
+download route exists, and the `EncSHA256` (ciphertext) descriptor hash is not
+persisted — the envelope MAC authenticates the blob on decrypt.
+
+Divergences from [`openapi.yaml`](openapi.yaml):
+
+- The contract describes `SendImageRequest` / `SendDocumentRequest` as JSON
+  bodies with `image_url` / `document_url`. These routes take the bytes
+  directly as `multipart/form-data`, so a client never has to host the file
+  first.
+- The contract only lists `400`; these routes also answer `404`, `413`, `415`,
+  and `503 session_not_connected` (the same choice as `messages/text`).
+- `media_key`, `media_id`, and the `/media` read paths are additions: the
+  contract has no media read surface yet.
+- `Idempotency-Key` is **not** implemented here. A retry uploads and stores a
+  second attachment; do not rely on replay protection for media.
+- `caption` is accepted and validated but not stored.
+
 ## Not implemented yet (contract defined)
 
 Paths under `/api/v1` that are not mounted answer `501 Not Implemented` with:
@@ -254,8 +372,7 @@ Paths under `/api/v1` that are not mounted answer `501 Not Implemented` with:
 ```
 
 This is intentional: clients can distinguish "endpoint not shipped yet"
-from "wrong URL" (`404`). Media messaging (`messages/image`,
-`messages/document`), send rate limiting, and actual WhatsApp delivery are
+from "wrong URL" (`404`). Send rate limiting and actual WhatsApp delivery are
 still contract-only in [`openapi.yaml`](openapi.yaml).
 
 ## Webhook payload contract (Milestone 4)
