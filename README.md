@@ -40,7 +40,7 @@ implemented from first principles, documented in the open.
 | Application core | `core/events`, `core/session`, `core/credentials`, `core/signalsession`, `core/messaging`, `core/media`, `core/contacts`, `core/groups`, `core/client` |
 | Storage | Interfaces + migrations; `storage/envelope`, `storage/credentials` vault, PostgreSQL credential backend |
 | Application core | Designed — implementation starts in Phase 5 |
-| REST server | Foundation + `/api/v1/sessions` (list/create/get/delete/connect/disconnect) |
+| REST server | Foundation + `/api/v1/sessions`, signed webhook delivery |
 
 This project holds itself to one principle: **no fake feature claims —
 demo > promises.** Anything labeled as a target below is design, not a shipped

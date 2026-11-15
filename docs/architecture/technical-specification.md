@@ -376,7 +376,8 @@ events. **Allowed deps.** `core/*`, `go-chi/chi/v5`, stdlib; never `protocol/*`.
 `httptest` router tests; handler tables; contract checks vs `docs/api/openapi.yaml`.
 **Status.** `server/api` implements the session routes behind a `Service` interface with an
 in-memory manager; the router mounts it when `Deps.API` is set, and unmounted `/api/v1` paths still
-answer 501. Messaging, QR SSE, and webhook routes remain.
+answer 501. `server/webhook` implements signed delivery with retries and delivery records. Messaging,
+QR SSE, and webhook *routes* (registration/list) remain.
 
 ### 4.19 `storage` (Store aggregate)
 
