@@ -266,18 +266,36 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 		return nil, err
 	}
 
+	// The runtime is the inbound brain: without a FrameHandler the session
+	// actor discards every frame, and a connected server session hears
+	// nothing. The write path attaches after construction — the session needs
+	// the handler before it exists.
+	keys, err := f.loadKeys(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	_, signedIdentity, err := f.loadAccountCredentials(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity.Public, keys.preKeys, keys.registrationID, signedIdentity, f.bus)
+	if err != nil {
+		return nil, fmt.Errorf("cmd/whatscore: session %s: runtime: %w", id, err)
+	}
+
 	sess, err := session.New(session.Config{
 		ID:           id,
 		Endpoint:     f.endpoint,
 		Dialer:       f.dialer,
 		Connector:    connector,
-		FrameHandler: f.handler,
+		FrameHandler: runtime,
 		Bus:          f.bus,
 		Logger:       f.logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: build session %s: %w", id, err)
 	}
+	runtime.attach(sess)
 	return sess, nil
 }
 
@@ -297,7 +315,7 @@ func (f *sessionFactory) engineConnector(ctx context.Context, id string) (sessio
 		return nil, err
 	}
 
-	creds, err := f.loadAccountCredentials(ctx, id)
+	creds, _, err := f.loadAccountCredentials(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -343,12 +361,15 @@ func (f *sessionFactory) engineConnector(ctx context.Context, id string) (sessio
 // pairing, which every later login payload presents.
 func accountKey(id string) string { return "sessions/" + id + "/account" }
 
-// accountRecord is the persisted pairing outcome.
+// accountRecord is the persisted pairing outcome. SignedIdentity is the
+// self-signed device-identity blob the retry receipt's inline keys block
+// carries.
 type accountRecord struct {
-	JID      string `json:"jid"`
-	LID      string `json:"lid"`
-	Username uint64 `json:"username"`
-	Device   uint32 `json:"device"`
+	JID            string `json:"jid"`
+	LID            string `json:"lid"`
+	Username       uint64 `json:"username"`
+	Device         uint32 `json:"device"`
+	SignedIdentity []byte `json:"signed_identity"`
 }
 
 // saveAccountCredentials persists the pairing result, so the next connect
@@ -362,10 +383,11 @@ func (f *sessionFactory) saveAccountCredentials(ctx context.Context, id string, 
 		return fmt.Errorf("cmd/whatscore: session %s: %w", id, err)
 	}
 	blob, err := json.Marshal(accountRecord{
-		JID:      result.JID,
-		LID:      result.LID,
-		Username: username,
-		Device:   device,
+		JID:            result.JID,
+		LID:            result.LID,
+		Username:       username,
+		Device:         device,
+		SignedIdentity: result.SignedIdentity,
 	})
 	if err != nil {
 		return fmt.Errorf("cmd/whatscore: session %s: encode account record: %w", id, err)
@@ -377,25 +399,25 @@ func (f *sessionFactory) saveAccountCredentials(ctx context.Context, id string, 
 	return nil
 }
 
-// loadAccountCredentials returns the stored login credentials, or nil when
-// the session has never paired.
-func (f *sessionFactory) loadAccountCredentials(ctx context.Context, id string) (*engine.Credentials, error) {
+// loadAccountCredentials returns the stored login credentials plus the
+// signed device-identity blob, or nils when the session has never paired.
+func (f *sessionFactory) loadAccountCredentials(ctx context.Context, id string) (*engine.Credentials, []byte, error) {
 	blob, err := f.vault.Get(ctx, accountKey(id))
 	switch {
 	case err == nil:
 	case errors.Is(err, storagecredentials.ErrNotFound):
-		return nil, nil
+		return nil, nil, nil
 	default:
-		return nil, fmt.Errorf("cmd/whatscore: session %s: load account record: %w", id, err)
+		return nil, nil, fmt.Errorf("cmd/whatscore: session %s: load account record: %w", id, err)
 	}
 	var rec accountRecord
 	if err := json.Unmarshal(blob, &rec); err != nil {
-		return nil, fmt.Errorf("cmd/whatscore: session %s: decode account record: %w", id, err)
+		return nil, nil, fmt.Errorf("cmd/whatscore: session %s: decode account record: %w", id, err)
 	}
 	if rec.Username == 0 {
-		return nil, fmt.Errorf("%w: session %s account record has no username", ErrCredentialState, id)
+		return nil, nil, fmt.Errorf("%w: session %s account record has no username", ErrCredentialState, id)
 	}
-	return &engine.Credentials{Username: rec.Username, Device: rec.Device}, nil
+	return &engine.Credentials{Username: rec.Username, Device: rec.Device}, rec.SignedIdentity, nil
 }
 
 // sessionKeys is the engine-ready key material for one session.

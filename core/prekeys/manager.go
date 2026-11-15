@@ -386,3 +386,14 @@ func validateSessionID(sessionID string) error {
 	}
 	return nil
 }
+
+// OneTimePreKeys returns a snapshot of the current one-time pool, for the
+// upload node the server path builds. The pool can be large; callers should
+// upload only the ids they have not pushed before.
+func (m *Manager) OneTimePreKeys() []signal.PreKey {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]signal.PreKey, len(m.state.oneTime))
+	copy(out, m.state.oneTime)
+	return out
+}
