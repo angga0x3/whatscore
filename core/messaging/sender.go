@@ -110,6 +110,33 @@ func (s *Sender) SendText(ctx context.Context, to, text string) (string, error) 
 	return id, nil
 }
 
+// SendReceipt writes one receipt for a message id. The receipt type is the
+// protocol value (empty for delivery, "read", "played", ...).
+func (s *Sender) SendReceipt(ctx context.Context, to, id, receiptType string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	jid, err := stanza.ParseJID(strings.TrimSpace(to))
+	if err != nil {
+		return fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
+	}
+	if jid.User == "" {
+		return fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
+	}
+	node, err := stanza.BuildReceipt(stanza.Receipt{ID: id, To: jid, Type: receiptType})
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidMessage, err)
+	}
+	frame, err := s.codec.Encode(node)
+	if err != nil {
+		return fmt.Errorf("core/messaging: encode receipt: %w", err)
+	}
+	if err := s.write.WriteFrame(ctx, frame); err != nil {
+		return fmt.Errorf("core/messaging: write receipt: %w", err)
+	}
+	return nil
+}
+
 func randomID() (string, error) {
 	var raw [10]byte
 	if _, err := rand.Read(raw[:]); err != nil {

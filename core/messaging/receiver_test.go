@@ -124,3 +124,74 @@ func TestReceiverValidation(t *testing.T) {
 		t.Fatal("nil logger must fail")
 	}
 }
+
+func TestReceiverPublishesReceipts(t *testing.T) {
+	bus := events.NewBus()
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	receiver, _ := NewReceiver(bus, "s")
+
+	node := &binary.Node{Tag: "receipt", Attrs: binary.Attrs{
+		"from": "628123@s.whatsapp.net", "id": "M1", "type": "read", "t": "1700000000",
+	}}
+	if err := receiver.HandleFrame(context.Background(), encodeNode(t, node)); err != nil {
+		t.Fatal(err)
+	}
+	ev := <-sub.C
+	if ev.Type != events.TypeReceipt || ev.Receipt == nil {
+		t.Fatalf("event = %#v", ev)
+	}
+	if ev.Receipt.MessageID != "M1" || ev.Receipt.Chat != "628123@s.whatsapp.net" ||
+		ev.Receipt.Status != events.ReceiptRead {
+		t.Fatalf("receipt = %#v", ev.Receipt)
+	}
+	if !ev.Receipt.Timestamp.Equal(time.Unix(1700000000, 0).UTC()) {
+		t.Fatalf("timestamp = %v", ev.Receipt.Timestamp)
+	}
+}
+
+func TestReceiverPublishesBatchedReceipts(t *testing.T) {
+	bus := events.NewBus()
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	receiver, _ := NewReceiver(bus, "s")
+
+	node := &binary.Node{
+		Tag:   "receipt",
+		Attrs: binary.Attrs{"from": "1@s.whatsapp.net", "id": "A", "type": "played"},
+		Children: []binary.Node{{Tag: "list", Children: []binary.Node{
+			{Tag: "item", Attrs: binary.Attrs{"id": "B"}},
+		}}},
+	}
+	if err := receiver.HandleFrame(context.Background(), encodeNode(t, node)); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"A", "B"} {
+		ev := <-sub.C
+		if ev.Receipt == nil || ev.Receipt.MessageID != want || ev.Receipt.Status != events.ReceiptPlayed {
+			t.Fatalf("receipt = %#v", ev.Receipt)
+		}
+	}
+}
+
+func TestReceiverDropsUnsupportedReceipt(t *testing.T) {
+	bus := events.NewBus()
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	receiver, _ := NewReceiver(bus, "s")
+
+	node := &binary.Node{Tag: "receipt", Attrs: binary.Attrs{
+		"from": "1@s.whatsapp.net", "id": "M1", "type": "retry",
+	}}
+	if err := receiver.HandleFrame(context.Background(), encodeNode(t, node)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case ev := <-sub.C:
+		t.Fatalf("unexpected event: %#v", ev)
+	default:
+	}
+}

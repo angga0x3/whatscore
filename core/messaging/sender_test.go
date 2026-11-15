@@ -129,3 +129,37 @@ func TestSendTextCanceled(t *testing.T) {
 		t.Fatalf("want context.Canceled, got %v", err)
 	}
 }
+
+func TestSendReceipt(t *testing.T) {
+	writer := &fakeWriter{}
+	sender, _ := NewSender(writer)
+	if err := sender.SendReceipt(context.Background(), "628123@s.whatsapp.net", "MSG1", "read"); err != nil {
+		t.Fatalf("SendReceipt: %v", err)
+	}
+	if len(writer.frames) != 1 {
+		t.Fatalf("writes = %d", len(writer.frames))
+	}
+	node, err := binary.NewCodec(nil).Decode(bytes.NewReader(writer.frames[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := stanza.ParseReceipt(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.ID != "MSG1" || receipt.To.String() != "628123@s.whatsapp.net" || receipt.Type != "read" {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestSendReceiptInvalid(t *testing.T) {
+	sender, _ := NewSender(&fakeWriter{})
+	for _, to := range []string{"", "s.whatsapp.net"} {
+		if err := sender.SendReceipt(context.Background(), to, "id", "read"); !errors.Is(err, ErrInvalidMessage) {
+			t.Fatalf("to %q: %v", to, err)
+		}
+	}
+	if err := sender.SendReceipt(context.Background(), "1@s.whatsapp.net", "", "read"); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("empty id: %v", err)
+	}
+}

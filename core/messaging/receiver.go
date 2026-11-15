@@ -79,13 +79,20 @@ func (r *Receiver) HandleFrame(ctx context.Context, frame []byte) error {
 		r.logger.WarnContext(ctx, "dropping undecodable frame", "error", err)
 		return nil
 	}
-	if node.Tag != "message" {
-		return nil
+	switch node.Tag {
+	case "message":
+		r.handleMessage(ctx, node)
+	case "receipt":
+		r.handleReceipts(ctx, node)
 	}
+	return nil
+}
+
+func (r *Receiver) handleMessage(ctx context.Context, node *binary.Node) {
 	incoming, err := stanza.ParseIncomingText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed message", "error", err)
-		return nil
+		return
 	}
 
 	chat := incoming.From
@@ -112,5 +119,48 @@ func (r *Receiver) HandleFrame(ctx context.Context, frame []byte) error {
 			IsGroup:   chat.Server == stanza.GroupServer,
 		},
 	})
-	return nil
+}
+
+func (r *Receiver) handleReceipts(ctx context.Context, node *binary.Node) {
+	receipts, err := stanza.ParseIncomingReceipts(node)
+	if err != nil {
+		r.logger.WarnContext(ctx, "dropping malformed receipt", "error", err)
+		return
+	}
+	for _, receipt := range receipts {
+		status, ok := receiptStatus(receipt.Type)
+		if !ok {
+			r.logger.DebugContext(ctx, "dropping unsupported receipt type", "type", receipt.Type)
+			continue
+		}
+		timestamp := receipt.Timestamp
+		if timestamp.IsZero() {
+			timestamp = time.Now()
+		}
+		r.bus.Publish(events.Event{
+			Type:      events.TypeReceipt,
+			SessionID: r.sessionID,
+			Timestamp: timestamp,
+			Receipt: &events.Receipt{
+				MessageID: receipt.ID,
+				Chat:      receipt.From.String(),
+				Sender:    receipt.From.String(),
+				Status:    status,
+				Timestamp: timestamp,
+			},
+		})
+	}
+}
+
+func receiptStatus(receiptType string) (events.ReceiptStatus, bool) {
+	switch receiptType {
+	case "":
+		return events.ReceiptDelivered, true
+	case "read", "read-self":
+		return events.ReceiptRead, true
+	case "played", "played-self":
+		return events.ReceiptPlayed, true
+	default:
+		return "", false
+	}
 }
