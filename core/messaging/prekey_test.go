@@ -105,7 +105,11 @@ func TestReceiverBootstrapsPreKeyMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := alice.Encrypt([]byte("pesan pertama"), senderPair.Public, prekeys.identity.Public)
+	firstPayload, err := stanza.EncodeTextMessage("pesan pertama")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := alice.Encrypt(firstPayload, senderPair.Public, prekeys.identity.Public)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +138,11 @@ func TestReceiverBootstrapsPreKeyMessage(t *testing.T) {
 	}
 
 	// The bootstrapped session must be usable for the next message.
-	second, err := alice.Encrypt([]byte("kedua"), senderPair.Public, prekeys.identity.Public)
+	payload, err := stanza.EncodeTextMessage("kedua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := alice.Encrypt(payload, senderPair.Public, prekeys.identity.Public)
 	if err != nil {
 		t.Fatal(err)
 	}

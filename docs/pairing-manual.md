@@ -136,6 +136,45 @@ Those fields are sent **only at pairing time** (PF-080). Changing them has no
 effect on a device that is already linked: remove it on the phone and pair
 again.
 
+## Sending and receiving
+
+Send one text message after pairing:
+
+```bash
+go run ./cmd/whatscore-probe -send \
+  -creds ./paired.json \
+  -dict deployments/tokendict/pairing-minimal.json \
+  -to 6289999999999@s.whatsapp.net \
+  -text "hello" \
+  -timeout 60s
+```
+
+A successful send prints:
+
+```
+login: ok
+bundle: fetched and signature verified (signed prekey 3681345)
+SENT: id=… to=…
+ACK: the server accepted the message (message)
+```
+
+`SENT` alone only means the bytes left. `ACK` is the server's own
+acknowledgement, and it is what makes a send a fact rather than an attempt.
+
+Listen for inbound messages:
+
+```bash
+go run ./cmd/whatscore-probe -listen \
+  -creds ./paired.json \
+  -dict deployments/tokendict/pairing-minimal.json \
+  -timeout 120s
+```
+
+The key file (`paired.keys.json` by default) is **not optional**. It holds the
+private halves of the prekeys this device published. A peer may encrypt to them
+at any later date, so deleting the file makes those messages unreadable forever
+— which is exactly what happened to the first pairing run (PF-085).
+
 ## Cleaning up
 
 If a pairing attempt leaves an entry on the phone, remove it under

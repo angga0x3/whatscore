@@ -47,7 +47,7 @@ func TestPairingPayloadSignsThePreKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("identity: %v", err)
 	}
-	raw, err := buildPairingPayload(identity, 4242)
+	raw, _, err := buildPairingPayload(identity, 4242)
 	if err != nil {
 		t.Fatalf("build payload: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestPairingPayloadReportsAChromePlatform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("identity: %v", err)
 	}
-	raw, err := buildPairingPayload(identity, 1)
+	raw, _, err := buildPairingPayload(identity, 1)
 	if err != nil {
 		t.Fatalf("build payload: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestPairingPayloadDoesNotClaimToBeAnotherLibrary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("identity: %v", err)
 	}
-	raw, err := buildPairingPayload(identity, 1)
+	raw, _, err := buildPairingPayload(identity, 1)
 	if err != nil {
 		t.Fatalf("build payload: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestPairingPayloadReportsAWebBrowser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("identity: %v", err)
 	}
-	raw, err := buildPairingPayload(identity, 1)
+	raw, _, err := buildPairingPayload(identity, 1)
 	if err != nil {
 		t.Fatalf("build payload: %v", err)
 	}

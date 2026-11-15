@@ -58,7 +58,11 @@ func TestReceiverDecryptsEncryptedMessage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ciphertext, err := alice.Encrypt([]byte("terenkripsi"), aliceID, bobID)
+	payload, err := stanza.EncodeTextMessage("terenkripsi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := alice.Encrypt(payload, aliceID, bobID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +82,11 @@ func TestReceiverDecryptsEncryptedMessage(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("no event published")
 	}
-	if _, err := bob.Encrypt([]byte("next"), bobID, aliceID); err != nil {
+	nextPayload, err := stanza.EncodeTextMessage("next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bob.Encrypt(nextPayload, bobID, aliceID); err != nil {
 		t.Fatalf("ratchet not advanced: %v", err)
 	}
 }
@@ -97,7 +105,11 @@ func TestReceiverEncryptedDrops(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ciphertext, err := alice.Encrypt([]byte("secret"), aliceID, bobID)
+	secretPayload, err := stanza.EncodeTextMessage("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := alice.Encrypt(secretPayload, aliceID, bobID)
 	if err != nil {
 		t.Fatal(err)
 	}

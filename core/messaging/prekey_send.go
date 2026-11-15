@@ -47,6 +47,29 @@ func (s *Sender) SendPreKeyText(ctx context.Context, to, text string, registrati
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: bundle for %q: %w", peer, err)
 	}
+	return s.sendPreKeyTextWithBundle(ctx, jid, peer, text, registrationID, bundle)
+}
+
+// SendPreKeyTextWithBundle sends the first message using a bundle the caller
+// already holds. A prekey fetch is a server round trip with its own failure
+// modes, so callers that manage the connection themselves fetch it and hand it
+// over rather than letting the sender do I/O it cannot retry.
+func (s *Sender) SendPreKeyTextWithBundle(ctx context.Context, to, text string, bundle *signal.PreKeyBundle, registrationID uint32) (string, *PeerSession, error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	jid, err := stanza.ParseJID(strings.TrimSpace(to))
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
+	}
+	if jid.User == "" {
+		return "", nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
+	}
+	return s.sendPreKeyTextWithBundle(ctx, jid, jid.String(), text, registrationID, bundle)
+}
+
+// sendPreKeyTextWithBundle is the shared body of both public entry points.
+func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, peer, text string, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
 	if bundle == nil {
 		return "", nil, fmt.Errorf("%w: nil bundle for %q", ErrInvalidMessage, peer)
 	}
@@ -70,7 +93,13 @@ func (s *Sender) SendPreKeyText(ctx context.Context, to, text string, registrati
 		return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
 	}
 
-	ciphertext, err := state.Encrypt([]byte(text), s.identity, bundle.IdentityKey)
+	// The plaintext inside <enc> is a protobuf Message, not the raw string:
+	// that is what the receiving client parses and renders (PF-083).
+	payload, err := stanza.EncodeTextMessage(text)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
+	}
+	ciphertext, err := state.Encrypt(payload, s.identity, bundle.IdentityKey)
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: encrypt: %w", err)
 	}

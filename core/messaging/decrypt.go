@@ -70,6 +70,15 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 	}
 	session.State = attempt
 
+	// The decrypted bytes are a protobuf Message, not a raw string. A payload
+	// with no text (an image, a reaction, a protocol message) is not an error
+	// here: it decrypts fine and this layer simply has nothing to render.
+	text, err := stanza.DecodeTextMessage(plaintext)
+	if err != nil {
+		r.logger.InfoContext(ctx, "decrypted a message with no text payload", "peer", peer, "error", err)
+		return
+	}
+
 	timestamp := timestampOf(node)
 	r.bus.Publish(events.Event{
 		Type:      events.TypeMessage,
@@ -81,7 +90,7 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 			Sender:    peer.String(),
 			Timestamp: timestamp,
 			Direction: events.DirectionIncoming,
-			Text:      string(plaintext),
+			Text:      text,
 			IsGroup:   peer.Server == stanza.GroupServer,
 		},
 	})

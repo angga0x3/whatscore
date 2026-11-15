@@ -16,6 +16,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/angga0x3/whatscore/internal/waref"
@@ -67,11 +69,51 @@ func main() {
 	loginFlag := flag.Bool("login", false, "log in with credentials a previous -pair run wrote")
 	credPath := flag.String("creds", "", "credentials file for -login (the -out file from -pair)")
 	loginDict := flag.String("login-dict", "", "token table for -login (defaults to -dict)")
+	sendFlag := flag.Bool("send", false, "send one text message using credentials a previous -pair run wrote")
+	sendTo := flag.String("to", "", "recipient JID for -send")
+	sendText := flag.String("text", "", "message body for -send")
+	listenFlag := flag.Bool("listen", false, "log in, publish prekeys, and decrypt inbound messages")
+	keyPath := flag.String("keys", "", "key file for -listen (default: <creds>.keys.json)")
 	printRoot := flag.Bool("root", false, "print the pinned root key and exit")
 	flag.Parse()
 
 	if *printRoot {
 		fmt.Println(hex.EncodeToString(waRootPub))
+		return
+	}
+
+	if *listenFlag {
+		resolvedKeys := *keyPath
+		if resolvedKeys == "" && *credPath != "" {
+			resolvedKeys = strings.TrimSuffix(*credPath, filepath.Ext(*credPath)) + ".keys.json"
+		}
+		err := runListen(sendConfig{
+			Endpoint: *endpoint,
+			CredPath: *credPath,
+			DictPath: *pairDict,
+			Timeout:  *timeout,
+			KeyPath:  resolvedKeys,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "listen: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if *sendFlag {
+		err := runSend(sendConfig{
+			Endpoint: *endpoint,
+			CredPath: *credPath,
+			DictPath: *pairDict,
+			To:       *sendTo,
+			Text:     *sendText,
+			Timeout:  *timeout,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "send: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

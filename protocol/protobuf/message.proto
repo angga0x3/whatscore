@@ -1,0 +1,23 @@
+// WhatsApp application message payload (E2E "Message").
+//
+// Field numbers follow docs/protocol/messaging.md (PF-083), extracted from
+// reference study of whatsmeow proto/waE2E/WAWebProtobufsE2E.proto on
+// 2026-11-15. Only the subset this project sends and reads is declared; the
+// reference message has over a hundred fields and declaring them unverified
+// would be a claim this project cannot support.
+syntax = "proto2";
+
+package whatscore.protocol.protobuf;
+
+option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
+
+message Message {
+  // Plain text, used when no richer form is needed.
+  optional string conversation = 1;
+  // Text with metadata; the plain text is in `text`.
+  optional ExtendedTextMessage extendedTextMessage = 6;
+}
+
+message ExtendedTextMessage {
+  optional string text = 1;
+}

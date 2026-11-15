@@ -23,6 +23,10 @@ type Receiver struct {
 	identity  [32]byte
 	peers     map[string]*PeerSession
 	prekeys   PreKeySource
+
+	// consumePreKey is called once a one-time prekey has been used, so a
+	// persistent store can delete the private half.
+	consumePreKey func(id uint32)
 }
 
 // ReceiverOption configures a Receiver.

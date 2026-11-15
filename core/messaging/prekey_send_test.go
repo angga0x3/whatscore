@@ -67,8 +67,14 @@ func TestSendPreKeyText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept: %v", err)
 	}
-	if string(plaintext) != "pertama" {
-		t.Fatalf("plaintext = %q", plaintext)
+	// The decrypted bytes are a protobuf Message, so compare the text it
+	// carries rather than the wire bytes.
+	gotText, err := stanza.DecodeTextMessage(plaintext)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if gotText != "pertama" {
+		t.Fatalf("text = %q", gotText)
 	}
 
 	// The sender can continue with a msg carrier using the new session.

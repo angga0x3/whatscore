@@ -45,16 +45,45 @@ project is pre-1.0, so breaking changes happen in minor versions.
 - A paired device can log in: reconnecting with the login ClientPayload earns
   `<success>` from the server (PF-077). This is the step that stops the phone's
   linking spinner, and it was missing entirely.
+- A real text message was accepted by the server, which answered
+  `<ack class="message">` with a server timestamp.
 
 ### Added
 
 - `whatscore-probe -login -creds <file> [-dict <table>]` reconnects with a
   paired device's credentials and reports the server's verdict.
+- `whatscore-probe -send -creds <file> -to <jid> -text <text>` sends one text
+  message: fetches the peer's prekey bundle, verifies its signature, builds the
+  Signal session, and waits for the server's acknowledgement.
+- `whatscore-probe -listen -creds <file>` decrypts inbound messages and answers
+  with delivery receipts.
+- A persistent key file (`paired.keys.json` by default) holds the private halves
+  of published prekeys, because a peer may encrypt to them at any later date.
+
+### Fixed
+
+- Text is sent and read as a protobuf `Message` (`conversation`), not as raw
+  bytes in a `<body>` child. The old carrier was accepted and acknowledged by
+  the server but rendered nothing on a phone (PF-083).
+- The pairing run no longer discards the private half of the signed prekey it
+  registers. Losing it made every message sent before the next rotation
+  unreadable — the live backlog failed with `bad message MAC` for exactly this
+  reason (PF-085).
+- A dispatcher now owns the connection's single read loop. Previously each step
+  read for itself and silently discarded whatever else arrived, which is how the
+  inbound backlog was thrown away during a send.
 
 ### Known limits
 
-- No message has been sent or received. Pairing and login are proven; the Signal
-  session layer on a live connection is not.
+- Sending is proven: the server acknowledged a real text message and attached a
+  timestamp.
+- Receiving is proven in test, not live. The inbound messages already queued on
+  the server were encrypted to a signed prekey whose private half the pairing
+  run discarded, so they cannot be opened. Messages sent to this device **after**
+  a run that wrote its key file can be decrypted; that has not yet been shown
+  against the live service.
+- The server does not answer a repeated prekey upload. Whether that is
+  "already set" or a rejection is unknown; the client treats it as non-fatal.
 - The token table is partial by design: it covers only what the server has
   actually sent to this project, and any other stanza still fails loudly.
 
@@ -106,6 +135,8 @@ statement in [docs/releases/v0.0.1.md](docs/releases/v0.0.1.md).
 - A paired device can log in: reconnecting with the login ClientPayload earns
   `<success>` from the server (PF-077). This is the step that stops the phone's
   linking spinner, and it was missing entirely.
+- A real text message was accepted by the server, which answered
+  `<ack class="message">` with a server timestamp.
 
 
 ### Known limits

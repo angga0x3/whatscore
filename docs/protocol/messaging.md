@@ -169,3 +169,48 @@ PF-033/PF-034 when they land.
 Status update: the encrypted text carrier is implemented as a stanza shape;
 plaintext `<body>` remains for unencrypted runs until core wiring lands.
 
+
+## PF-083: The payload inside <enc> is a protobuf Message
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-083 |
+| **Title** | A text message's plaintext is a protobuf `Message` with `conversation` (field 1) or `extendedTextMessage.text` (field 6, then 1), not a raw string |
+| **Layer** | messaging |
+| **Source** | reference study of whatsmeow `proto/waE2E`, confirmed by a live sent message the server acknowledged |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/messaging` (`TestEncodeTextMessageIsConversation`, both-carrier decode, negative table) |
+| **Related findings** | PF-034, PF-082 |
+| **Notes** | This replaces PF-034's `<body>` placeholder carrier, which no reference emits. Sending raw text bytes inside `<enc>` is accepted by the server — it acknowledges the stanza — but a phone renders nothing, because the plaintext is not a parseable `Message`. `EncodeTextMessage`/`DecodeTextMessage` implement the real shape; the minimal `message.proto` declares only the two fields this project needs, because declaring a hundred unverified fields would be a claim it cannot support. |
+
+## PF-082: Publishing prekeys, and why a repeat is refused
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-082 |
+| **Title** | Prekeys are published with `iq{type=set, xmlns=encrypt}` carrying `registration`, `type=0x05`, `identity`, `list` of `<key id value>`, and one `skey id value signature`; the server accepts this **once per device** and does not answer a repeat |
+| **Layer** | messaging |
+| **Source** | direct observation of own session, plus reference study of whatsmeow `prekeys.go` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed for the first upload; **inferred** that repeats are refused |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` live runs: first upload answered `<iq type="result">`; every later upload got no reply, then the socket closed |
+| **Related findings** | PF-060, PF-065, PF-083, PF-085 |
+| **Notes** | The first upload was acknowledged and the keys worked. Subsequent uploads — including with fresh ids — produced no reply within 45 s, and one closed the connection outright. The most likely reading is that a device's prekey set is fixed at registration and later `set` requests are ignored, but this is **not proven**: the server never sent an error. What is proven is the operational consequence: a client must persist the set it registered and must not treat an unacknowledged repeat upload as fatal, because aborting there loses a session that can still send and receive. |
+
+## PF-085: Losing the signed prekey loses the messages addressed to it
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-085 |
+| **Title** | A peer encrypts to the signed prekey that was in the registration payload; that private half must be persisted, or every message sent before the next rotation is permanently unreadable |
+| **Layer** | messaging |
+| **Source** | direct observation: a live inbound message named `signedPreKeyID=1`, and decryption with our own key failed with `bad message MAC` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` (`TestKeyFileRoundTripsSignedPreKey`, `TestSeedFromRecordAdoptsThePairingKey`, `TestInboundPreKeyMessageBecomesText`) |
+| **Related findings** | PF-065, PF-082, PF-083 |
+| **Notes** | The pairing run generated a signed prekey, put its public half and signature into the registration payload, and **discarded the private half**. The server handed that public key to peers, so inbound messages were encrypted to a key nobody held. A real inbound message decoded cleanly as `registrationID=1388247345 preKeyID=0 signedPreKeyID=1`, and attempting it with a different signed prekey produced `signal: bad message MAC` — not a parse error, which is why the symptom looked like corruption rather than a missing key. The probe now writes the signed prekey into the credentials file and adopts it on every later run. **The messages already queued before that fix cannot be recovered**: their key existed only in the memory of a process that has exited. |

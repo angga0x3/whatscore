@@ -54,12 +54,23 @@ func (r *Receiver) bootstrapPeer(ctx context.Context, envelope *stanza.Encrypted
 	if err := r.SetReceiverPeer(peer.String(), session); err != nil {
 		return nil, nil, err
 	}
+	// Only after the session is usable, so a failed bootstrap does not burn the
+	// key it could not open.
+	if oneTime != nil && r.consumePreKey != nil {
+		r.consumePreKey(oneTime.ID)
+	}
 	r.logger.DebugContext(ctx, "bootstrapped signal session", "peer", peer)
 	return session, plaintext, nil
 }
 
 // SetPreKeySource installs the prekey provider used for pkmsg bootstrap.
 func (r *Receiver) SetPreKeySource(source PreKeySource) { r.prekeys = source }
+
+// SetPreKeyConsumer installs a callback invoked once a one-time prekey has been
+// used successfully. A consumed prekey must not be reused: Signal's whole point
+// is that a message key is never available twice. Callers that persist keys use
+// this to delete the private half.
+func (r *Receiver) SetPreKeyConsumer(consume func(id uint32)) { r.consumePreKey = consume }
 
 // handlePreKey decrypts a pkmsg carrier, bootstrapping the session when
 // needed, and publishes the carried text.
@@ -76,6 +87,13 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 		return
 	}
 
+	// The decrypted payload is a protobuf Message, same as the msg carrier.
+	text, err := stanza.DecodeTextMessage(plaintext)
+	if err != nil {
+		r.logger.InfoContext(ctx, "decrypted a prekey message with no text payload", "peer", peer, "error", err)
+		return
+	}
+
 	timestamp := timestampOf(node)
 	r.bus.Publish(events.Event{
 		Type:      events.TypeMessage,
@@ -87,7 +105,7 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 			Sender:    peer.String(),
 			Timestamp: timestamp,
 			Direction: events.DirectionIncoming,
-			Text:      string(plaintext),
+			Text:      text,
 			IsGroup:   peer.Server == stanza.GroupServer,
 		},
 	})

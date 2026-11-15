@@ -19,7 +19,8 @@ run.
 | Pairing (QR → success) | **supported** | a phone scan produced a verified `pair-success`, `pair-device-sign` was accepted, and credentials were written (PF-075) |
 | Login with paired credentials | **supported** | reconnects with the login payload and the server answers `<success>` (PF-077, PF-078) |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
-| Message send/receive | **untested** | needs the Signal session layer on a live connection |
+| Send a text message | **supported** | the server acknowledges a real message stanza and attaches a timestamp (PF-082, PF-083) |
+| Receive a text message | **partially proven** | the stanza arrives and decodes; decryption works in test with a valid key, but the live backlog is unreadable because the pairing run discarded its signed prekey (PF-085) |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |
 | App-state sync | **untested** | needs pairing |
 

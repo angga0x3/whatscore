@@ -95,7 +95,7 @@ func runPair(cfg pairConfig) error {
 	}
 	defer func() { _ = fr.Close() }()
 
-	payload, err := buildPairingPayload(identity, registrationID)
+	payload, signedPreKey, err := buildPairingPayload(identity, registrationID)
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func runPair(cfg pairConfig) error {
 			startQRRotation(ctx, stopQR, refs, noiseKey, identity, advSecret)
 		case node.Tag == "iq" && hasChild(node, "pair-success"):
 			stopRotation()
-			return handlePairSuccess(ctx, sc, codec, node, noiseKey, identity, advSecret, registrationID, cfg.OutPath)
+			return handlePairSuccess(ctx, sc, codec, node, noiseKey, identity, advSecret, registrationID, signedPreKey, cfg.OutPath)
 		case node.Tag == "iq" && node.Attrs["xmlns"] == "urn:xmpp:ping":
 			if err := answerPing(ctx, sc, codec, node); err != nil {
 				return fmt.Errorf("answer ping: %w", err)
@@ -328,7 +328,7 @@ func answerPing(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, 
 //
 // Decoding needs tokens that only appear in this stanza, so a partial table
 // fails here with a clear message rather than a wrong credential.
-func handlePairSuccess(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, noiseKey, identity noise.KeyPair, advSecret [32]byte, registrationID uint32, outPath string) error {
+func handlePairSuccess(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, noiseKey, identity noise.KeyPair, advSecret [32]byte, registrationID uint32, signedPreKey *wasignal.SignedPreKey, outPath string) error {
 	success, err := pairing.ParsePairSuccess(node)
 	if err != nil {
 		sendPairError(ctx, sc, codec, node.Attrs["id"], 500, "internal-error")
@@ -364,6 +364,14 @@ func handlePairSuccess(ctx context.Context, sc noise.SecureConn, codec wabinary.
 		IdentityPriv:   identity.Priv,
 		IdentityPub:    identity.Pub,
 		AdvSecret:      advSecret,
+	}
+	if signedPreKey != nil {
+		record.SignedPreKey = signedPreKeyRec{
+			ID:        signedPreKey.ID,
+			Private:   append([]byte(nil), signedPreKey.Pair.Private[:]...),
+			Public:    append([]byte(nil), signedPreKey.Pair.Public[:]...),
+			Signature: append([]byte(nil), signedPreKey.Signature...),
+		}
 	}
 	record.Device.RawID = verified.RawID
 	record.Device.Timestamp = verified.Timestamp
@@ -485,13 +493,13 @@ func loadDictionary(path string) (*wabinary.Dictionary, error) {
 // verifies eSkeySig with eIdent before it will let the phone link the device.
 // A zero-filled signature passes local validation (it is 64 bytes) but fails
 // that check, and the phone then reports only "couldn't link new device".
-func buildPairingPayload(identity noise.KeyPair, registrationID uint32) ([]byte, error) {
+func buildPairingPayload(identity noise.KeyPair, registrationID uint32) ([]byte, *wasignal.SignedPreKey, error) {
 	identityPair := wasignal.KeyPair{Private: identity.Priv, Public: identity.Pub}
 	signed, err := wasignal.GenerateSignedPreKey(1, wasignal.XEdDSASigner{Private: identity.Priv})
 	if err != nil {
-		return nil, fmt.Errorf("signed prekey: %w", err)
+		return nil, nil, fmt.Errorf("signed prekey: %w", err)
 	}
-	return auth.BuildClientPayload(auth.Input{
+	raw, err := auth.BuildClientPayload(auth.Input{
 		Version: auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
 		UserAgent: auth.UserAgent{
 			Platform:       protobuf.ClientPayload_UserAgent_WEB,
@@ -524,6 +532,10 @@ func buildPairingPayload(identity noise.KeyPair, registrationID uint32) ([]byte,
 			HistorySync:  pairingHistorySync(),
 		},
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return raw, &signed, nil
 }
 
 // pairingHistorySync mirrors the capability block the reference advertises for
@@ -560,18 +572,31 @@ func hasChild(node *wabinary.Node, tag string) bool {
 // credentialRecord is the on-disk shape this command writes. It is deliberately
 // its own struct: the probe must not depend on the application layer.
 type credentialRecord struct {
-	JID            string    `json:"jid"`
-	LID            string    `json:"lid,omitempty"`
-	Platform       string    `json:"platform,omitempty"`
-	BusinessName   string    `json:"business_name,omitempty"`
-	RegistrationID uint32    `json:"registration_id"`
-	NoisePriv      [32]byte  `json:"noise_private_key"`
-	NoisePub       [32]byte  `json:"noise_public_key"`
-	IdentityPriv   [32]byte  `json:"identity_private_key"`
-	IdentityPub    [32]byte  `json:"identity_public_key"`
-	AdvSecret      [32]byte  `json:"adv_secret"`
-	Device         deviceRec `json:"device_identity"`
-	PairedAt       time.Time `json:"paired_at"`
+	JID            string   `json:"jid"`
+	LID            string   `json:"lid,omitempty"`
+	Platform       string   `json:"platform,omitempty"`
+	BusinessName   string   `json:"business_name,omitempty"`
+	RegistrationID uint32   `json:"registration_id"`
+	NoisePriv      [32]byte `json:"noise_private_key"`
+	NoisePub       [32]byte `json:"noise_public_key"`
+	IdentityPriv   [32]byte `json:"identity_private_key"`
+	IdentityPub    [32]byte `json:"identity_public_key"`
+	AdvSecret      [32]byte `json:"adv_secret"`
+	// SignedPreKey is the key whose signature went into the registration
+	// payload. Its private half must be kept: a peer that fetches the bundle
+	// during or right after pairing encrypts to this key, and without the
+	// private half those messages can never be opened (PF-085).
+	SignedPreKey signedPreKeyRec `json:"signed_pre_key"`
+	Device       deviceRec       `json:"device_identity"`
+	PairedAt     time.Time       `json:"paired_at"`
+}
+
+// signedPreKeyRec is a signed prekey with its private half.
+type signedPreKeyRec struct {
+	ID        uint32 `json:"id"`
+	Private   []byte `json:"private,omitempty"`
+	Public    []byte `json:"public"`
+	Signature []byte `json:"signature"`
 }
 
 type deviceRec struct {
