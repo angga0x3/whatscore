@@ -57,6 +57,7 @@ as workstreams land.
 | 2026-11-15 | SDK orchestration | `SendEncrypted` carrier choice + ratchet persistence |
 | 2026-11-15 | Sync integrity | LTHash accumulator + snapshot/patch MACs, PF-077…PF-078 |
 | 2026-11-15 | Messaging + SSE | text send/list/get with idempotency, `/events` + `/qr` streams |
+| 2026-11-15 | SDK directory | lazy contact/group caches + change-only events |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 

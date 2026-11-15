@@ -111,6 +111,13 @@ func (c *Cache) Len() int {
 	return len(c.items)
 }
 
+// DiffParticipants returns the participants added and removed between two
+// participant lists. Blank entries are ignored, so raw stanza data can be
+// passed in; both results are sorted and deduped.
+func DiffParticipants(before, after []string) (added, removed []string) {
+	return applyParticipantChange(before, after)
+}
+
 // applyParticipantChange returns the participants present in after but not
 // before, and those present in before but not after. Both results are sorted
 // and contain no duplicates, so callers can compare them directly.

@@ -12,9 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 
+	"github.com/angga0x3/whatscore/core/contacts"
 	corecredentials "github.com/angga0x3/whatscore/core/credentials"
 	"github.com/angga0x3/whatscore/core/events"
+	"github.com/angga0x3/whatscore/core/groups"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/session"
 	"github.com/angga0x3/whatscore/protocol/signal"
@@ -45,6 +48,14 @@ type Client struct {
 	creds          *corecredentials.Manager
 	sessions       SessionStore
 	registrationID uint32
+	directoryOnce  sync.Once
+	directory      directoryCaches
+}
+
+// directoryCaches holds the lazily created contact and group caches.
+type directoryCaches struct {
+	contacts *contacts.Cache
+	groups   *groups.Cache
 }
 
 type options struct {

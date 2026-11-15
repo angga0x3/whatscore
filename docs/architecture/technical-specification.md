@@ -308,7 +308,9 @@ err = c.Disconnect(ctx)
 **Status.** `core/client` implements connect/disconnect/state/subscribe/credentials/close with
 option validation, `WithConnector`/`WithFrameHandler` pass-through, plaintext `SendMessage`, and
 `SendEncrypted`, which loads a peer session, picks `pkmsg` vs `msg`, sends, and persists the advanced
-ratchet through an injected `SessionStore`. SDK orchestration (contacts/groups/media) remains.
+ratchet through an injected `SessionStore`. The SDK also exposes lazy contact/group caches that
+publish a group-update event only when a cache reports a real change (duplicate contact pushes stay
+silent). Media orchestration through the SDK remains.
 
 ### 4.12 `core/session`
 

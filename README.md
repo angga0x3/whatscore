@@ -146,6 +146,10 @@ id, err := c.SendMessage(ctx, client.Message{To: "628123456789@s.whatsapp.net", 
 // Signal-encrypted, choosing pkmsg vs msg and persisting the ratchet:
 id, err = c.SendEncrypted(ctx, client.Message{To: "628123456789@s.whatsapp.net", Text: "Hi!"})
 
+// Contact and group caches (events published on real changes):
+_, _ = c.UpsertContact(contacts.Contact{JID: "628123@s.whatsapp.net", Name: "Ani"})
+_ = c.UpsertGroup(ctx, groups.Group{ID: "123@g.us", Subject: "Team", Participants: []string{"a@s.whatsapp.net"}})
+
 _ = c.SendReceipt(ctx, "628123456789@s.whatsapp.net", id, "read")
 _ = c.Disconnect(ctx)
 ```
