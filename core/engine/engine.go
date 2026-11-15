@@ -25,8 +25,10 @@
 //   - Signal session establishment and messaging. Those operate on the
 //     returned Conn through their own packages.
 //
-// Import direction: core/engine imports protocol/* and core/events only. It
-// never imports core/messaging, core/session, or core/client.
+// Import direction: core/engine imports protocol/*, core/events, and
+// core/session. The core/session import exists only for the Connector adapter
+// (session.go); core/session itself never imports core/engine, so the
+// dependency stays one-way and the composition root injects the adapter.
 package engine
 
 import (
@@ -58,6 +60,16 @@ var (
 	// the Noise handshake fails: from the caller's perspective the server
 	// did not accept the client as this device.
 	ErrAuthFailed = errors.New("engine: authentication failed")
+
+	// ErrStreamError is returned by WaitAuth when the server answers the
+	// ClientPayload with a <stream:error> stanza (PF-029).
+	ErrStreamError = errors.New("engine: stream error")
+
+	// ErrUnexpectedStanza is returned by WaitAuth when the server sends
+	// something other than a <success>, <failure>, <stream:error>, or the
+	// documented benign <ack> before the auth outcome. See WaitAuth for why
+	// this fails closed instead of skipping the stanza.
+	ErrUnexpectedStanza = errors.New("engine: unexpected stanza before the auth outcome")
 
 	// ErrSignerRequired is returned by the pairing flow when device-identity
 	// signing would be needed but no signal.Signer was injected. The server
@@ -312,9 +324,9 @@ func (e *Engine) Connect(ctx context.Context) (*Conn, error) {
 		return nil, fmt.Errorf("engine: dial %q: %w", e.cfg.Endpoint.URL, err)
 	}
 
-	sc, err := noise.DoClientHandshake(ctx, fr, e.cfg.NoiseKey, e.cfg.RootPub, payload)
+	sc, err := e.handshakeOver(ctx, fr, payload)
 	if err != nil {
-		return nil, fmt.Errorf("%w: noise handshake: %w", ErrAuthFailed, err)
+		return nil, err
 	}
 
 	e.logger.Debug("engine connected",

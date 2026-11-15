@@ -53,6 +53,116 @@ before the dial is usable for nodes. Dialing first would also work, but
 building the payload first means a configuration error fails before a socket
 is opened.
 
+## Auth outcome sequence (`WaitAuth`)
+
+`Connect` returning a `*Conn` means the Noise channel is up and the payload
+was accepted *structurally*. Whether the device is authenticated is a separate
+step: the server answers the payload with one stanza (PF-028, PF-029), and
+`Conn.WaitAuth` reads it.
+
+```
+ server                                   core/engine
+   │  (msg1/msg2/msg3, PF-007)              │
+   │  <success lid=… t=…/>                  │  WaitAuth → nil
+   ├────────────────────────────────────────►│
+   │  <failure reason=… code=… message=…/>  │  WaitAuth → *AuthError
+   ├────────────────────────────────────────►│    errors.Is → ErrAuthFailed
+   │  <stream:error code=…>                 │  WaitAuth → *StreamError
+   │   └ conflict type=…                    │    errors.Is → ErrStreamError
+   ├────────────────────────────────────────►│
+   │  <ack …/>                              │  skipped, keep waiting
+   ├────────────────────────────────────────►│
+   │  anything else                         │  WaitAuth → ErrUnexpectedStanza
+   ├────────────────────────────────────────►│
+```
+
+| Stanza | Outcome | Error sentinel |
+|---|---|---|
+| `<success/>` (`lid`, `t` attributes) | `nil` | — |
+| `<failure reason code message/>` | `*AuthError{Reason, ReasonRaw, Code, Message}` | `ErrAuthFailed` |
+| `<stream:error code><conflict type/></stream:error>` | `*StreamError{Code, ConflictType}` | `ErrStreamError` |
+| `<ack/>` | consumed, loop continues | — |
+| anything else | `*ErrUnexpectedStanza` with the offending tag | `ErrUnexpectedStanza` |
+| transport closed / ctx done | the transport error, or `ctx.Err()` | — (not `ErrAuthFailed`) |
+
+**Policy for anything else: fail closed.** A stanza that is neither an auth
+outcome nor the documented benign `ack` is reported rather than skipped. The
+reason is reader ownership: `WaitAuth` holds the single reader slot, and a
+skipped stanza would be lost to whoever needs it next. The concrete case is
+registration, where the server sends `<iq><pair-device>` right after the
+handshake; `StartPairing` must be the reader for that stanza. The reference
+client avoids the problem differently — it routes every tag into a handler
+queue — which this package deliberately does not have (one reader at a time).
+Only the offending stanza is consumed; the reported error is fatal for the
+connection from the caller's point of view.
+
+`<ack/>` is the one skip. In whatsmeow's `handleFrame` it is explicitly
+excluded from the "didn't handle node" log, i.e. an ack is an expected
+background stanza with no payload this package needs.
+
+Diagnostic text (`failure@message`, `failure@reason` when non-numeric,
+`stream:error@code`, an unexpected tag) comes from the server, so it is
+sanitized before it can reach a log or an error: control characters are
+replaced and the value is truncated to 120 runes with an explicit `...`
+marker. Log lines carry only the machine-readable `reason`/`code`/`conflict`,
+never the free-form message.
+
+`WaitAuth` releases the reader slot before returning, so `Pump`, `ReadNode`,
+or `StartPairing` can take over. A second caller while it waits gets
+`ErrReaderBusy`, like every other reader.
+
+## Connector bridge (`Engine.Connector`)
+
+`core/session` owns dialing, retry, and lifecycle; its `Connector` slot wraps
+an already-dialed `transport.FrameConn` (for example with a handshake).
+`Engine.Connector()` returns an adapter implementing exactly that interface, so
+there is **one** dial path per process:
+
+```
+ composition root                core/session                core/engine
+   │                                │                            │
+   │ eng.Connector()                │                            │
+   ├────────────────────────────────┼───────────────────────────►│ connector{eng}
+   │ session.New(Config{            │                            │
+   │   Dialer: dialer,              │                            │
+   │   Connector: connector})       │                            │
+   ├───────────────────────────────►│                            │
+   │                                │ Dialer.Dial(ctx, endpoint) │
+   │                                ├───────────────────────────►│   (transport)
+   │                                │ raw FrameConn              │
+   │                                │ Connector.Connect(ctx, raw)│
+   │                                ├───────────────────────────►│ clientPayload()
+   │                                │                            │ DoClientHandshake
+   │                                │◄───────────────────────────┤ SecureConn
+   │                                │ reader → FrameHandler      │
+```
+
+The adapter holds a `*Engine`, not a connection: it is stateless, safe to
+share between sessions and reconnect attempts, and rebuilds the
+`ClientPayload` on every attempt so rotated prekeys are picked up. Both
+`Connect` and the adapter build the payload through `Engine.clientPayload` and
+run the handshake through `Engine.handshakeOver`, so the payload construction
+and the `ErrAuthFailed` wrapping exist once. The adapter returns the
+`noise.SecureConn` itself rather than a `*Conn`, because `core/session` owns
+the reader loop and a `*Conn` would also claim reader ownership.
+
+Failure contract: a payload-build failure or handshake failure closes `raw`
+before returning (the handshake already does this; the adapter closes it for
+the payload-build case), and every error wraps `ErrAuthFailed`. A nil `raw`
+is `ErrInvalidConfig`.
+
+The dependency stays one-way: `core/engine` imports `core/session` for the
+interface only, and `core/session` never imports `core/engine`. The adapter is
+passed in from the composition root, which is why `tests/architecture` keeps
+passing unchanged.
+
+`WaitAuth` is *not* called by the connector: the session's frame reader starts
+immediately after the connector returns, so the auth stanza is delivered to the
+session's `FrameHandler`. A composition root that wants the typed outcome must
+call `HandleFrame`-side or use `Engine.Connect` (which returns the `*Conn` and
+leaves the reader free) and call `WaitAuth` before starting a pump.
+
+
 ## Pairing sequence
 
 ```
@@ -115,9 +225,10 @@ a real client does: the user scans while the server waits.
 
 Deliberate non-dependency: the engine does **not** import `core/messaging`.
 `Receiver.HandleFrame` already has the right signature, and callers (the SDK
-facade, or `core/session` as `Connector`) compose the two. This keeps the
-import direction `core/engine → protocol/*` and avoids a cycle the moment
-`core/messaging` wants an engine helper.
+facade) compose the two. The engine *does* import `core/session`, but only for
+its `Connector` interface (`session.go`); `core/session` never imports
+`core/engine`, so the direction stays one-way and the adapter is injected from
+the composition root.
 
 ## Reader ownership
 
@@ -152,19 +263,20 @@ silently returning an unsigned credential, the flow:
    step. Callers must not persist the record until that lands.
 
 **Challenge handling / registration crypto.** `protocol/auth` builds and
-parses payloads; the post-handshake `<success>`/`<failure>` and challenge
-exchange is not modelled anywhere yet, so the engine stops at "handshake
-completed". `Connect` succeeding means the Noise channel is up and the
-payload was accepted structurally, not that the account is authenticated.
+parses payloads and `Conn.WaitAuth` now maps the post-handshake
+`<success>`/`<failure>`/`<stream:error>` outcome to typed errors (PF-028,
+PF-029, see the sequence above). What is still not modelled is everything the
+server may send *after* a `<success>` — the `ib` offline-sync prologue, the
+`passive`/`active` IQ, prekey upload, and the `digest` check — plus any
+challenge exchange for the registration form. `WaitAuth` returning nil
+therefore means "the server accepted this device", not "the session is ready
+for messaging".
 
 **Reconnect and lifecycle.** Deliberately out of scope: this package is one
 dial, one handshake, one connection. `core/session` already owns retry via
-`transport.ReconnectPolicy`, but its `Connector` slot is
-`Connect(ctx, raw FrameConn) (transport.FrameConn, error)` — a shape the
-engine does not use, because `Engine.Connect` owns the dial itself. Bridging
-the two (an adapter that hands the engine an already-dialed frame connection)
-is a small follow-up and is intentionally not part of this package; the
-duplicate dial path would otherwise be untested.
+`transport.ReconnectPolicy`; `Engine.Connector` bridges its `Connector` slot
+(see above), so the duplicate dial path is gone: the session dials, the
+engine handshakes.
 
 **Live interop.** All tests run against an in-test fake server. PF-002/PF-003
 remain Probable until a manual live run; the engine does not change that.
@@ -181,6 +293,8 @@ remain Probable until a manual live run; the engine does not change that.
 | PF-017 | `pairing.VerifyDeviceIdentity`; the device signature is the documented gap |
 | PF-020…PF-025 | `auth.BuildClientPayload` with prekeys from `PreKeyProvider` |
 | PF-026, PF-027 | `auth.BuildLoginPayload` when `Credentials` is set; the two forms are mutually exclusive by construction |
+| PF-028 | `Conn.WaitAuth` treats `<success>` as the accepted outcome (its `lid`/`t` attributes are logged, not surfaced) |
+| PF-029 | `Conn.WaitAuth` maps `<failure>` and `<stream:error>` to `*AuthError`/`*StreamError` |
 | PF-010…PF-014 | `binary.Codec` injected in `Config.Codec`, default empty dictionary |
 
 ## Tests
@@ -206,5 +320,17 @@ imports no test helpers from other packages. Coverage:
 | `TestConnectUsesInjectedCodec` | the injected dictionary actually changes the bytes on the wire |
 | `TestConnectRejectsMismatchedPreKeyIdentity` | a prekey provider signed by a different identity fails before dialing |
 | `TestNewValidation` | required fields and defaults |
+| `TestWaitAuthSuccess` | `<success>` → nil; the reader slot is released afterwards |
+| `TestWaitAuthSkipsAck` | a benign `<ack/>` is skipped, not reported |
+| `TestWaitAuthFailureCarriesCode` | `<failure reason code message>` → `*AuthError` (reason, code, message) wrapping `ErrAuthFailed` |
+| `TestWaitAuthFailureRequiresCode` | a non-numeric or absent reason still yields `ErrAuthFailed`, with the raw value reported |
+| `TestWaitAuthStreamError` | `<stream:error code><conflict type>` → `*StreamError`, distinct from `ErrAuthFailed` |
+| `TestWaitAuthUnexpectedStanza` | fail-closed policy: a `<pair-device>` is reported as `ErrUnexpectedStanza` and only that stanza is consumed |
+| `TestWaitAuthTimeout` | the wait ends at the caller's context deadline and is not reported as an auth failure |
+| `TestWaitAuthReaderOwnership` | `WaitAuth` competes for the reader slot (`ErrReaderBusy`), and a closed Conn returns `ErrNotConnected` |
+| `TestWaitAuthSanitizesServerText` | server text is control-character-stripped and capped at 120 runes |
+| `TestConnectorPerformsHandshake` | `session.Connector` from `Engine.Connector()` handshakes over an in-memory pipe and returns an encrypted connection whose frames do not decode as plaintext |
+| `TestConnectorRejectsUnknownRoot` | a failed handshake over an already-dialed connection wraps `ErrAuthFailed` and closes the raw connection |
+| `TestConnectorDrivesSession` | composition-root shape: `session` dials once, the engine connector handshakes on that same connection, and frames round-trip through the session encrypted |
 
 No network, no sleeps: only context timeouts bound the flows.

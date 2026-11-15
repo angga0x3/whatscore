@@ -131,12 +131,43 @@ are out of scope. (The reference repository names the schema files
 | **Related findings** | PF-020, PF-025, PF-026 |
 | **Notes** | whatsmeow `store/clientpayload.go` (`Device.GetClientPayload`) selects `getLoginPayload` when a JID is stored and `getRegistrationPayload` otherwise, so the two forms never carry each other's discriminator fields: registration sets `devicePairingData=19` with `passive=false`/`pull=false` and no `username`/`device`; login sets `username=1`/`device=18` with `passive=true`/`pull=true`/`lidDbMigrated=41` and no `devicePairingData`. WhatsCore enforces this in both directions: `ParseClientPayload` rejects any payload carrying `username` or `device` as a login form, and `ParseLoginPayload` rejects any payload carrying `devicePairingData` or lacking `username`/`device`. A payload carrying both discriminators is rejected by both parsers as ambiguous; parsing fails closed rather than guessing (§8). |
 
+## PF-028: Post-handshake success stanza
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-028 |
+| **Title** | After the `ClientPayload`, the server accepts the connection with a bare `<success/>` stanza whose `lid` and `t` attributes are the only fields the reference clients read |
+| **Layer** | auth |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `core/engine` (`TestWaitAuthSuccess`, `TestWaitAuthSkipsAck`) |
+| **Related findings** | PF-007, PF-029 |
+| **Notes** | Verified against whatsmeow `client.go`: the `nodeHandlers` map dispatches tag `"success"` to `handleConnectSuccess`, and `connectionevents.go` (`handleConnectSuccess`), which reads `lid` (`ag.JID("lid")`) and `t` (`ag.UnixTime("t")`, a Unix-seconds server timestamp) and nothing else. Baileys `Socket/socket.ts` (`ws.on('CB:success')`) likewise reads only `node.attrs.lid` and calls `updateServerTimeOffset(node)`, which reads `attrs.t`. Both clients treat the absent-tag/attribute set as the whole contract: `success` has no required attributes and no children the reference reads. whatsmeow additionally ignores `success` when the client was not paired (`if !cli.paired.Load()` warns and returns), i.e. a registration session's first accepted stanza is not necessarily `success`. WhatsCore treats `success` as success regardless of pairing form and logs `lid` at debug; it does not yet surface `t` or advance a server-time offset, so those two uses are **unverified** here. Children of `success` are **unverified** (neither reference reads any). |
+
+## PF-029: Post-handshake failure and stream:error stanzas
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-029 |
+| **Title** | Rejection arrives as `<failure reason=int message=… code=…/>` or `<stream:error code=string><conflict type=…/></stream:error>`; `reason` is a decimal `ConnectFailureReason`, `code` on `stream:error` is a string compared to `"401"`/`"503"`/`"515"` |
+| **Layer** | auth |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `core/engine` (`TestWaitAuthFailureCarriesCode`, `TestWaitAuthFailureRequiresCode`, `TestWaitAuthStreamError`, `TestWaitAuthUnexpectedStanza`, `TestWaitAuthTimeout`, `TestWaitAuthReaderOwnership`, `TestWaitAuthSanitizesServerText`) |
+| **Related findings** | PF-007, PF-028 |
+| **Notes** | Tags verified in whatsmeow `client.go` (`nodeHandlers`: `"failure"`, `"stream:error"`). `<failure>`: `connectionevents.go` (`handleConnectFailure`) reads `reason` as an integer via `ag.Int("reason")` and casts it to `events.ConnectFailureReason`, whose values are `400`, `401`, `402`, `403` (LOCKED), `405`, `406` (BANNED), `409`, `413`, `414`, `415`, `418`, `500`, `501`, `503`; it also reads `message`, plus `code` and `expire` for `reason==402` (temporary ban) and `logout_message_header`/`logout_message_subtext` for `reason==403`. Baileys (`ws.on('CB:failure')`) uses `+(node.attrs.reason || 500)`. `<stream:error>`: `handleStreamError` reads `code` with a **string** type assertion (`node.Attrs["code"].(string)`) and inspects only the `conflict` child's `type` attribute (`"device_removed"` with `code=="401"`, `"replaced"`); Baileys (`getErrorCodeFromStreamError`) instead derives the reason from the first child's tag and falls back to `code` with a default of `500`. WhatsCore parses `code`, `reason`, and `message` for `failure` and `code` plus `conflict@type` for `stream:error`, and caps/sanitizes all server text (120 runes) before it can reach a log or error. **Unverified:** `stream:error` child tags other than `conflict` (their presence is implied by both clients reading only the first child, but the tag set is not established), `<error code=479>` (mentioned only in a comment in whatsmeow's `nodeHandlers`), the full `ConnectFailureReason` semantics for each code (e.g. which reasons delete the session), and whether `success` can follow `failure` on one connection. WhatsCore maps any other stanza to `ErrUnexpectedStanza` and fails closed rather than routing like the reference's handler queue. |
+
 ---
 
 Status: registration `ClientPayload` construction/parsing and its embedded
 `DeviceProps` are implemented, and login `ClientPayload` construction/parsing
 is implemented alongside it, proven with synthetic key material
-(`protocol/auth`) and wire field-number tests (`protocol/protobuf`). No live
-registration, pairing, or login run is recorded, so findings stay Probable.
-ADVSignedDeviceIdentity signing and credential provisioning remain out of
-scope.
+(`protocol/auth`) and wire field-number tests (`protocol/protobuf`). The
+post-handshake outcome is now parsed (`core/engine`, PF-028/PF-029) but only
+against a fake server: no live registration, pairing, or login run is
+recorded, so findings stay Probable. ADVSignedDeviceIdentity signing and
+credential provisioning remain out of scope.
