@@ -60,11 +60,30 @@ func main() {
 	endpoint := flag.String("endpoint", transport.DefaultURL, "WebSocket endpoint to probe")
 	timeout := flag.Duration("timeout", 20*time.Second, "overall probe deadline")
 	payload := flag.Bool("payload", false, "send a complete registration ClientPayload and read the server's answer")
+	pair := flag.Bool("pair", false, "run the pairing exchange: decode pair-device, print QR payloads, and wait for pair-success")
+	pairDict := flag.String("dict", "", "token table for -pair (see deployments/tokendict)")
+	pairOut := flag.String("out", "", "write paired credentials to this path (mode 0600) when -pair succeeds")
+	renderOnly := flag.Bool("render-only", false, "with -pair, stop after printing the QR payloads")
 	printRoot := flag.Bool("root", false, "print the pinned root key and exit")
 	flag.Parse()
 
 	if *printRoot {
 		fmt.Println(hex.EncodeToString(waRootPub))
+		return
+	}
+
+	if *pair {
+		err := runPair(pairConfig{
+			Endpoint:   *endpoint,
+			DictPath:   *pairDict,
+			Timeout:    *timeout,
+			OutPath:    *pairOut,
+			RenderOnly: *renderOnly,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pairing: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

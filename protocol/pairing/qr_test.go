@@ -98,7 +98,7 @@ func TestQREncodeErrors(t *testing.T) {
 		{Ref: ""},
 		{Ref: "has space"},
 		{Ref: "has,comma"},
-		{Ref: strings.Repeat("a", 65)},
+		{Ref: strings.Repeat("a", MaxRefLength+1)},
 		{Ref: "ok", ClientType: "has,comma"},
 		{Ref: "ok", ClientType: strings.Repeat("a", 33)},
 	}
@@ -106,5 +106,22 @@ func TestQREncodeErrors(t *testing.T) {
 		if _, err := payload.Encode(); !errors.Is(err, ErrInvalidQR) {
 			t.Fatalf("want ErrInvalidQR for %#v, got %v", payload, err)
 		}
+	}
+}
+
+// TestQRAcceptsObservedRefLength pins the fix for a real failure: the live
+// server sends 102-byte refs (PF-069), but the validator capped refs at 64
+// bytes, so encoding a genuine ref failed. The cap now only rejects absurd
+// input.
+func TestQRAcceptsObservedRefLength(t *testing.T) {
+	payload := fixturePayload()
+	// 102 bytes: the length observed from the live server.
+	payload.Ref = strings.Repeat("A", 102)
+	code, err := payload.Encode()
+	if err != nil {
+		t.Fatalf("102-byte ref rejected: %v", err)
+	}
+	if _, err := ParseQR(code); err != nil {
+		t.Fatalf("round trip failed: %v", err)
 	}
 }

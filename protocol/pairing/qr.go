@@ -15,6 +15,11 @@ import (
 // QRURLPrefix is the fixed URL prefix of a pairing QR code (PF-015).
 const QRURLPrefix = "https://wa.me/settings/linked_devices#"
 
+// MaxRefLength bounds the ref field. The live server sends 102-byte refs
+// (observed 2026-11-15, PF-069), so the cap must accommodate them; it exists
+// only to keep a malformed payload from being unbounded.
+const MaxRefLength = 256
+
 // ErrInvalidQR is returned for malformed pairing payloads.
 var ErrInvalidQR = errors.New("pairing: invalid QR payload")
 
@@ -94,8 +99,8 @@ func validateRef(ref string) error {
 	if ref == "" {
 		return fmt.Errorf("%w: empty ref", ErrInvalidQR)
 	}
-	if len(ref) > 64 {
-		return fmt.Errorf("%w: ref longer than 64 bytes", ErrInvalidQR)
+	if len(ref) > MaxRefLength {
+		return fmt.Errorf("%w: ref longer than %d bytes", ErrInvalidQR, MaxRefLength)
 	}
 	if strings.ContainsAny(ref, ",\t\r\n ") {
 		return fmt.Errorf("%w: ref contains a separator or whitespace", ErrInvalidQR)
