@@ -118,6 +118,10 @@ Confidence and Status are deliberately separate axes:
 | PF-043 | media | Truncated HMAC-SHA256 over IV and ciphertext | Probable | Verified-by-test | `protocol/media` (MAC vectors) |
 | PF-044 | media | Download framing and verification order | Probable | Verified-by-test | `protocol/media` (tamper sweep) |
 | PF-045 | media | Media key size, unused expansion tail | Probable | Verified-by-test | `protocol/media` (key vectors) |
+| PF-050 | signal | X3DH master secret and DH order | Confirmed | Verified-by-test | `protocol/signal` (independent vectors) |
+| PF-051 | signal | X3DH key derivation | Confirmed | Verified-by-test | `protocol/signal` (root/chain vectors) |
+| PF-052 | signal | Initial keys and identifiers | Confirmed | Verified-by-test | `protocol/signal` (agreement tests) |
+| PF-053 | signal | Signed-prekey signature | Confirmed | Verified-by-test | `protocol/signal`, `internal/xeddsa` |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -169,12 +173,13 @@ in CI.
 Status: findings recorded 2026-11-15 from reference study
 (whatsmeow + Baileys; see [transport.md](transport.md),
 [noise.md](noise.md), [binary.md](binary.md), [pairing.md](pairing.md),
-[auth.md](auth.md), [messaging.md](messaging.md), and
-[media.md](media.md)). Algorithm findings are Confirmed by vector tests;
+[auth.md](auth.md), [messaging.md](messaging.md),
+[media.md](media.md), and [signal.md](signal.md)). Algorithm findings are Confirmed by vector tests;
 live-server-facing findings (PF-002, PF-003, PF-010…PF-017, PF-020…PF-025,
 PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
 `tests/integration` runs the fake-server path end to end (WebSocket dial →
 handshake → encrypted frames), which is what the Proving test column cites.
+Signal X3DH findings (PF-050…PF-053) are Confirmed by independent vectors.
 The binary token table itself is not reproduced (spec §10.2); the codec takes
 an injected dictionary. PF-034 records that the plaintext `<body>` carrier is
 a scoped deviation from the references' encrypted `<enc>` payload.

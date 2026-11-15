@@ -34,6 +34,7 @@ as workstreams land.
 | 2026-11-15 | Text send | `Session.WriteFrame`, `core/messaging.Sender`, `client.SendMessage`, noise connector |
 | 2026-11-15 | Inbound text | `protocol/messaging.ParseIncomingText`, `core/messaging.Receiver` in the client pipeline |
 | 2026-11-15 | Receipts | inbound parse/events + `Sender.SendReceipt` + `client.SendReceipt` |
+| 2026-11-15 | Signal X3DH | `protocol/signal` + independent vectors, PF-050…053 |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
@@ -64,8 +65,8 @@ Independent packages; can run in parallel.
   stanzas. Depends on `protocol/binary`.
 - `protocol/media`: media key derivation (HKDF), AES-256-CBC + HMAC-SHA256
   encrypt/decrypt, integrity sidecar. Depends on stdlib only.
-- `protocol/signal`: X3DH + Double Ratchet, prekeys, sender keys. Needs
-  known-answer vectors and a crypto decision; highest risk.
+- `protocol/signal`: X3DH done (PF-050…053); Double Ratchet, prekeys, and
+  sender keys remain. Highest risk.
 - `protocol/sync`: app-state patch parsing; depends on signal primitives.
 
 Acceptance per package: round-trip/known-answer tests, adversarial tables,

@@ -20,6 +20,8 @@ Shared, deterministic test data for the protocol engine and its tests.
 | `generate_noise_vectors.py` | PF-004…PF-008 | Generator: implements the algorithm from the finding text, independent of the Go code; fixed public seed strings only |
 | `binary_vectors.json` | PF-010…PF-014 | JSON records: synthetic token table, one node per vector, exact frame hex |
 | `generate_binary_vectors.py` | PF-010…PF-014 | Generator: implements the wire rules from the finding text, independent of the Go code |
+| `signal_vectors.json` | PF-050…PF-053 | JSON records: DH1…DH4, root key, chain key for fixed synthetic keys |
+| `generate_signal_vectors.py` | PF-050…PF-053 | Generator: X25519 + HKDF-SHA256 ("WhisperText") from the finding text |
 
 `noise_vectors.json` is regenerated with:
 
@@ -42,6 +44,17 @@ python3 tests/fixtures/generate_binary_vectors.py > tests/fixtures/binary_vector
 
 `protocol/binary` decodes every hex, compares the node, re-encodes it, and
 requires byte equality — so the Python and Go encoders must agree.
+
+## Signal fixtures
+
+`signal_vectors.json` pins the X3DH DH order and derivation. Regenerate with:
+
+```bash
+python3 tests/fixtures/generate_signal_vectors.py > tests/fixtures/signal_vectors.json
+```
+
+`protocol/signal` recomputes every DH and the root/chain keys from fixed
+private keys, so the Python and Go implementations must agree.
 
 If a future area needs a byte-blob fixture that is not a JSON node (e.g. a
 protobuf message), use the original convention: `tests/fixtures/<area>/<id>.hex`
