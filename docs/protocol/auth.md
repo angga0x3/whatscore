@@ -171,3 +171,25 @@ post-handshake outcome is now parsed (`core/engine`, PF-028/PF-029) but only
 against a fake server: no live registration, pairing, or login run is
 recorded, so findings stay Probable. ADVSignedDeviceIdentity signing and
 credential provisioning remain out of scope.
+
+## PF-068: The server closes the connection after msg3 when the payload is incomplete
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-068 |
+| **Title** | After a valid Noise handshake, the real server closes the WebSocket (1006) as soon as it reads a ClientPayload that lacks a complete `DevicePairingRegistrationData`; it sends no `<success>`, `<failure>`, or `stream:error` first |
+| **Layer** | auth |
+| **Source** | direct observation of own session |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` live runs (handshake completes, then read fails with close 1006) |
+| **Related findings** | PF-007, PF-020, PF-023 |
+| **Notes** | Two payloads were tried against `wss://web.whatsapp.com/ws/chat`: an opaque byte string, and a minimal valid protobuf (`passive=false`, `pull=true`). Both completed the handshake and were then followed by an immediate 1006 close with zero bytes of application data. This is a real result, not a test gap: it means the registration payload must carry the full prekey material (`eRegid`, `eKeytype`, `eIdent`, `eSkeyID`, `eSkeyVal`, `eSkeySig`, `buildHash`, `deviceProps`) before the server will respond. It also means a connection that reports `CONNECTED` after handshake alone is reporting nothing — which is why `AuthConnector` now gates on the verdict. |
+
+---
+
+Status: both payload forms are implemented, signed-prekey material is generated, and
+the live server's behaviour on an incomplete payload is recorded (PF-068). The
+next live step needs a complete registration payload, which in turn needs the
+token table for the stanza layer.
