@@ -312,7 +312,13 @@ option validation, `WithConnector`/`WithFrameHandler` pass-through, plaintext `S
 `SendEncrypted`, which loads a peer session, picks `pkmsg` vs `msg`, sends, and persists the advanced
 ratchet through an injected `SessionStore`. The SDK also exposes lazy contact/group caches that
 publish a group-update event only when a cache reports a real change (duplicate contact pushes stay
-silent). Media orchestration through the SDK remains.
+silent). Media orchestration rides that same carrier: `SendMedia` encrypts an image or document with
+`core/media`, sends a small JSON descriptor (media id placeholder, name, media type, size, both
+sidecar digests, the base64 media key) as the Signal plaintext, and `ReceiveMedia` parses the
+descriptor, decrypts, and verifies the hashes; both enforce `core/media.MaxMediaSize` before doing
+work and keep the media key write-only (returned to the caller, excluded from result formatting).
+Transport upload — real media ids, `direct_path`/`url` — is still missing, so the encrypted blob
+travels inside the descriptor for now.
 
 ### 4.12 `core/session`
 
