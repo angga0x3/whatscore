@@ -18,13 +18,16 @@ import (
 	"os"
 	"time"
 
+	"github.com/angga0x3/whatscore/internal/waref"
 	"github.com/angga0x3/whatscore/protocol/noise"
 	"github.com/angga0x3/whatscore/protocol/transport"
 )
 
 // waRootPub is the pinned WhatsApp server certificate root key recorded in
-// docs/protocol/noise.md (PF-009). It is a public constant, not a credential.
-var waRootPub = mustHex("142375574d0a587166aae71ebe516437c4a28b73e3695c6ce1f7f9545da8ee6b")
+// docs/protocol/noise.md (PF-009). It is a public constant, not a credential,
+// and it lives in internal/waref so the probe and the server cannot pin
+// different values.
+var waRootPub = waref.RootPublicKey()
 
 type outcome int
 
@@ -141,12 +144,4 @@ func syntheticPayload() []byte {
 		return []byte("whatscore-probe")
 	}
 	return []byte("whatscore-probe:" + base64.RawURLEncoding.EncodeToString(buf[:]))
-}
-
-func mustHex(s string) []byte {
-	out, err := hex.DecodeString(s)
-	if err != nil {
-		panic("whatscore-probe: bad embedded constant: " + err.Error())
-	}
-	return out
 }
