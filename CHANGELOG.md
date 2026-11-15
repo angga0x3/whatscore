@@ -18,6 +18,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- Live media receive, proven end to end: after a fresh pairing, a sticker
+  sent from the phone arrived, decrypted, downloaded from the real CDN,
+  passed the SHA-256 check, and landed on disk as a valid 51 KB WebP — the
+  pipeline's first live artifact. Five note-to-self texts decrypted in the
+  same run (the fresh device's keys make the phone's messages bootstrap
+  cleanly), and the offline queue drained with its marker.
 - Inbound media flows through the server: the session runtime fetches the
   attachment from the CDN (mediaConn hosts, the whatsmeow URL shape, MAC and
   SHA-256 verified), re-encrypts it at rest with a fresh media key — the
