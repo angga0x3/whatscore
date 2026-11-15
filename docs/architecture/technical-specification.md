@@ -379,7 +379,9 @@ events. **Allowed deps.** `core/*`, `go-chi/chi/v5`, stdlib; never `protocol/*`.
 **Status.** `server/api` implements the session routes behind a `Service` interface with an
 in-memory manager; the router mounts it when `Deps.API` is set, and unmounted `/api/v1` paths still
 answer 501. `server/webhook` implements signed delivery with retries and delivery records, and
-`server/api` also serves webhook CRUD with a write-once secret. Messaging and QR SSE remain.
+`server/api` also serves webhook CRUD with a write-once secret, messaging routes with idempotency,
+and the `/events` + `/qr` SSE streams over `core/events`. Image/document endpoints, rate limiting,
+and real delivery remain contract-only.
 
 ### 4.19 `storage` (Store aggregate)
 
