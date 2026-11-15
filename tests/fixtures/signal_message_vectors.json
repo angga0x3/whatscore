@@ -1,0 +1,13 @@
+{
+  "cipher_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "mac_key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "iv": "cccccccccccccccccccccccccccccccc",
+  "ratchet_key": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "sender_identity": "1111111111111111111111111111111111111111111111111111111111111111",
+  "receiver_identity": "2222222222222222222222222222222222222222222222222222222222222222",
+  "counter": 5,
+  "previous_counter": 2,
+  "plaintext": "68616c6f207369676e616c",
+  "ciphertext": "957019540ce767af130fff3dd3e3ebd6",
+  "wire": "330a2105dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd100518022210957019540ce767af130fff3dd3e3ebd6031688fd72d9a129"
+}
