@@ -212,9 +212,11 @@ func runListen(cfg sendConfig) error {
 			// cannot re-encode for the receiver.
 			return
 		case "message":
-			// A receipt goes back before decryption: a sender that never sees
-			// one retries the same message.
-			sendDeliveryReceipt(ctx, sc, codec, node)
+			// No receipt here. The receipt is the server's proof of delivery,
+			// and a message this device cannot open must stay in its queue —
+			// receipting it first is how a failed decrypt deletes the only
+			// copy the server holds. Receipts go out from the event loop,
+			// after a message actually decrypted.
 		case "iq":
 			if node.Attrs["xmlns"] == "urn:xmpp:ping" {
 				answerPingNode(ctx, sc, codec, node)
@@ -239,6 +241,12 @@ func runListen(cfg sendConfig) error {
 				}
 				fmt.Printf("\nMESSAGE from=%s id=%s at=%s\n  text: %s\n",
 					ev.Message.Sender, ev.Message.ID, ev.Message.Timestamp.Format(time.RFC3339), ev.Message.Text)
+				// The receipt follows the decrypt, not the stanza: the server
+				// keeps a message it has no receipt for, so a failed decrypt
+				// can be recovered instead of erased.
+				if err := sendDeliveryReceipt(context.Background(), sc, codec, ev.Message.ID, ev.Message.Sender); err != nil {
+					fmt.Printf("delivery receipt: %v\n", err)
+				}
 				if m := ev.Message.Media; m != nil {
 					path, err := DownloadMedia(context.Background(), d, m, cfg.MediaDir)
 					if err != nil {
@@ -524,12 +532,15 @@ func retryKeysBlock(record *credentialRecord, keys *keyFile, signer signal.XEdDS
 		Children: []wabinary.Node{
 			{Tag: "type", Bytes: []byte{5}},
 			{Tag: "identity", Bytes: append([]byte(nil), record.IdentityPub[:]...)},
+			// Key ids ride as 3 bytes on the wire — the upload path learned
+			// this the hard way (PF-082); the retry keys block obeys the same
+			// encoding.
 			{Tag: "key", Children: []wabinary.Node{
-				{Tag: "id", Bytes: []byte{byte(fresh[0].ID >> 24), byte(fresh[0].ID >> 16), byte(fresh[0].ID >> 8), byte(fresh[0].ID)}},
+				{Tag: "id", Bytes: []byte{byte(fresh[0].ID >> 16), byte(fresh[0].ID >> 8), byte(fresh[0].ID)}},
 				{Tag: "value", Bytes: append([]byte(nil), fresh[0].Pair.Public[:]...)},
 			}},
 			{Tag: "skey", Children: []wabinary.Node{
-				{Tag: "id", Bytes: []byte{byte(signed.ID >> 24), byte(signed.ID >> 16), byte(signed.ID >> 8), byte(signed.ID)}},
+				{Tag: "id", Bytes: []byte{byte(signed.ID >> 16), byte(signed.ID >> 8), byte(signed.ID)}},
 				{Tag: "value", Bytes: append([]byte(nil), signed.Pair.Public[:]...)},
 				{Tag: "signature", Bytes: append([]byte(nil), signed.Signature...)},
 			}},
@@ -641,12 +652,12 @@ func listenContext(timeout time.Duration) (context.Context, context.CancelFunc) 
 	return ctx, func() { cancel(); stop() }
 }
 
-// sendDeliveryReceipt tells the sender the message arrived (PF-035).
-func sendDeliveryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node) {
-	from := node.Attrs["from"]
-	id := node.Attrs["id"]
+// sendDeliveryReceipt tells the sender the message arrived (PF-035) — and
+// tells the server to stop queueing it, which is why it must only fire after
+// the message actually decrypted.
+func sendDeliveryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, id, from string) error {
 	if from == "" || id == "" {
-		return
+		return fmt.Errorf("receipt needs an id and a from")
 	}
 	receipt := &wabinary.Node{
 		Tag:   "receipt",
@@ -654,12 +665,13 @@ func sendDeliveryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinar
 	}
 	frame, err := codec.Encode(receipt)
 	if err != nil {
-		return
+		return err
 	}
 	if err := sc.WriteFrame(ctx, frame); err != nil {
-		return
+		return err
 	}
 	fmt.Printf("delivery receipt sent for %s\n", id)
+	return nil
 }
 
 // attrSummary renders the attributes that matter for routing, truncated so a
