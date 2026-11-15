@@ -25,12 +25,43 @@ project is pre-1.0, so breaking changes happen in minor versions.
   delivered to — the strongest remaining PF-087 candidate. A queue that is
   announced but never drained is now reported as such when the window ends,
   instead of passing as "listen window ended".
-- The token table now covers the `<ib><offline_preview/>` announcement:
-  `single[153]` (the `message`/`notification` counts) and `dictionary0[56]`
-  (`count`). The stanza that announces the PF-087 queue was itself landing in
-  `undecoded/` and being dropped silently.
+- The offline announcement also rides on counter values the table has never
+  observed (`message=¿d1[158]`, `receipt=¿d2[126]` — the counts grow with the
+  queue, so they come as dictionary refs). A strict decode failed the whole
+  stanza on one unknown value, and the queue it announced was never answered.
+  An `<ib>` that decodes with placeholder holes is now routed by its shape —
+  `<ib>` is server-state routing, not user data — with the holes printed so the
+  table can be completed. Every other tag keeps the loud failure.
+- The inbound peer is the sender, not the recipient: sessions were keyed and
+  events published on `to`, which only worked against a fake node that happened
+  to be symmetric. The live service omits `to` on inbound stanzas entirely, so
+  the envelope parser required the one attribute the wire does not carry.
+- The service pads v2 plaintexts with N copies of the byte N (whatsmeow
+  `padMessage`/`unpadMessage`); the receive path now strips it before parsing
+  and the send path adds it before encrypting. The trailing pad bytes are not
+  protobuf — they are how payloads that decrypted cleanly still came back as
+  wire-format errors. The msg-carrier send path also carries the protobuf
+  payload now; it encrypted the raw string.
 
 ### Proven live
+
+- The offline queue drains. A 2026-11-15 session answered the announcement and
+  the backlog streamed: 21 `message` stanzas with a delivery receipt for each,
+  plus notifications, statuses and newsletter plaintexts. The queue count moves
+  between sessions (123 → 118 → 121), so deliveries are being counted.
+- Signal sessions bootstrap from live `pkmsg` carriers and decrypt: three
+  messages from the phone opened cleanly at the crypto layer. Their payloads
+  then failed on the padding, which is fixed above; the same messages cannot be
+  retried against the live service, because a consumed prekey is gone and a
+  probe is stateless — the bootstrap in a later run references a key the
+  earlier run spent.
+- The server reports holding 0 one-time prekeys where it held 11 earlier the
+  same day. That is what one-time prekeys are for: senders consumed them. The
+  server can still encrypt to the signed prekey.
+- A note-to-self sent from this device (`-send` to the user's own JID) is
+  accepted and acknowledged but is not echoed back to the sending device — the
+  phone gets it, the linked device does not.
+
 
 - The PF-087 queue announcement decodes: `count=107 message=26 receipt=37
   notification=26` in the 2026-11-15 run. The server announces its queue in a
