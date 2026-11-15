@@ -254,6 +254,21 @@ A real client must:
 | **Related findings** | PF-086, PF-088 |
 | **Notes** | The failure was a chain, and every link was ours, not the server's. (1) The announcement itself rode on tokens the partial table lacked, landed in `undecoded/`, and was silently discarded — "announced" and "delivered" were indistinguishable. (2) After that was decoded, the *same kind of stanza* still failed whole, because its counter values grow with the queue and come as dictionary refs (`message=¿d1[158]`, `receipt=¿d2[126]`, `status=¿d1[209]`) the table has never observed; the listen path now routes an `<ib>` by its shape with the holes printed, since `<ib>` is server-state routing and its values are diagnostics. (3) The queue stayed frozen until the client answered the announcement with `<ib><offline_batch count="100"/>`; ignoring it is a client the server never delivers to. (4) The backlog then decrypted to wire-format errors: the service pads v2 plaintexts with N copies of the byte N (whatsmeow `unpadMessage`), and the trailing pad bytes are not protobuf. Each link is pinned by a test (TestUndecodableIbRoutesByShape, TestOfflineBatchRequestShape, TestPadUnpadRoundTrip). The same run proved the rest of the chain live: with the token table completed from the canonical dictionary, two queued text messages from a real contact (a third-party sender, not this project's own phone) bootstrapped pkmsg sessions, decrypted, rendered their text, and earned delivery receipts — and a message sent while the listener was connected arrived and decrypted live. The receiver's session observer persisted the ratchet to disk mid-run. Residual and deliberately not closed: the probe's own queued note-to-self messages are encrypted to a one-time prekey an earlier run consumed, and the phone answers retry receipts by re-encrypting with its cached bundle — so those stay unreadable until the phone either honours the inline keys block or the device re-accounts for itself; and the drain marker `<ib><offline/>` has not yet been observed on the wire, so the post-drain grace path runs unproven against the live service. |
 
+## PF-089: The stanza type attr gates nothing about the payload
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-089 |
+| **Title** | The live service stamps `type="media"` on encrypted media stanzas and `type="text"` on everything else; gating the envelope parser on `"text"` rejects every media message before decryption |
+| **Layer** | messaging |
+| **Source** | direct observation of own session (2026-11-15): a contact's sticker and image messages arrived as `<message type="media"><enc type="pkmsg" v="2">…` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `TestParseEncryptedTextAcceptsMediaType` — a `type="media"` stanza parses; an unobserved type still fails loudly |
+| **Related findings** | PF-083, PF-087 |
+| **Notes** | The type attr names the transport class, not the payload kind; what a decrypted payload actually carries is decided by its protobuf content. whatsmeow does not gate inbound messages on the attribute at all. This project keeps a gate — loud failure is part of its design — but it now accepts the two types the live service has been observed to send with an `<enc>` child. |
+
 ## PF-088: Silent logging hides a broken receive path
 
 | Field | Value |

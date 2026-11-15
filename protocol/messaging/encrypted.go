@@ -15,6 +15,9 @@ const (
 	CarrierMsg   = "msg"
 	CarrierPKMsg = "pkmsg"
 	CarrierSKMsg = "skmsg"
+	// MessageTypeMedia is the stanza type the live service stamps on
+	// encrypted media messages (PF-089); "text" covers everything else.
+	MessageTypeMedia = "media"
 )
 
 // EncryptedText is an encrypted text message: the plaintext message envelope
@@ -81,8 +84,15 @@ func ParseEncryptedText(node *binary.Node) (*EncryptedText, error) {
 	if node == nil || node.Tag != tagMessage {
 		return nil, fmt.Errorf("%w: expected %q, got %s", ErrInvalidMessage, tagMessage, tagOf(node))
 	}
-	if msgType := node.Attrs["type"]; msgType != MessageTypeText {
-		return nil, fmt.Errorf("%w: type %q is not %q", ErrInvalidMessage, msgType, MessageTypeText)
+	// The stanza's type attr names the transport class, not the payload:
+	// "text" carries conversation payloads, "media" carries image/sticker/
+	// video/audio/document ones. DecodePayload decides what a decrypted
+	// payload actually is, so the gate here only refuses types the live
+	// service has never sent with an <enc> child.
+	switch msgType := node.Attrs["type"]; msgType {
+	case MessageTypeText, MessageTypeMedia:
+	default:
+		return nil, fmt.Errorf("%w: type %q is not a transport type this project has observed", ErrInvalidMessage, msgType)
 	}
 	envelope := &EncryptedText{ID: node.Attrs["id"]}
 	if err := validateMessageID(envelope.ID); err != nil {

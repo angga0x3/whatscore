@@ -1,12 +1,14 @@
 package messaging
 
 import (
+	"errors"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/angga0x3/whatscore/protocol/protobuf"
+	"github.com/angga0x3/whatscore/protocol/binary"
 	"github.com/angga0x3/whatscore/protocol/media"
+	"github.com/angga0x3/whatscore/protocol/protobuf"
 )
 
 // TestDecodePayloadImage pins the media classification: an imageMessage
@@ -82,5 +84,34 @@ func TestDecodePayloadUnknownIsNotAnError(t *testing.T) {
 	}
 	if got.Kind != PayloadUnknown {
 		t.Fatalf("kind = %q", got.Kind)
+	}
+}
+
+// TestParseEncryptedTextAcceptsMediaType pins PF-089: the live service stamps
+// type="media" on encrypted media stanzas. Gating on "text" alone rejected
+// every sticker, image and voice note before decryption was even attempted.
+func TestParseEncryptedTextAcceptsMediaType(t *testing.T) {
+	node := &binary.Node{
+		Tag: tagMessage,
+		Attrs: binary.Attrs{
+			"id": "MEDIA1", "from": "123339465080863@lid", "type": MessageTypeMedia,
+		},
+		Children: []binary.Node{{
+			Tag: tagEnc, Attrs: binary.Attrs{attrVersion: EncVersion2, attrCarrier: CarrierPKMsg},
+			Bytes: []byte{0x07},
+		}},
+	}
+	got, err := ParseEncryptedText(node)
+	if err != nil {
+		t.Fatalf("media-type stanza rejected: %v", err)
+	}
+	if got.Carrier != CarrierPKMsg {
+		t.Fatalf("carrier = %q", got.Carrier)
+	}
+
+	// An unobserved type still fails loudly.
+	node.Attrs["type"] = "invoice"
+	if _, err := ParseEncryptedText(node); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("err = %v, want ErrInvalidMessage", err)
 	}
 }

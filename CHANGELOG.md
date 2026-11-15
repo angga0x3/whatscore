@@ -40,6 +40,11 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Fixed
 
+- Encrypted media stanzas were rejected before decryption: the live service
+  stamps `type="media"` on them, and the envelope parser gated on `"text"`.
+  Every sticker, image and voice note queued for this device died in the
+  parser (PF-089). The gate now accepts both observed transport types and
+  leaves the payload kind to DecodePayload.
 - The empty one-time prekey store is why senders drift to the signed prekey
   and why every queued message came to name one spent key (108). `-listen`
   now tops the server up with a fresh id batch when the count hits zero,
