@@ -239,8 +239,9 @@ serialization (byte blobs handed to the stores, §4.19). **Decided:** never shar
 `protocol/noise` — separate roots, HKDF domains, stores. **Allowed deps.** stdlib `crypto/*`,
 `golang.org/x/crypto`, `internal/xeddsa`, `protocol/protobuf`. **Tests.** Known-answer X3DH/Double Ratchet vectors
 (Phase 4 exit criterion); out-of-order/replay tables; state-serialization round-trip; no network I/O.
-**Status.** X3DH initiator/responder agreement and signed-prekey verification are implemented
-(PF-050…PF-053). Double Ratchet, message encryption, prekey rotation, and state serialization remain.
+**Status.** X3DH agreement, signed-prekey verification, the root/chain key schedule, and message-key
+expansion are implemented (PF-050…PF-056). The ratchet state machine, message encryption, prekey
+rotation, and state serialization remain.
 
 ### 4.8 `protocol/messaging`
 

@@ -22,6 +22,8 @@ Shared, deterministic test data for the protocol engine and its tests.
 | `generate_binary_vectors.py` | PF-010…PF-014 | Generator: implements the wire rules from the finding text, independent of the Go code |
 | `signal_vectors.json` | PF-050…PF-053 | JSON records: DH1…DH4, root key, chain key for fixed synthetic keys |
 | `generate_signal_vectors.py` | PF-050…PF-053 | Generator: X25519 + HKDF-SHA256 ("WhisperText") from the finding text |
+| `signal_ratchet_vectors.json` | PF-054…PF-056 | JSON records: root ratchet, three chain steps, message keys |
+| `generate_signal_ratchet_vectors.py` | PF-054…PF-056 | Generator: X25519 + HKDF ("WhisperRatchet"/"WhisperMessageKeys") + HMAC |
 
 `noise_vectors.json` is regenerated with:
 
