@@ -93,16 +93,23 @@ provisioning, and a live pairing run remain.
 
 ---
 
-Status: the pairing stanza, the acknowledge, the keepalive round-trip, and a
-scannable QR all work against the live server. `pair-success` has not been
-observed, because it only arrives after a phone accepts a QR.
+Status: the pairing exchange works end to end against the live server up to and
+including a **verified `pair-success`** (PF-075).
 
-The first phone attempt was refused, and that refusal found two real defects:
-the payload carried a zero-filled signed-prekey signature (PF-072), and all six
-QR codes were printed at once although only one is valid at a time (PF-074). The
-confirmation step that ends the linking handshake was also missing entirely
-(PF-073). All three are fixed and covered by tests; whether they were jointly
-sufficient is unknown until a scan succeeds.
+The history here matters more than the status line. A first phone attempt was
+refused; auditing it found three defects — a zero-filled signed-prekey signature
+(PF-072), all six QR codes printed at once although only one is valid at a time
+(PF-074), and no `pair-device-sign` confirmation (PF-073). After those fixes a
+second scan **succeeded at the server**: a real `pair-success` arrived and its
+account identity verified against our own adv secret and identity key.
+
+The probe still could not use it, for a different reason: its partial token table
+could not decode the stanza (PF-075), and the unconfirmed link was then aborted
+by the server (PF-076). The tokens are now known and recorded, and the fixture
+that builds a server-shaped container is covered by a test.
+
+No message has been sent, no session has been established, and no credential
+file has been written from a live run. Those remain untested.
 
 ## PF-071: qr-client-type derives from the reported platform
 
@@ -163,3 +170,64 @@ sufficient is unknown until a scan succeeds.
 | **Proving test** | `cmd/whatscore-probe` (`TestQRValidityWindowMatchesTheReference`, `TestRotationShowsOneCodeAtATime`) |
 | **Related findings** | PF-015, PF-069 |
 | **Notes** | `timeout := 20 * time.Second; if len(codes) == 6 { timeout = 60 * time.Second }` applies to the first code only. The probe now prints one code at a time, clears the terminal between codes, and keeps answering keepalives throughout — verified live: codes 1 and 2 were each shown for their window with pings answered in between. This alone can explain a scan failure, which is why the previous run could not distinguish expiry from PF-072. |
+
+## PF-075: pair-success verified end to end against the live server
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-075 |
+| **Title** | A phone scan of a WhatsCore-generated QR produced a real `<iq><pair-success>`; decoding it needed eight single-byte tokens and one dictionary-0 token beyond the `pair-device` set, and the account identity in it verified against the adv secret from our own QR |
+| **Layer** | pairing |
+| **Source** | direct observation of own session |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/pairing` (`TestPairSuccessToConfirmation`), `protocol/binary` recorded-frame decode |
+| **Related findings** | PF-016, PF-017, PF-069, PF-073, PF-074 |
+| **Notes** | The 731-byte stanza decoded to `<iq from="s.whatsapp.net" id type="set" xmlns="md"><pair-success><jurisdiction cc="62" iso="ID"/><encryption-metadata algorithm="aes-256-gcm" version="1"><encrypted_key/><nonce/><encrypted_data/><auth_tag/></encryption-metadata><client-props/><platform name="iphone"/><device-identity/><device jid lid/></pair-success></iq>`. Two independent decoders — this project's and the reference's — produced the same tree, attribute by attribute and byte for byte; the `pair-device-sign` path then produced a confirming container. **The account-identity HMAC verified with the adv secret of the QR that was scanned, and the account signature verified with its identity key.** That is the strongest statement this project can make about pairing: the server accepted our device and signed it for our keys. It is *not* a claim that a session works — the `pair-success` arrived, the probe could not read it at the time, and no message has ever been sent. |
+
+### Tokens this stanza added
+
+Observed in the frame, cross-checked with a second decoder, and required for it
+to decode — nothing speculative:
+
+| Index | Token |
+|-------|-------|
+| 12 | `jid` |
+| 59 | `device` |
+| 74 | `platform` |
+| 84 | `version` |
+| 85 | `1` |
+| 118 | `lid` |
+| 137 | `name` |
+| 230 | `device-identity` |
+| dictionary 0, 208 | `iphone` |
+
+## PF-076: A verified pair-success that is never confirmed becomes a stream error
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-076 |
+| **Title** | After `pair-success` the server waits for the `pair-device-sign` confirmation; a client that does not send it is sent `<stream:error>` and then `xmlstreamend` |
+| **Layer** | pairing |
+| **Source** | direct observation of own session |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/pairing` (`TestSignDeviceIdentityDropsAccountKey`) and the recorded frames |
+| **Related findings** | PF-073, PF-075 |
+| **Notes** | Two frames followed the unread `pair-success` in the same run: `<stream:error><ping id="1262735447"/></stream:error>` — echoing the pair-success iq id — and then an empty `<xmlstreamend/>`. This is the mechanism behind the phone's generic "couldn't link new device": the device was accepted and signed, but the link was never confirmed, so the server aborted the stream. It also explains why the phone showed no device afterwards. |
+
+## A cosmetic divergence that is deliberately kept
+
+`binary` renders a userless JID as `@s.whatsapp.net`; the reference renders the
+same bytes as `s.whatsapp.net`. The wire form is identical and both are correct
+decodes, but the strings differ.
+
+This package keeps the empty user on purpose. The pairing acknowledgement echoes
+the server's `from` attribute, and the encoder writes a JID pair back as a JID
+pair. If the decoder returned the bare server name, the encoder would emit it as
+a plain string instead — same meaning, different bytes. The acknowledgement has
+been accepted with the current behaviour, so it stays. It is recorded here
+because a future reader comparing decodes will see the difference and should not
+"fix" it.

@@ -14,9 +14,9 @@ run.
 | Noise handshake (msg1→msg3) | **supported** | same runs, suite `Noise_XX_25519_AESGCM_SHA256` |
 | Server certificate chain | **supported** | same runs (pinned root verified) |
 | Auth payload accepted | **supported** | live: `whatscore-probe -payload` builds a real registration payload and the server answers 679 bytes (PF-068) |
-| Pairing reply decoded | **supported** | with the nine-token partial table in `deployments/tokendict`, the live stanza decodes to 6 refs and the iq result is accepted (PF-069) |
+| Pairing reply decoded | **supported** | with the partial table in `deployments/tokendict`, the live stanza decodes to 6 refs and the iq result is accepted (PF-069) |
 | Pairing stanza + keepalive | **supported** | pair-device decoded to 6 refs, ack accepted, keepalive pings decoded and answered (PF-069/PF-070) |
-| Pairing (QR → success) | **in progress** | scannable QR with rotation works live; one phone attempt was refused, and it exposed three fixed defects (PF-072…PF-074); `pair-success` still unobserved |
+| Pairing (QR → success) | **in progress** | scannable QR with rotation works live; a phone scan produced a real `pair-success` whose account identity verified (PF-075); confirmation and credential write still unobserved |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
 | Message send/receive | **untested** | needs pairing |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |

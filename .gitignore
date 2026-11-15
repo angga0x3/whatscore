@@ -12,6 +12,8 @@
 
 # Runtime data
 /storage/media/
+# Raw frames captured during a pairing attempt: they carry the account JID
+/undecoded/
 *.log
 coverage.out
 coverage.html

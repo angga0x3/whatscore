@@ -243,7 +243,7 @@ func startQRRotation(ctx context.Context, stop <-chan struct{}, refs []string, n
 	}
 
 	go func() {
-		rotateQRCodes(ctx, stop, codes, func(index int, code string, window time.Duration) {
+		completed := rotateQRCodes(ctx, stop, codes, func(index int, code string, window time.Duration) {
 			clearScreen()
 			fmt.Printf("code %d/%d — valid for %s. Scan now:\n", index+1, len(codes), window)
 			fmt.Println("(WhatsApp > Linked devices > Link a device)")
@@ -256,14 +256,18 @@ func startQRRotation(ctx context.Context, stop <-chan struct{}, refs []string, n
 			}
 			fmt.Println(code)
 		})
-		fmt.Println("\nall codes shown; waiting for the server's answer")
+		if completed {
+			fmt.Println("\nall codes shown; waiting for the server's answer")
+		}
 	}()
 }
 
 // rotateQRCodes walks the refs, handing each code to emit for exactly its
 // validity window. The loop is separated from printing so the sequencing can be
 // tested without a terminal or a phone.
-func rotateQRCodes(ctx context.Context, stop <-chan struct{}, refs []string, emit func(index int, code string, window time.Duration)) {
+// rotateQRCodes reports whether every ref was shown; false means it was cut
+// short, so the caller does not claim the rotation finished.
+func rotateQRCodes(ctx context.Context, stop <-chan struct{}, refs []string, emit func(index int, code string, window time.Duration)) bool {
 	for i, ref := range refs {
 		window := qrValidityWindow(i, len(refs))
 		emit(i, ref, window)
@@ -273,12 +277,13 @@ func rotateQRCodes(ctx context.Context, stop <-chan struct{}, refs []string, emi
 		case <-timer.C:
 		case <-stop:
 			timer.Stop()
-			return
+			return false
 		case <-ctx.Done():
 			timer.Stop()
-			return
+			return false
 		}
 	}
+	return true
 }
 
 // clearScreen homes the cursor and clears when stdout is a terminal. Redirected

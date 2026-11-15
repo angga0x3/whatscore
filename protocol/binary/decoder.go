@@ -300,6 +300,11 @@ func (d *decoder) readJIDPair() (string, error) {
 	if server == "" {
 		return "", fmt.Errorf("%w: JID pair without server", ErrInvalidNode)
 	}
+	// A userless JID keeps its empty user as "@server". The reference renders
+	// this as the bare server name, but the wire form is identical, and echoing
+	// it back re-encodes to the same bytes — which is what the pairing
+	// acknowledgement relies on (PF-069). Changing the string form would make
+	// the encoder emit a plain string instead of a JID pair.
 	return user + "@" + server, nil
 }
 

@@ -257,6 +257,9 @@ func TestJIDWireForms(t *testing.T) {
 		want  string
 	}{
 		{"jid pair", append([]byte{0xFA}, append(raw("123"), raw("s.whatsapp.net")...)...), "123@s.whatsapp.net"},
+		// The reference renders a userless JID as the bare server name; this
+		// package keeps the empty user so decode/encode stays byte-identical,
+		// which the pairing acknowledgement depends on.
 		{"jid pair empty user", append([]byte{0xFA}, append([]byte{0x00}, raw("s.whatsapp.net")...)...), "@s.whatsapp.net"},
 		{"ad jid", append([]byte{0xF7, 0x00, 0x00}, raw("123")...), "123@s.whatsapp.net"},
 		{"ad jid device", append([]byte{0xF7, 0x01, 0x02}, raw("123")...), "123:2@lid"},

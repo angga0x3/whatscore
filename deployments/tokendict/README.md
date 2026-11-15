@@ -1,8 +1,9 @@
 # Pairing-minimal token dictionary
 
-`pairing-minimal.json` is a **partial** token table: twelve tokens, enough to
-read the `pair-device` stanza and the keepalive the live server sends to an
-unpaired session.
+`pairing-minimal.json` is a **partial** token table: enough to read the
+`pair-device` stanza, the keepalive, and — since a phone scan produced one — a
+real `pair-success`. It is still far from the full 236 + 1024 table and is not
+meant to be.
 
 ## Provenance
 
@@ -14,7 +15,32 @@ was caught (see below).
 
 ## Verified against the live server
 
-Decoded exactly, with this table:
+A **real `pair-success`** also decodes with this table now:
+
+```
+<iq from="s.whatsapp.net" type="set" id="…" xmlns="md">
+  <pair-success>
+    <jurisdiction cc="62" iso="ID"/>
+    <encryption-metadata algorithm="aes-256-gcm" version="1">…</encryption-metadata>
+    <client-props>…</client-props>
+    <platform name="iphone"/>
+    <device-identity>…</device-identity>
+    <device jid="…:36@s.whatsapp.net" lid="…:36@lid"/>
+  </pair-success>
+</iq>
+```
+
+That frame is 731 bytes and used eight single-byte indices plus one dictionary-0
+index beyond the `pair-device` set: `12=jid`, `59=device`, `74=platform`,
+`84=version`, `85=1`, `118=lid`, `137=name`, `230=device-identity`, and
+`dictionary 0, index 208 = iphone`. Every one of them was present in the
+observed frame; none was inferred. Two decoders — this project's and the
+reference's — produced the same tree from it, attribute by attribute and byte
+for byte, and the account-identity HMAC then verified against the adv secret
+from the QR that was scanned.
+
+Earlier in the same exchange, the `pair-device` stanza decoded with the same
+table:
 
 ```
 <iq from="@s.whatsapp.net" type="set" id="…" xmlns="md">
@@ -28,10 +54,14 @@ and, after the acknowledgement:
 <iq from="@s.whatsapp.net" type="get" t="…" xmlns="urn:xmpp:ping">
 ```
 
-The second one is a **keepalive**, not a rejection — which changes the story.
-Answering it (an `iq result` with the same `id`) keeps the socket open for
-another ~30 s window; ignoring it makes the server close with 1006, which is
-what earlier runs misinterpreted as a rejected acknowledgement.
+The keepalive is **not** a rejection — which changes the story. Answering it (an
+`iq result` with the same `id`) keeps the socket open for another ~30 s window;
+ignoring it makes the server close with 1006, which is what earlier runs
+misinterpreted as a rejected acknowledgement.
+
+What the table could not read on the first successful scan was `pair-success`
+itself. The frame was still saved, and reconstructing the tokens from it is what
+made the second decoder agree — the failure was recorded rather than lost.
 
 ## What this table is not
 

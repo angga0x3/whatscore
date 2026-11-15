@@ -46,15 +46,27 @@ checking the flow without involving a phone.
 | Keepalive decoded and answered | verified live |
 | QR payloads rendered from real refs | verified live |
 | QR rotation with per-code validity window | verified live |
-| Phone accepts the QR | **refused once**, causes addressed in PF-072/PF-073/PF-074 |
-| `pair-success` decode, confirm, credential write | **never observed** |
+| Phone accepts the QR | **verified live** (PF-075) |
+| `pair-success` received and its identity verified | **verified live** |
+| `pair-success` decoded by the probe | **failed once** on a missing token, since fixed (PF-075) |
+| Confirmation and credential write | **never observed** |
 
-The single phone attempt was refused with a generic "couldn't link new device".
-That message never says why, so the three defects it exposed were found by
-auditing the payload and the flow against the reference, not by reading the
-phone's screen. If a scan still fails, the raw frames are the evidence:
-undecodable stanzas are written to `undecoded/*.bin` so the missing token can be
-recovered without another pairing attempt.
+The exchange has now been run twice, and the second run is the interesting one.
+
+The first attempt was refused with a generic "couldn't link new device". That
+message never says why, so the three defects it exposed were found by auditing
+the payload and the flow against the reference — not by reading the phone's
+screen (PF-072…PF-074).
+
+The second attempt **succeeded at the server**: a real 731-byte `pair-success`
+arrived, and its account-identity HMAC verified against the adv secret of the
+QR that was scanned. The probe still could not use it — its token table could
+not decode the stanza — so the link was never confirmed and the server aborted
+the stream (PF-076). That frame was saved rather than lost, and the nine tokens
+it needed are now in the table.
+
+Both failure modes left evidence on disk. That is why `undecoded/*.bin` exists:
+a refused pairing costs a phone scan, and the frame is the only record of it.
 
 ## Reading a failed scan
 
