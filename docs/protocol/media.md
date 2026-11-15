@@ -132,16 +132,35 @@ out of scope here; this package owns the byte-level envelope only.
 | **Related findings** | PF-043, PF-045 |
 | **Notes** | Both references hash the plaintext as it is produced: `Upload` sets `resp.FileSHA256 = SHA256(plaintext)` and Baileys `encryptedStream` feeds every plaintext chunk to a `sha256Plain` hash, while the ciphertext-side companion `fileEncSHA256` covers `ciphertext ‖ mac` (PF-045). For videos the plaintext hash is the value recorded in the media sidecar that travels beside the message and is what a receiver recomputes after decryption to confirm it reassembled the same bytes. WhatsCore exposes the primitive as `SidecarHash(io.Reader)` (`protocol/media/stream.go`) so large payloads are digested in 32 KiB chunks; digesting the ciphertext instead yields a different value and is not a substitute. The digest is corroboration, not authentication: it can be recomputed over mangled bytes, so the envelope MAC (PF-043) remains the trust decision and comparisons against a remembered digest should be constant time. Verified vectors (hex): empty `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`; `00` `6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d`; the 17-byte pattern `b6ff0191041cc77b1ef514adaed53fdd247fd43221a629d3d7c91d14e21038a3`; the 1 MiB pattern `06b7bbfb7824aa03382051691630eb26de85102d1b08a81e907ec0744cd8a286`. Not implemented and deliberately recorded as open: the surrounding 64 KiB video streaming-sidecar envelope (`makeStreamingSidecar`) and where its fields are placed in the protobuf; this finding covers only the digest those bytes carry. |
 
+## PF-048: Ranged decryption window and authentication contract
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-048 |
+| **Title** | A plaintext range `[offset, offset+length)` of the media envelope decrypts from the ciphertext window `[(⌊offset/16⌋-1)·16, (⌊(offset+length-1)/16⌋+1)·16)` (start clamped to 0), discarding one lead-in block plus `offset%16` bytes, but the truncated MAC covers the whole blob, so a range may only be served after the full `ciphertext ‖ mac` has been authenticated |
+| **Layer** | media |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/media/range_test.go` (offset table 0/1/15/16/17/100 × length 1/16/17/1000/remainder against full `Decrypt`; recorded read spans bounded to the window plus the 32-byte padding probe; tail requests ending inside and after the PKCS#7 padding; unverified rejection before any read or write; tampered ciphertext accepted by the `verified` assertion; bounds table; `MaxStreamBytes` table) |
+| **Related findings** | PF-042, PF-043, PF-044, PF-046 |
+| **Notes** | Derived, not observed: both references download a media blob whole, so range serving is this project's composition of two recorded properties — CBC block dependence (PF-042) and whole-blob MAC coverage (PF-043) — and stays Probable like the rest of the envelope. With AES-CBC, `P_N = AES⁻¹(C_N) XOR C_{N-1}` (and `C_{-1} = iv`), so the first requested block needs its own ciphertext block and the one before it, and every later block needs only its own: the window above is exactly the set of blocks the answer depends on, block aligned at both ends. `DecryptRange` reads it through `io.ReaderAt` in 32 KiB chunks, seeds one CBC chain with `keys.IV`, and drops `16·(firstBlock>0) + offset%16` leading plaintext bytes — the lead-in block decrypts against the wrong IV and is meaningless, and the remainder is the unused prefix of the first requested block. Because the plaintext length is only knowable from the PKCS#7 tail, the call also decrypts the body's final block (plus its predecessor) and validates every padding byte, at most 32 extra bytes of reads; a range at or past the plaintext end writes nothing and returns `io.EOF`, and a length crossing the end is clamped to what exists and also returns `io.EOF`. The authentication contract is the honest constraint: no prefix, suffix or interior slice of the ciphertext carries its own tag, and the 10-byte truncated MAC cannot be checked over a window, so the API takes a `verified bool` assertion from a caller that has already run `DecryptStream`, `Decrypt` or an equivalent full-blob `hmac.Equal` over `iv ‖ ciphertext`; `verified == false` returns `ErrRangeUnverified` before any I/O. Re-verifying per call was rejected because it would hash every ciphertext byte and read the trailing tag on every range — O(blob) I/O per ranged request — which defeats the purpose of a resumed download; a caller pays that cost once per blob and remembers it. The consequence is deliberate and tested: with a tampered ciphertext and `verified == true`, touched blocks decrypt to wrong plaintext without an error, while blocks before the change still decrypt correctly, which is precisely why authentication must be full-blob. Bounds follow PF-044: `size < 26`, a non-block-multiple body or non-canonical padding returns `ErrInvalidCiphertext`; a nil endpoint or negative size returns `ErrInvalidStream`; negative offset/length, an offset past the padded plaintext, or a count not reportable as `int` returns `ErrInvalidRange`; and a clamped range above `MaxStreamBytes` returns `*StreamLimitError` (the cap applies after clamping, so "everything from here" is accepted when the remainder fits). This implements the ranged/resumed download that PF-046 explicitly left out of the streaming entry point. |
+
 ---
 
 Status: media-key expansion, AES-256-CBC/PKCS#7 encryption, truncated
 HMAC-SHA256 authentication and fail-closed decryption are implemented in
 `protocol/media` and proven with synthetic vectors generated independently of
 the package (Python HKDF + AES). Streaming encrypt/decrypt with
-verify-before-write (PF-046) and the plaintext sidecar digest (PF-047) are
-implemented in `protocol/media/stream.go` and proven there, with streamed
-ciphertext cross-checked byte-for-byte against the buffered `Encrypt` and the
-sidecar vectors computed with Python `hashlib`. Live upload/download, the
+verify-before-write (PF-046), the plaintext sidecar digest (PF-047) and ranged
+decryption under a whole-blob authentication contract (PF-048) are implemented
+in `protocol/media/stream.go` and `protocol/media/range.go` and proven there,
+with streamed ciphertext cross-checked byte-for-byte against the buffered
+`Encrypt`, the sidecar vectors computed with Python `hashlib`, and every range
+compared byte-for-byte against the full `Decrypt` output while its read spans
+are pinned to the computed ciphertext window. Live upload/download, the
 ciphertext-side companion hash, media paths, the 64 KiB video streaming-sidecar
 envelope and media retry remain open; their findings stay Probable until manual
 interop.
+

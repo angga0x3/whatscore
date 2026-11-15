@@ -60,6 +60,7 @@ as workstreams land.
 | 2026-11-15 | SDK directory | lazy contact/group caches + change-only events |
 | 2026-11-15 | Media routes | multipart image/document upload + media read, bounded store |
 | 2026-11-15 | Media streaming | stream encrypt/decrypt + sidecar hash, PF-046…PF-047 |
+| 2026-11-15 | Media range | windowed range decryption + auth contract, PF-048 |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
