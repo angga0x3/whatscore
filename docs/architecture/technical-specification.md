@@ -294,7 +294,8 @@ err = c.Disconnect(ctx)
 **Allowed deps.** `core/*`, `protocol/*` via §4 interfaces, `storage` interfaces, stdlib.
 **Tests.** Behavior tests vs fake server; option composition tables; examples compiled in CI.
 **Status.** `core/client` implements connect/disconnect/state/subscribe/credentials/close with
-option validation. `SendMessage` returns `ErrNotImplemented` until Signal and messaging land.
+option validation, plus `WithConnector` and `WithFrameHandler` pass-through. `SendMessage` returns
+`ErrNotImplemented` until Signal and messaging land.
 
 ### 4.12 `core/session`
 
@@ -305,8 +306,9 @@ records. **Allowed deps.** `protocol/*` via interfaces, `core/events`, storage i
 **Tests.** `-race` mandatory; deterministic actor tests with fake `FrameConn`; shutdown liveness;
 channels and contexts only — no sleeps.
 **Status.** Actor runtime implemented: Connect/Disconnect/State/Stop, injected Dialer/ReconnectPolicy/
-Bus, lifecycle events, late-dial cleanup, reconnect after drops. A frame sink for `core/messaging`
-remains.
+Bus, lifecycle events, late-dial cleanup, reconnect after drops. An injectable `Connector` wraps the
+dialed transport (Noise) and a `FrameHandler` consumes inbound frames; a returned handler error drops
+the connection and feeds the reconnect policy.
 
 ### 4.13 `core/messaging`
 

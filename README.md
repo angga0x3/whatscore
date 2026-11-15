@@ -121,6 +121,8 @@ returns `ErrNotImplemented` rather than pretending.
 ```go
 c, _ := client.New("session-1",
     client.WithCredentials(manager),   // optional encrypted credential manager
+    client.WithConnector(noiseConnector), // optional transport wrapper
+    client.WithFrameHandler(handler),  // optional inbound frame sink
     client.WithLogger(slog.Default()),
 )
 defer c.Close(ctx)
