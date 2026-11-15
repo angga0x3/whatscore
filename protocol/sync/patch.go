@@ -3,14 +3,17 @@
 // The multi-device protocol ships app state as `<sync>` stanzas: a
 // `<collection name=...>` carries `<patch>` children whose byte content is a
 // serialized `SyncdPatch` protobuf (docs/protocol/sync.md, PF-070..PF-074).
-// ParsePatches turns that stanza into Patch values, and VerifyValueMAC
-// authenticates one mutation record against an expanded app-state key.
+// ParsePatches turns that stanza into Patch values, VerifyValueMAC
+// authenticates one mutation record against an expanded app-state key, and
+// Hash / SnapshotMAC / PatchMAC cover the collection-level integrity state
+// (PF-077, PF-078).
 //
-// The package is key-free and network-free on purpose: key expansion
-// (HKDF-SHA256 over "WhatsApp Mutation Keys"), AES-256-CBC decryption of the
-// record payload, snapshot blob downloads and the LTHash bookkeeping stay with
-// the caller. Parsing never verifies a MAC, so callers must run VerifyValueMAC
-// before acting on a mutation.
+// The package is key-free and network-free on purpose: the caller supplies
+// already-expanded keys, downloads snapshot and external-mutation blobs, and
+// owns the per-index value-MAC store that the LTHash subtraction needs. AES-CBC
+// payload decryption lives in internal/cbc and is driven by DecodeMutation.
+// Parsing never verifies a MAC, so callers must run VerifyValueMAC and the
+// envelope checks before acting on a mutation or a patch list.
 package sync
 
 import (
@@ -110,8 +113,9 @@ type Patch struct {
 	Collection string
 	// Version is `SyncdPatch.version.version`, ascending across a patch list.
 	Version uint64
-	// SnapshotMAC and PatchMAC are the envelope MACs, carried verbatim and not
-	// verified by this package (PF-074).
+	// SnapshotMAC and PatchMAC are the envelope MACs, carried verbatim. This
+	// package does not check them during parsing; VerifySnapshotMAC and
+	// VerifyPatchMAC (PF-078) do, once the caller has folded the mutations.
 	SnapshotMAC []byte
 	PatchMAC    []byte
 	// KeyID is the patch-level key id; mutations may carry their own.

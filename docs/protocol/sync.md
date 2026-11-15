@@ -8,12 +8,14 @@ implementations (see Sources); cross-validated between whatsmeow
 `appstate/` + `proto/waServerSync/`, Baileys `src/Utils/chat-utils.ts`, and
 whatsapp-rust `wacore/appstate/`.
 
-`protocol/sync` owns parsing and the value-MAC check only. Key expansion
-(HKDF-SHA256, info `"WhatsApp Mutation Keys"`, five 32-byte keys), AES-256-CBC
-payload decryption, external-blob downloads, and the LTHash/snapshotMAC/
-patchMAC bookkeeping stay with the caller. No live sync traffic is recorded, so
-structural findings are **Probable**; the value MAC is deterministic and
-pinned by an independently recomputed vector, so it is **Confirmed**.
+`protocol/sync` owns parsing, the value-MAC check, key expansion, mutation
+decode, the LTHash accumulator, and the snapshot/patch envelope MACs
+(PF-070…PF-078). External-blob downloads, the per-index value-MAC store that
+supplies LTHash removals, and the decision of when an envelope MAC mismatch is
+fatal stay with the caller. No live sync traffic is recorded, so structural
+findings are **Probable**; the value MAC, key expansion, LTHash and envelope
+MACs are deterministic and pinned by independently recomputed vectors, so they
+are **Confirmed**.
 
 ## PF-070: App-state patch list stanza
 
@@ -80,7 +82,7 @@ pinned by an independently recomputed vector, so it is **Confirmed**.
 | Field | Value |
 |-------|-------|
 | **ID** | PF-074 |
-| **Title** | A collection is applied as "snapshot first (when present, replacing local state), then every patch in wire order"; patch versions are expected to ascend by exactly one (enforced fatally by whatsapp-rust, only used as a trust condition by whatsmeow); the envelope MACs are `snapshotMAC = HMAC-SHA256(snapshotMACKey, lthash(128) ‖ uint64be(version) ‖ collectionName)` and `patchMAC = HMAC-SHA256(patchMACKey, snapshotMAC ‖ valueMAC₁…valueMACₙ ‖ uint64be(version) ‖ collectionName)` — neither is checked by `protocol/sync` |
+| **Title** | A collection is applied as "snapshot first (when present, replacing local state), then every patch in wire order"; patch versions are expected to ascend by exactly one (enforced fatally by whatsapp-rust, only used as a trust condition by whatsmeow); the envelope MACs are `snapshotMAC = HMAC-SHA256(snapshotMACKey, lthash(128) ‖ uint64be(version) ‖ collectionName)` and `patchMAC = HMAC-SHA256(patchMACKey, snapshotMAC ‖ valueMAC₁…valueMACₙ ‖ uint64be(version) ‖ collectionName)` — neither is *checked by the parser*; PF-078's helpers verify them |
 | **Layer** | sync |
 | **Source** | inferred — reference study |
 | **Observed date** | 2026-11-15 |
@@ -94,12 +96,15 @@ pinned by an independently recomputed vector, so it is **Confirmed**.
 
 Status: app-state patch parsing and the value MAC are implemented in
 `protocol/sync` (PF-070…PF-074) and proven by synthetic stanza round-trips
-through `protocol/binary` plus an independently recomputed MAC vector. Key
-expansion, AES-256-CBC record decryption, snapshot/external blob downloads,
-index MACs, and the LTHash + snapshotMAC/patchMAC checks remain out of scope
-and stay Probable until they land with a caller. `docs/protocol/README.md` is
-owned by the integrating session: index rows for PF-070…PF-074 and the
-Probable wire/payload exception for them still need to be added there.
+through `protocol/binary` plus an independently recomputed MAC vector. At the
+time this block was written, key expansion, AES-256-CBC record decryption,
+snapshot/external blob downloads, index MACs, and the LTHash +
+snapshotMAC/patchMAC checks were out of scope; PF-075, PF-076, PF-077 and
+PF-078 have since landed (see the status footer below), leaving only the
+blob downloads and the caller-side MAC store out of scope.
+`docs/protocol/README.md` is owned by the integrating session: index rows for
+PF-070…PF-078 and the Probable wire/payload exception for them still need to
+be added there.
 
 ## PF-075: App-state key expansion
 
@@ -131,8 +136,39 @@ Probable wire/payload exception for them still need to be added there.
 | **Related findings** | PF-072, PF-073, PF-075 |
 | **Notes** | whatsmeow `appstate/decode.go` `decodeMutation`: strips the trailing 32-byte MAC, verifies it, then `iv, content = content[:16], content[16:]` and `cbcutil.Decrypt(keys.ValueEncryption, iv, content)`, unmarshals `waSyncAction.SyncActionData`, and checks `concatAndHMAC(sha256.New, keys.Index, syncAction.Index)` against `record.index.blob`. The index MAC input is the raw JSON bytes, not a re-serialized form. WhatsCore keeps `SyncActionValue` opaque (`raw`) because the real union has dozens of action types; interpreting an action is the caller's job, and a REMOVE without a value is returned with only its index MAC. |
 
+## PF-077: LTHash accumulator
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-077 |
+| **Title** | The app-state integrity hash is a 128-byte accumulator of 64 little-endian `uint16` lanes; each value MAC contributes `HKDF-SHA256(ikm=valueMAC, salt=nil, info="WhatsApp Patch Integrity", L=128)` added or subtracted lane-wise modulo 2¹⁶, with all subtractions applied before all additions |
+| **Layer** | sync |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/sync` (independent Python-generated vectors: per-element expansion of four MACs, empty state, single add, add chains, add commutativity and order-independence, add+remove cancelling to empty, subtract-from-empty wrapping, remove-then-add landing on the same state as a direct add, malformed-element table, in-place mutation) |
+| **Related findings** | PF-073, PF-074, PF-078 |
+| **Notes** | whatsmeow `appstate/lthash/lthash.go`: `WAPatchIntegrity = LTHash{[]byte("WhatsApp Patch Integrity"), 128}`, `SubtractThenAdd` → `multipleOp(subtract)` then `multipleOp(add)`, and `performPointwiseWithOverflow` reads `binary.LittleEndian.Uint16` at every 2-byte offset and stores `x-y` or `x+y` back as `uint16`, i.e. wrapping modular arithmetic per lane. The element expansion is **not** a plain SHA-512: `multipleOp` calls `hkdfutil.SHA256(item, nil, HKDFInfo, HKDFSize)`, which is `hkdf.New(sha256.New, key, salt, info)` read for 128 bytes — RFC 5869 extract with a zero-filled salt (no salt) followed by four expand rounds `T1‖T2‖T3‖T4`, each `HMAC-SHA256(PRK, T(n-1) ‖ info ‖ n)`. whatsapp-rust `wacore/appstate/src/lthash.rs` agrees byte for byte (`hkdf_sha256_into` drives the same `T(n)` chain explicitly, with a test asserting it equals `Hkdf::<Sha256>::new(None, key).expand(info)`), and Baileys constructs `LT_HASH_ANTI_TAMPERING = new LTHashAntiTampering()` from the whatsapp-rust bridge, so there is no independent SHA-512 reading. The vector generator re-derives HKDF from RFC 5869 and self-checks against RFC test case 1 (`3cb25f25…5865`) before emitting anything; its output was cross-checked against Python `cryptography`'s `HKDF` and against `golang.org/x/crypto/hkdf`, both of which reproduce the four expansions byte for byte. **What enters the accumulator:** each SET contributes the trailing 32 bytes of its `record.value.blob` (the value MAC, PF-073); each mutation also contributes a *removal* of the stored value MAC of the previous SET at the same `index.blob`, looked up earlier in the same patch and then in the local MAC store (whatsmeow `updateHash` with `getPrevSetValueMAC`, `HashState.updateHash`). A REMOVE therefore needs the previous value MAC to reverse, and when there is none every reference degrades to a warning rather than an error (whatsmeow appends `ErrMissingPreviousSetValueOperation` to `warnings`, whatsapp-rust sets `has_missing_remove`, Baileys skips the subtract because "WA Web does not throw here"); WhatsCore models none of that yet, so a caller with a missing previous MAC simply passes a shorter `remove` list. WhatsCore implements the arithmetic only: the per-index MAC store, duplicate-index detection, the "index also REMOVEd in the same patch" guard whatsapp-rust added, and version continuity stay with the caller (PF-074). WhatsCore additionally rejects an element that is not exactly 32 bytes (`ErrInvalidLTHash`) instead of slicing it, which no reference guards against. |
+
+## PF-078: Snapshot and patch envelope MACs
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-078 |
+| **Title** | `snapshotMAC = HMAC-SHA256(snapshotMACKey, lthash(128) ‖ uint64be(version) ‖ collectionName)` over the post-mutation state, and `patchMAC = HMAC-SHA256(patchMACKey, snapshotMAC ‖ valueMAC₁…valueMACₙ ‖ uint64be(version) ‖ collectionName)` over the patch's own `snapshotMAC` field and every mutation's trailing 32-byte value MAC in wire order, REMOVE mutations included |
+| **Layer** | sync |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/sync` (independent Python-generated vectors for snapshot MACs at versions 0/1/7/2⁴⁰ and patch MACs with 0, 1, 2 and 3 value MACs; tamper table: wrong key, wrong hash, wrong version, wrong collection, wrong snapshot MAC, dropped/extra/reordered value MACs; malformed table: nil, short and long expected MACs) |
+| **Related findings** | PF-074, PF-075, PF-077 |
+| **Notes** | whatsmeow `appstate/hash.go`: `generateSnapshotMAC` is `concatAndHMAC(sha256.New, key, hs.Hash[:], uint64ToBytes(hs.Version), []byte(name))` and `generatePatchMAC` builds `dataToHash[0] = patch.GetSnapshotMAC()`, then `dataToHash[i+1] = val[len(val)-32:]` for **every** mutation, then `uint64ToBytes(version)`, then `[]byte(name)`; Baileys `chat-utils.ts` `generateSnapshotMac`/`generatePatchMac` are the same three-part concatenation with `to64BitNetworkOrder(version)`; whatsapp-rust `generate_snapshot_mac`/`generate_patch_mac` feed the identical slices into `CryptographicMac::new("HmacSha256", key)`. The `snapshotMAC` a patch carries describes the state *after* the patch, not the state it starts from: whatsmeow `validatePatch` folds `patch.GetMutations()` into a copy of the current state and then calls `generateSnapshotMAC(newState, …)` against `patch.GetSnapshotMAC()`. The collection name is the raw UTF-8 `name` attribute (`critical_block`, `critical_unblock_low`, `regular`, `regular_high`, `regular_low`), never the `<collection>` wrapper or a length prefix. Patch MAC coverage includes a REMOVE's blob whenever the blob is present — whatsapp-rust documents that narrowing it to SET "would change the MAC of every patch carrying a removal" — and WhatsCore's `ValueMACs` collector reproduces that by taking every non-nil `PatchMutation.ValueMAC` in wire order. Order matters: duplicating, dropping or reordering an entry changes the MAC, which the tamper table pins. **Version width divergence:** Baileys' `to64BitNetworkOrder` writes a `uint32` at offset 4 of an eight-byte buffer (`buff.writeUint32BE(e, 4)`), so versions ≥2³² wrap and collide — ROOT/WA Web does the same (`setUint32(4, e, !1)`), and whatsapp-rust reproduces that truncation deliberately (logging a warning above 2³²−1). whatsmeow instead writes the full `uint64` big-endian. WhatsCore follows whatsmeow (full `uint64be`) and diverges from the WA Web oracle only for versions ≥2³²; the protocol is not known to produce such a version, the choice is pinned by the 2⁴⁰ vectors rather than left implicit, and a future verifier that must match WA Web exactly would replace `writeVersion` with the truncating form. Verification compares with `hmac.Equal` and rejects an expected MAC that is not exactly 32 bytes (`ErrBadEnvelopeMAC`) before hashing, matching the value-MAC guard style in PF-073. As with PF-074, *when* to enforce which MAC — the patch MAC as the authorship proof, the snapshot MAC as non-fatal once the patch MAC verifies — is caller policy, not part of the primitive. |
+
 ---
 
-Status update: key expansion and full mutation decode (value MAC, CBC, action
-envelope, index MAC) are implemented. LTHash, snapshot/patch MAC verification,
-and external-mutation downloads remain with the caller.
+Status update: key expansion, full mutation decode (value MAC, CBC, action
+envelope, index MAC), the LTHash accumulator, and snapshot/patch envelope MAC
+verification are implemented (PF-075…PF-078). External-mutation downloads and
+the per-index MAC store remain with the caller.
