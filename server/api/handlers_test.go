@@ -19,9 +19,7 @@ func newTestRouter(t *testing.T) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	router := chiNewRouter()
-	handler.Mount(router)
-	return router
+	return chiNewRouter(handler)
 }
 
 func TestCreateAndListSessions(t *testing.T) {

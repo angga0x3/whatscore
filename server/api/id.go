@@ -7,7 +7,11 @@ import (
 )
 
 // newSessionID returns a random RFC 4122 version 4 UUID.
-func newSessionID() (string, error) {
+func newSessionID() (string, error) { return newUUID() }
+
+// newUUID returns a random RFC 4122 version 4 UUID. Session and webhook ids
+// share the format so one column type serves both.
+func newUUID() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", fmt.Errorf("api: random id: %w", err)

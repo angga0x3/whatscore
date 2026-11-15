@@ -10,12 +10,17 @@ import (
 	"github.com/angga0x3/whatscore/server/http/handlers"
 )
 
-// Handler serves the /api/v1 routes over a Service.
+// Handler serves the /api/v1 routes over a Service plus an optional webhook
+// store.
 type Handler struct {
 	service Service
+	// webhooks is optional: when it is nil the webhook routes are not mounted
+	// and /api/v1 keeps answering 501 for them.
+	webhooks WebhookStore
 }
 
-// NewHandler returns a handler over service.
+// NewHandler returns a handler over service. Webhook routes stay unmounted;
+// enable them with NewHandlerWithWebhooks or SetWebhooks.
 func NewHandler(service Service) (*Handler, error) {
 	if service == nil {
 		return nil, errors.New("api: nil service")
@@ -23,18 +28,48 @@ func NewHandler(service Service) (*Handler, error) {
 	return &Handler{service: service}, nil
 }
 
-// Mount registers the routes on r.
-func (h *Handler) Mount(r chi.Router) {
-	r.Route("/api/v1", func(r chi.Router) {
-		r.Get("/sessions", h.listSessions)
-		r.Post("/sessions", h.createSession)
-		r.Route("/sessions/{sessionId}", func(r chi.Router) {
-			r.Get("/", h.getSession)
-			r.Delete("/", h.deleteSession)
-			r.Post("/connect", h.connectSession)
-			r.Post("/disconnect", h.disconnectSession)
-		})
+// NewHandlerWithWebhooks returns a handler over service and webhooks. It is
+// additive on purpose: NewHandler keeps its one-argument signature so existing
+// callers and tests compile unchanged, and a webhook store stays a separate
+// dependency instead of widening the Service interface. A nil store behaves
+// like NewHandler.
+func NewHandlerWithWebhooks(service Service, webhooks WebhookStore) (*Handler, error) {
+	h, err := NewHandler(service)
+	if err != nil {
+		return nil, err
+	}
+	h.webhooks = webhooks
+	return h, nil
+}
+
+// SetWebhooks installs the webhook store after construction. Mount must be
+// called afterwards for the routes to be registered.
+func (h *Handler) SetWebhooks(webhooks WebhookStore) {
+	h.webhooks = webhooks
+}
+
+// Mount registers the versioned routes on a router already scoped to the
+// /api/v1 prefix. The caller owns that prefix so the 501 fallback for
+// unimplemented paths can live next to these routes.
+func (h *Handler) Mount(v1 chi.Router) {
+	v1.Get("/sessions", h.listSessions)
+	v1.Post("/sessions", h.createSession)
+	v1.Route("/sessions/{sessionId}", func(r chi.Router) {
+		r.Get("/", h.getSession)
+		r.Delete("/", h.deleteSession)
+		r.Post("/connect", h.connectSession)
+		r.Post("/disconnect", h.disconnectSession)
 	})
+	if h.webhooks != nil {
+		v1.Get("/webhooks", h.listWebhooks)
+		v1.Post("/webhooks", h.createWebhook)
+		v1.Route("/webhooks/{webhookId}", func(r chi.Router) {
+			r.Get("/", h.getWebhook)
+			r.Patch("/", h.updateWebhook)
+			r.Delete("/", h.deleteWebhook)
+			r.Get("/deliveries", h.listWebhookDeliveries)
+		})
+	}
 }
 
 type createSessionRequest struct {

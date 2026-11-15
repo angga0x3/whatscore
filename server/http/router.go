@@ -56,14 +56,16 @@ func NewRouter(deps Deps) http.Handler {
 	r.Get("/ready", handlers.NewReadinessHandler(deps.Readiness, deps.IsShuttingDown).ServeHTTP)
 	r.Get("/version", handlers.NewVersionHandler(deps.AppName, deps.Build).ServeHTTP)
 
-	// Versioned REST API. Routes that are not mounted yet keep answering 501
-	// so clients can tell "not shipped yet" apart from "wrong URL".
-	if deps.API != nil {
-		if mounter, ok := deps.API.(interface{ Mount(chi.Router) }); ok {
-			mounter.Mount(r)
-		}
-	}
+	// Versioned REST API. This router owns the /api/v1 prefix; the API
+	// handler only adds routes under it. Paths that are not mounted yet keep
+	// answering 501 so clients can tell "not shipped yet" apart from "wrong
+	// URL".
 	r.Route("/api/v1", func(v1 chi.Router) {
+		if deps.API != nil {
+			if mounter, ok := deps.API.(interface{ Mount(chi.Router) }); ok {
+				mounter.Mount(v1)
+			}
+		}
 		v1.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			handlers.WriteError(w, http.StatusNotImplemented, "not_implemented",
 				"this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone")

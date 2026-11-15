@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/angga0x3/whatscore/buildinfo"
+	"github.com/angga0x3/whatscore/server/api"
 )
 
 func newTestRouter() http.Handler {
@@ -101,8 +102,8 @@ func TestRouterAPIV1NotImplemented(t *testing.T) {
 
 type staticMounter struct{ mounted *bool }
 
-func (s staticMounter) Mount(r chi.Router) {
-	r.Get("/api/v1/sessions", func(w http.ResponseWriter, _ *http.Request) {
+func (s staticMounter) Mount(v1 chi.Router) {
+	v1.Get("/sessions", func(w http.ResponseWriter, _ *http.Request) {
 		*s.mounted = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -126,5 +127,31 @@ func TestRouterMountsAPI(t *testing.T) {
 	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/webhooks", nil))
 	if rec.Code != http.StatusNotImplemented {
 		t.Fatalf("unmounted status = %d", rec.Code)
+	}
+}
+
+// TestRouterMountsRealAPIService guards the wiring itself: a stub mounter
+// cannot catch a prefix clash between the router and the API handler.
+func TestRouterMountsRealAPIService(t *testing.T) {
+	manager, err := api.NewManager()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := api.NewHandler(manager)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter(Deps{Logger: slog.New(slog.DiscardHandler), Build: buildinfo.Info{}, API: handler})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sessions status = %d", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/messages", nil))
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("unimplemented path status = %d", rec.Code)
 	}
 }
