@@ -261,3 +261,24 @@ WhatsApp `<enc>` wiring remain.
 Status update: PreKeySignalMessage framing and session bootstrap are implemented
 and pinned by an exact vector plus end-to-end tests. Prekey generation/rotation,
 signing (ADR 0001), one-time prekey deletion, and durable session state remain.
+
+## PF-065: Inbound prekey bootstrap
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-065 |
+| **Title** | A `pkmsg` carrier carries a PreKeySignalMessage; the receiver resolves the signed prekey by id (and the one-time prekey when present), bootstraps the session, decrypts, and answers later messages as `msg` |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `core/messaging` (bootstrap then follow-up `msg`, missing-source/key drops) |
+| **Related findings** | PF-063, PF-064 |
+| **Notes** | whatsmeow picks `pkmsg` while a session is unacknowledged and `msg` afterwards (`send.go`); the responder resolves prekey records by id from its store and deletes the used one-time prekey. WhatsCore keeps prekey deletion to the PreKeySource implementation and skips a retransmitted prekey message when a session for the same identity already exists. |
+
+---
+
+Status update: inbound prekey bootstrap is implemented end to end: a `pkmsg`
+establishes the session, publishes the carried text, and later `msg` frames
+decrypt with the same state.

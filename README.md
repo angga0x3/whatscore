@@ -30,7 +30,7 @@ implemented from first principles, documented in the open.
 > implemented, along with the key schedule, ratchet state machine, message
 > framing/encryption, prekey bootstrap, versioned ratchet-state persistence, and
 > an encrypted per-peer session store plus outbound send and inbound decrypt
-> paths (prekey signing and bootstrap on inbound, sync pending).
+> paths, including inbound prekey bootstrap (prekey signing and sync pending).
 > Phase 5 has the event bus, session actor, credentials, and SDK facade;
 > orchestration remains. The real token table and live interop are still open.
 
@@ -95,7 +95,7 @@ Three layers, dependencies pointing downward only:
 | 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
 | 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
 | 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, auth payloads, credential vault, credential manager done; device signature (ADR 0001) pending |
-| 4 | Messaging (Signal) — send/receive with E2E | **In progress** — X3DH, ratchet, encryption, prekey bootstrap, state persistence, per-peer store, `<enc>` send + inbound decrypt done; prekey signing + inbound bootstrap + sync pending |
+| 4 | Messaging (Signal) — send/receive with E2E | **In progress** — X3DH, ratchet, encryption, state persistence, per-peer store, `<enc>` send, inbound decrypt, and inbound prekey bootstrap done; prekey signing + sync pending |
 | 5 | Public SDK — idiomatic Go client | **In progress** — events/session/credentials + client facade + plaintext send; inbound/orchestration pending |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |
 | 7 | Release v0.1.0 | Planned |

@@ -326,8 +326,9 @@ tables.
 **Status.** `core/messaging.Sender` builds and writes plaintext and Signal-encrypted text stanzas and
 receipts over a `FrameWriter`; `Receiver` decodes inbound plaintext text, encrypted `<enc>` text, and
 receipts into `events.Message` / `events.Receipt` values, decrypting on a state clone so a failed
-attempt never advances the live ratchet. Prekey bootstrap on inbound, retries/dedup, and persistence
-callbacks remain.
+attempt never advances the live ratchet. Inbound `pkmsg` bootstrap resolves prekeys through an
+injected `PreKeySource`, installs the new session, and decrypts the carried text. Retries/dedup and
+persistence callbacks remain.
 
 ### 4.14 `core/events`
 
