@@ -355,6 +355,20 @@ func (o *offlineQueue) requestBatch(ctx context.Context) error {
 	return o.sc.WriteFrame(ctx, frame)
 }
 
+// sendAvailablePresence marks the device available, the way whatsmeow's
+// SendPresence does after login: <presence type="available" name="..."/>.
+func sendAvailablePresence(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec) error {
+	presence := &wabinary.Node{
+		Tag:   "presence",
+		Attrs: wabinary.Attrs{"type": "available", "name": "whatscore"},
+	}
+	frame, err := codec.Encode(presence)
+	if err != nil {
+		return err
+	}
+	return sc.WriteFrame(ctx, frame)
+}
+
 // awaitSuccessVerdict consumes the login verdict from the dispatcher's stream.
 //
 // It registers a catch-all: the success node has no id, so it cannot be routed
