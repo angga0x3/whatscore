@@ -1,0 +1,15 @@
+// Signal message envelope (WhisperMessage). Field numbers follow
+// docs/protocol/signal.md (PF-060), extracted from reference study of
+// libsignal-protocol-go/protocol/SignalMessage.go on 2026-11-15.
+syntax = "proto2";
+
+package whatscore.protocol.protobuf;
+
+option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
+
+message WhisperMessage {
+  optional bytes ratchetKey = 1;
+  optional uint32 counter = 2;
+  optional uint32 previousCounter = 3;
+  optional bytes ciphertext = 4;
+}

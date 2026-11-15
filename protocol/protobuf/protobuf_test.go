@@ -188,3 +188,19 @@ func TestCertChainWireFields(t *testing.T) {
 		t.Fatalf("intermediate certificate fields = %v", intermediate)
 	}
 }
+
+func TestWhisperMessageWireFields(t *testing.T) {
+	counter, previous := uint32(5), uint32(2)
+	message := &protobuf.WhisperMessage{
+		RatchetKey:      bytes.Repeat([]byte{0x01}, 33),
+		Counter:         &counter,
+		PreviousCounter: &previous,
+		Ciphertext:      []byte("ciphertext"),
+	}
+	raw := roundTrip(t, message)
+	fields := splitFields(t, raw)
+	if fields[1] != protowire.BytesType || fields[2] != protowire.VarintType ||
+		fields[3] != protowire.VarintType || fields[4] != protowire.BytesType {
+		t.Fatalf("WhisperMessage fields = %v", fields)
+	}
+}
