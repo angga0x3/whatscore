@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"sync"
 	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
@@ -153,6 +154,7 @@ type Session struct {
 	logger *slog.Logger
 	bus    *events.Bus
 
+	writeMu     sync.Mutex
 	cmds        chan command
 	done        chan struct{}
 	dialResults chan dialResult
@@ -305,6 +307,36 @@ func (s *Session) Stop(ctx context.Context) error {
 	}
 }
 
+// WriteFrame writes one frame on the current connection. Writes are
+// serialized; ErrNotConnected is returned when there is no connection.
+func (s *Session) WriteFrame(ctx context.Context, frame []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	reply := make(chan result, 1)
+	if err := s.send(ctx, command{kind: cmdConn, reply: reply}); err != nil {
+		return err
+	}
+	var conn transport.FrameConn
+	select {
+	case r := <-reply:
+		conn = r.conn
+	case <-s.done:
+		return ErrSessionClosed
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if conn == nil {
+		return ErrNotConnected
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if err := conn.WriteFrame(ctx, frame); err != nil {
+		return fmt.Errorf("session %s: write frame: %w", s.id, err)
+	}
+	return nil
+}
+
 // send enqueues cmd unless the session is already stopping or ctx ends.
 func (s *Session) send(ctx context.Context, cmd command) error {
 	select {
@@ -323,6 +355,7 @@ const (
 	cmdConnect commandKind = iota
 	cmdDisconnect
 	cmdState
+	cmdConn
 	cmdStop
 )
 
@@ -351,6 +384,7 @@ func (w connectWaiter) abandoned() bool {
 
 type result struct {
 	state State
+	conn  transport.FrameConn
 	err   error
 }
 
@@ -428,6 +462,8 @@ func (a *actor) handle(cmd command) {
 		a.disconnect(cmd.reply)
 	case cmdState:
 		respond(cmd.reply, result{state: a.state})
+	case cmdConn:
+		respond(cmd.reply, result{conn: a.conn})
 	}
 }
 

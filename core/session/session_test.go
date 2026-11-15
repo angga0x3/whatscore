@@ -491,6 +491,7 @@ func waitClosed(t *testing.T, ch <-chan struct{}, what string) {
 // fakeConn is an in-memory transport.FrameConn. Drop injects a read failure.
 type fakeConn struct {
 	frames    chan []byte
+	writes    chan []byte
 	fail      chan error
 	closed    chan struct{}
 	closeOnce sync.Once
@@ -499,6 +500,7 @@ type fakeConn struct {
 func newFakeConn() *fakeConn {
 	return &fakeConn{
 		frames: make(chan []byte),
+		writes: make(chan []byte, 16),
 		fail:   make(chan error, 1),
 		closed: make(chan struct{}),
 	}
@@ -517,15 +519,19 @@ func (c *fakeConn) ReadFrame(ctx context.Context) ([]byte, error) {
 	}
 }
 
-func (c *fakeConn) WriteFrame(ctx context.Context, _ []byte) error {
+func (c *fakeConn) WriteFrame(ctx context.Context, frame []byte) error {
 	select {
 	case <-c.closed:
 		return transport.ErrClosed
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		return nil
 	}
+	select {
+	case c.writes <- append([]byte(nil), frame...):
+	default:
+	}
+	return nil
 }
 
 func (c *fakeConn) Close() error {
