@@ -18,6 +18,13 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Fixed
 
+- `-listen` now answers the server's `<ib><offline_preview/>` announcement with
+  `<ib><offline_batch count="100"/>` and treats `<ib><offline/>` as the drain
+  marker. The queue stays frozen until the client names a batch size, so a
+  listen run that ignored the announcement was a client the server never
+  delivered to — the strongest remaining PF-087 candidate. A queue that is
+  announced but never drained is now reported as such when the window ends,
+  instead of passing as "listen window ended".
 - The token table now covers the `<ib><offline_preview/>` announcement:
   `single[153]` (the `message`/`notification` counts) and `dictionary0[56]`
   (`count`). The stanza that announces the PF-087 queue was itself landing in

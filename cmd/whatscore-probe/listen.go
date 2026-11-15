@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	gosignal "os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -123,12 +124,15 @@ func runListen(cfg sendConfig) error {
 	})
 
 	d := newDispatcher(sc, codec)
+	offline := newOfflineQueue(sc, codec)
 	d.onNode = func(ctx context.Context, node *wabinary.Node) {
 		// Trace every stanza before any interpretation. A receive path that only
 		// prints what it successfully decrypted cannot distinguish "nothing
 		// arrived" from "something arrived and was rejected".
 		fmt.Printf("TRACE %s%s\n", node.Tag, attrSummary(node))
 		switch node.Tag {
+		case "ib":
+			offline.handle(ctx, node)
 		case "message":
 			// A receipt goes back before decryption: a sender that never sees
 			// one retries the same message.
@@ -210,11 +214,21 @@ func runListen(cfg sendConfig) error {
 	// first. Waiting only on the context made a dead socket look identical to a
 	// quiet one: the process sat silent for the full timeout and then reported
 	// "window ended", which is a false negative an operator cannot see through.
+	// The offline drain gets its own grace beyond the window: the drain marker
+	// is the moment live fan-out should start, so that is when watching is
+	// worth extending for.
+	offlineGrace := 5 * time.Minute
 	select {
 	case <-ctx.Done():
 		d.shutdown()
 		<-loopDone
-		fmt.Println("\nlisten window ended")
+		// A queue the server announced but never drained is the PF-087
+		// observation. Saying so beats "window ended", which reads as healthy.
+		if offline.announcedAndUndrained() {
+			fmt.Println("\nlisten window ended: the queue was announced but the drain marker never came (PF-087)")
+		} else {
+			fmt.Println("\nlisten window ended")
+		}
 		return nil
 	case <-loopDone:
 		if err := d.readError(); err != nil {
@@ -223,7 +237,103 @@ func runListen(cfg sendConfig) error {
 		}
 		fmt.Println("\nconnection closed by the server")
 		return nil
+	case <-offline.drained:
+		fmt.Println("\noffline queue drained; live traffic should now flow")
+		select {
+		case <-ctx.Done():
+			d.shutdown()
+			<-loopDone
+			fmt.Println("listen window ended")
+			return nil
+		case <-time.After(offlineGrace):
+			d.shutdown()
+			<-loopDone
+			fmt.Println("listen window ended (post-drain grace elapsed)")
+			return nil
+		case <-loopDone:
+			if err := d.readError(); err != nil {
+				fmt.Printf("\nconnection ended: %v\n", err)
+				return fmt.Errorf("connection ended while listening: %w", err)
+			}
+			fmt.Println("\nconnection closed by the server")
+			return nil
+		}
 	}
+}
+
+// offlineQueue owns the announcement/batch handshake over the shared read loop.
+//
+// The server freezes its offline queue until the client answers the
+// announcement with a batch request, and keeps live traffic behind that queue.
+// A client that never answers is a client the server never delivers to
+// (PF-087). The server then streams the queue and closes it with the drain
+// marker <ib><offline/>; only that marker means "drained" — the request going
+// out proves nothing on its own.
+type offlineQueue struct {
+	sc    noise.SecureConn
+	codec wabinary.Codec
+
+	// drained closes exactly once, on the drain marker. The server may
+	// re-announce or re-drain mid-session; neither may crash the process.
+	drained   chan struct{}
+	drainOnce sync.Once
+
+	mu        sync.Mutex
+	announced bool
+}
+
+func newOfflineQueue(sc noise.SecureConn, codec wabinary.Codec) *offlineQueue {
+	return &offlineQueue{sc: sc, codec: codec, drained: make(chan struct{})}
+}
+
+// handle reacts to one <ib> stanza.
+func (o *offlineQueue) handle(ctx context.Context, node *wabinary.Node) {
+	// The queue stays frozen until the client names a batch size. Every
+	// reference implementation sends the same node: one <offline_batch> asking
+	// for a bounded slice, repeated if the drain marker has not arrived.
+	if child(node, "offline_preview") != nil {
+		o.mu.Lock()
+		o.announced = true
+		o.mu.Unlock()
+		if err := o.requestBatch(ctx); err != nil {
+			fmt.Printf("offline batch: %v\n", err)
+		} else {
+			fmt.Println("offline batch: requested")
+		}
+	}
+	if child(node, "offline") != nil {
+		fmt.Println("offline queue: drained")
+		o.drainOnce.Do(func() { close(o.drained) })
+	}
+}
+
+// announcedAndUndrained reports whether the server named a queue that never
+// reached its drain marker inside the window.
+func (o *offlineQueue) announcedAndUndrained() bool {
+	select {
+	case <-o.drained:
+		return false
+	default:
+	}
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.announced
+}
+
+// requestBatch answers the server's <ib><offline_preview/> with the batch
+// request.
+func (o *offlineQueue) requestBatch(ctx context.Context) error {
+	batch := &wabinary.Node{
+		Tag: "ib",
+		Children: []wabinary.Node{{
+			Tag: "offline_batch", Attrs: wabinary.Attrs{"count": "100"},
+		}},
+	}
+	frame, err := o.codec.Encode(batch)
+	if err != nil {
+		return err
+	}
+	return o.sc.WriteFrame(ctx, frame)
 }
 
 // awaitSuccessVerdict consumes the login verdict from the dispatcher's stream.

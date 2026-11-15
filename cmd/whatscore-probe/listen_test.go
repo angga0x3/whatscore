@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -190,6 +191,127 @@ func TestSeedFromRecordIgnoresAnOldRecord(t *testing.T) {
 // encodeText is the sender-side payload the receive tests feed in.
 func encodeText(text string) ([]byte, error) {
 	return stanza.EncodeTextMessage(text)
+}
+
+// captureConn records every frame written to it, so a test can assert on the
+// exact bytes the probe put on the wire.
+type captureConn struct {
+	written chan []byte
+}
+
+func newCaptureConn() *captureConn { return &captureConn{written: make(chan []byte, 8)} }
+
+func (c *captureConn) ReadFrame(ctx context.Context) ([]byte, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func (c *captureConn) WriteFrame(ctx context.Context, frame []byte) error {
+	select {
+	case c.written <- append([]byte(nil), frame...):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *captureConn) Close() error { return nil }
+
+func (c *captureConn) CipherSuiteName() string { return "test" }
+
+// TestOfflineBatchRequestShape pins the node that un-freezes the server's
+// offline queue. The shape is the whole fix for PF-087: an <ib> wrapper around
+// one <offline_batch> naming a bounded count. A client that sends anything else
+// — or nothing — gets a queue the server announces but never delivers.
+func TestOfflineBatchRequestShape(t *testing.T) {
+	conn := newCaptureConn()
+	oq := newOfflineQueue(conn, wabinary.NewCodec(nil))
+
+	preview := &wabinary.Node{Tag: "ib", Children: []wabinary.Node{
+		{Tag: "offline_preview", Attrs: wabinary.Attrs{
+			"count": "107", "message": "26", "receipt": "37", "notification": "26",
+		}},
+	}}
+	oq.handle(context.Background(), preview)
+
+	select {
+	case frame := <-conn.written:
+		node, err := wabinary.NewCodec(nil).Decode(bytes.NewReader(frame))
+		if err != nil {
+			t.Fatalf("decode written frame: %v", err)
+		}
+		if node.Tag != "ib" {
+			t.Fatalf("outer tag = %q", node.Tag)
+		}
+		batch := child(node, "offline_batch")
+		if batch == nil {
+			t.Fatalf("no <offline_batch> child: %s", attrSummary(node))
+		}
+		if got := batch.Attrs["count"]; got != "100" {
+			t.Fatalf("count = %q, want 100 (a bounded slice, not the queue size)", got)
+		}
+	default:
+		t.Fatal("an offline_preview announcement earned no batch request on the wire")
+	}
+}
+
+// TestOfflineQueueSurvivesRepeatedAnnouncements covers the session lifecycle:
+// the server may re-announce or re-drain mid-session, and a second drain
+// marker must not panic on an already-closed channel.
+func TestOfflineQueueSurvivesRepeatedAnnouncements(t *testing.T) {
+	conn := newCaptureConn()
+	oq := newOfflineQueue(conn, wabinary.NewCodec(nil))
+
+	preview := func() *wabinary.Node {
+		return &wabinary.Node{Tag: "ib", Children: []wabinary.Node{{Tag: "offline_preview"}}}
+	}
+	drain := func() *wabinary.Node {
+		return &wabinary.Node{Tag: "ib", Children: []wabinary.Node{{Tag: "offline"}}}
+	}
+	ctx := context.Background()
+
+	if oq.announcedAndUndrained() {
+		t.Fatal("nothing announced yet")
+	}
+
+	oq.handle(ctx, preview())
+	if !oq.announcedAndUndrained() {
+		t.Fatal("announced queue should be pending a drain marker")
+	}
+
+	oq.handle(ctx, drain())
+	select {
+	case <-oq.drained:
+	default:
+		t.Fatal("drain marker did not release the listener")
+	}
+	if oq.announcedAndUndrained() {
+		t.Fatal("queue still marked undrained after the marker")
+	}
+
+	// A re-announcement after the drain is a fresh queue with its own marker.
+	// None of this may panic.
+	oq.handle(ctx, preview())
+	oq.handle(ctx, drain())
+	oq.handle(ctx, drain())
+}
+
+// TestOfflineBatchRequestIsSentRepeatedly pins that a second announcement gets
+// a second batch request: the first batch may not cover the queue, and the
+// reference clients keep asking until the marker arrives.
+func TestOfflineBatchRequestIsSentRepeatedly(t *testing.T) {
+	conn := newCaptureConn()
+	oq := newOfflineQueue(conn, wabinary.NewCodec(nil))
+
+	preview := &wabinary.Node{Tag: "ib", Children: []wabinary.Node{{Tag: "offline_preview"}}}
+	oq.handle(context.Background(), preview)
+	<-conn.written
+	oq.handle(context.Background(), preview)
+	select {
+	case <-conn.written:
+	default:
+		t.Fatal("a re-announced queue earned no second batch request")
+	}
 }
 
 // preKeyNode builds the raw frame a peer's prekey message arrives in, matching
