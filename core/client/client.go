@@ -17,6 +17,7 @@ import (
 	"github.com/angga0x3/whatscore/core/events"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/session"
+	"github.com/angga0x3/whatscore/protocol/signal"
 	"github.com/angga0x3/whatscore/protocol/transport"
 )
 
@@ -294,6 +295,24 @@ func (c *Client) SetReceiveSignalPeer(peer string, session *coremessaging.PeerSe
 // Signal messages.
 func (c *Client) SetReceiveSignalIdentity(identity [32]byte) {
 	c.receiver.SetReceiverIdentity(identity)
+}
+
+// SetSignalIdentityPair sets the identity key pair, required to start a new
+// session from a peer bundle.
+func (c *Client) SetSignalIdentityPair(pair signal.KeyPair) {
+	c.sender.SetIdentityPair(pair)
+}
+
+// SetPreKeyBundleSource installs the peer bundle provider used by
+// SendPreKeyMessage.
+func (c *Client) SetPreKeyBundleSource(source coremessaging.PreKeyBundleSource) {
+	c.sender.SetPreKeyBundleSource(source)
+}
+
+// SendPreKeyMessage starts a session from the peer bundle and sends the first
+// message as a pkmsg carrier.
+func (c *Client) SendPreKeyMessage(ctx context.Context, to, text string, registrationID uint32) (string, *coremessaging.PeerSession, error) {
+	return c.sender.SendPreKeyText(ctx, to, text, registrationID)
 }
 
 // SetPreKeySource installs the prekey provider used to bootstrap inbound
