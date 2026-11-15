@@ -147,6 +147,18 @@ Finding ID ranges are reserved per workstream to avoid collisions: auth
 PF-020…PF-029, messaging PF-030…PF-039, media PF-040…PF-049, signal
 PF-050…PF-059.
 
+## Current blockers
+
+| Blocker | Owner | Impact | Unblock |
+|---------|-------|--------|---------|
+| Token table licence (spec §10.2) | maintainer | binary encoding cannot match real traffic | decide clean-room vs derived, then `cmd/tokendict -check` |
+| XEdDSA signer (ADR 0001) | maintainer | pairing cannot complete (`ErrSignerRequired`) | approve a vetted dependency, or review a first-party signer |
+| Auth acceptance unverified | engineering | cannot claim login works live | interpret the server's success/failure stanzas (`WaitAuth`) |
+
+Nothing else in the stack is blocked: transport, Noise, Signal, media, sync,
+REST, and the SDK all have green tests and only need the three items above to
+become usable against the real service.
+
 ## Risks
 
 | Risk | Impact | Mitigation |

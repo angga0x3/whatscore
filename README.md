@@ -13,92 +13,53 @@
 ---
 
 **WhatsCore** is an independent WhatsApp Web protocol implementation written in
-pure Go. The project owns its own protocol engine — WebSocket transport, Noise
-handshake, binary node codec, pairing, and Signal-style end-to-end encryption —
-and ships two public interfaces on top of the same application core: an
-idiomatic **Go SDK** and a **self-hosted REST API server**. It is not a port of
-an existing library and not a wrapper around one; the wire protocol is
-implemented from first principles, documented in the open.
+pure Go. It owns its own protocol engine — transport, Noise, binary codec,
+pairing, Signal — plus an idiomatic **Go SDK** and a **self-hosted REST API**.
+
+The transport and Noise layers are verified against the live service. The rest
+is implemented, tested against a fake server, and honest about what it has not
+proven yet. No port of an existing library, no CGo, one static binary.
 
 ## Status
 
-> **Phases 3–5 — in progress.** Phase 3 has QR payloads, stanza parsers,
-> device-identity authentication, the credential vault, registration
-> payloads, and the credential manager; device-signature generation (ADR
-> 0001) remains. Phase 4 has the messaging stanza layer, plaintext text send
-> inbound text events, and receipts, and the media envelope; Signal X3DH is
-> implemented, along with the key schedule, ratchet state machine, message
-> framing/encryption, prekey bootstrap, versioned ratchet-state persistence, and
-> an encrypted per-peer session store plus outbound send and inbound decrypt
-> paths, including inbound prekey bootstrap (prekey signing and sync pending).
-> Phase 5 has the event bus, session actor, credentials, and SDK facade;
-> orchestration remains. The real token table and live interop are still open.
+The protocol engine is real, and one part of it is proven against the live
+service: **transport and the Noise handshake complete against
+`wss://web.whatsapp.com/ws/chat`**, including certificate verification against
+the pinned root key (four out of four runs, reproducible with
+`go run ./cmd/whatscore-probe`).
 
-| Layer | Status |
-|-------|--------|
-| Protocol engine | Transport, Noise, binary, pairing + registration/login auth payloads, messaging stanzas, media envelope (buffered, streaming, range), Signal (X3DH/ratchet/messages/prekeys), app-state patch parsing, mutation decode, LTHash + envelope MACs; device signature, token table pending |
-| Application core | `core/events`, `core/session`, `core/engine`, `core/credentials`, `core/prekeys`, `core/signalsession`, `core/messaging`, `core/media`, `core/contacts`, `core/groups`, `core/client` |
-| Storage | Interfaces + migrations; envelope, credential vault, PostgreSQL + SQLite (pure Go) backends |
-| Application core | Designed — implementation starts in Phase 5 |
-| REST server | Foundation + `/api/v1/sessions`, `/webhooks`, text/image/document messages, media read, SSE `/events` + `/qr`, signed delivery |
+Everything after that handshake is still unproven against WhatsApp: binary
+encoding needs the token table, pairing needs a signature the project has not
+decided how to implement, and no message has been delivered.
 
-This project holds itself to one principle: **no fake feature claims —
-demo > promises.** Anything labeled as a target below is design, not a shipped
-capability.
+| Layer | State |
+|-------|-------|
+| Transport + Noise | **Live-verified** (`PF-002…PF-009`) |
+| Binary codec | Implemented and fuzz-tested; needs the real token table |
+| Pairing | QR, stanzas, identity verification, credential vault; **signing undecided** (ADR 0001) |
+| Auth payloads | Registration + login implemented and unit-tested; not yet accepted live |
+| Signal | X3DH, ratchet, message crypto, prekey bootstrap, persistence — vector-tested |
+| Media | Envelope, streaming, range; orchestrated through the SDK |
+| App-state sync | Patch parse, mutation decode, LTHash, envelope MACs |
+| REST + SDK | Sessions, messages, media, webhooks, SSE; SDK send/receive encrypted |
 
-> ⚠️ **Disclaimer**
->
-> - WhatsCore is an **unofficial** implementation of the WhatsApp Web
->   protocol. It is not affiliated with, endorsed by, or connected to Meta or
->   WhatsApp in any way.
-> - The protocol is undocumented and changes without notice. Any
->   implementation can break at any time.
-> - Automating WhatsApp carries a real risk of **account restriction or ban**.
-> - Use **dedicated accounts you control** for any automation — never your
->   personal number.
-> - Reverse-engineering the protocol follows ethics rules documented in
->   [docs/reverse-engineering/README.md](docs/reverse-engineering/README.md).
-
-## Architecture
-
-Three layers, dependencies pointing downward only:
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│  Public interfaces                                            │
-│  Go SDK · REST API · Webhooks                                 │
-└───────────────────────────────┬───────────────────────────────┘
-                                ▼
-┌───────────────────────────────────────────────────────────────┐
-│  Application core                                             │
-│  client · session · messaging · events                        │
-│  (one session, one actor)                                     │
-└───────────────────────────────┬───────────────────────────────┘
-                                ▼
-┌───────────────────────────────────────────────────────────────┐
-│  Protocol engine (pure Go)                                    │
-│  transport · noise · binary · pairing · signal · sync          │
-└───────────────────────────────────────────────────────────────┘
-```
-
-- [docs/architecture/technical-specification.md](docs/architecture/technical-specification.md)
-  — the detailed architecture, source of truth for every rule.
-- [docs/protocol/README.md](docs/protocol/README.md) — the provenance policy:
-  every protocol finding carries its source, date, confidence level, and the
-  tests that prove it. Implementation code depends on Confirmed findings only.
+Two things block live use, and neither is code: the **token table licence**
+(spec §10.2, validator ready in `cmd/tokendict`) and the **XEdDSA signer**
+(ADR 0001). Until both are settled this project makes no claim of working
+against WhatsApp — see [compatibility](docs/architecture/compatibility.md).
 
 ## Roadmap
 
 | Phase | Milestone | Status |
 |-------|-----------|--------|
-| 0 | Foundation — server skeleton, config, PostgreSQL, migrations, CI | **Complete** |
-| 1 | Transport & Noise — WebSocket transport, Noise handshake | **Complete** (fake-server; live interop pending) |
-| 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
-| 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, auth payloads, credential vault, credential manager done; device signature (ADR 0001) pending |
-| 4 | Messaging (Signal) — send/receive with E2E | **In progress** — X3DH, ratchet, encryption, state persistence, per-peer store, `<enc>` send, inbound decrypt, and inbound prekey bootstrap done; prekey signing + sync pending |
-| 5 | Public SDK — idiomatic Go client | **In progress** — events/session/credentials + client facade + plaintext send; inbound/orchestration pending |
-| 6 | API server — sessions, messaging, webhooks over the core | Planned |
-| 7 | Release v0.1.0 | Planned |
+| 0 | Foundation — skeleton, config, PostgreSQL, migrations, CI | **Complete** |
+| 1 | Transport & Noise | **Complete** — live handshake verified |
+| 2 | Binary protocol | **Complete** — token table external (licence pending) |
+| 3 | Pairing & authentication | **Blocked** on the signer decision (ADR 0001) |
+| 4 | Messaging (Signal) | **Complete** pending live interop |
+| 5 | Public SDK | **Complete** pending live interop |
+| 6 | API server | **Complete** pending live interop |
+| 7 | Release v0.1.0 | **Blocked** on phases 3 and 2 |
 
 **v0.0.1 target — protocol foundation preview:**
 
@@ -192,6 +153,8 @@ Every environment variable is documented in
 |----------|----------------|
 | [docs/architecture/technical-specification.md](docs/architecture/technical-specification.md) | Detailed architecture — the source of truth |
 | [docs/architecture/roadmap.md](docs/architecture/roadmap.md) | Execution plan: workstreams, boundaries, acceptance criteria |
+| [docs/architecture/compatibility.md](docs/architecture/compatibility.md) | What is proven, against what, and how to reproduce it |
+| [docs/architecture/performance.md](docs/architecture/performance.md) | Measured hot-path numbers and what is *not* claimed |
 | [docs/architecture/overview.md](docs/architecture/overview.md) | Short public architecture overview |
 | [docs/protocol/README.md](docs/protocol/README.md) | Protocol provenance policy — source, date, confidence, proving tests |
 | [docs/reverse-engineering/README.md](docs/reverse-engineering/README.md) | Reverse-engineering methodology and ethics rules |
