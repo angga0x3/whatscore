@@ -268,6 +268,11 @@ func (c *Client) SendMessage(ctx context.Context, msg Message) (string, error) {
 	return c.sender.SendText(ctx, msg.To, msg.Text)
 }
 
+// SendReceipt writes a delivery/read/played receipt for a message id.
+func (c *Client) SendReceipt(ctx context.Context, to, id, receiptType string) error {
+	return c.sender.SendReceipt(ctx, to, id, receiptType)
+}
+
 // Close stops the session and, when the client owns it, closes the event bus.
 // It is idempotent.
 func (c *Client) Close(ctx context.Context) error {

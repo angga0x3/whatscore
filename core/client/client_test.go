@@ -444,3 +444,39 @@ func TestInboundRunsCustomHandlerToo(t *testing.T) {
 		t.Fatal("custom handler was not called")
 	}
 }
+
+func TestSendReceipt(t *testing.T) {
+	conn := newFakeConn()
+	bus := events.NewBus()
+	c, err := New("session-1", WithDialer(&fakeDialer{conn: conn}), WithBus(bus))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SendReceipt(context.Background(), "628123@s.whatsapp.net", "MSG1", "read"); err != nil {
+		t.Fatalf("SendReceipt: %v", err)
+	}
+	var frame []byte
+	select {
+	case frame = <-conn.writes:
+	case <-time.After(2 * time.Second):
+		t.Fatal("receipt frame was not written")
+	}
+	node, err := binary.NewCodec(nil).Decode(bytes.NewReader(frame))
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := stanza.ParseReceipt(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.ID != "MSG1" || receipt.Type != "read" {
+		t.Fatalf("receipt = %#v", receipt)
+	}
+}
