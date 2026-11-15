@@ -79,5 +79,13 @@ func (s *Sender) SendEncryptedText(ctx context.Context, to, text string) (string
 // Identity returns this sender's Signal identity public key.
 func (s *Sender) Identity() [32]byte { return s.identity }
 
-// SetIdentity sets this sender's Signal identity public key.
+// SetIdentity sets only the public identity, which is enough to encrypt with
+// an existing session.
 func (s *Sender) SetIdentity(identity [32]byte) { s.identity = identity }
+
+// SetIdentityPair sets the identity key pair, which is required to initiate a
+// session from a peer bundle.
+func (s *Sender) SetIdentityPair(pair signal.KeyPair) {
+	s.idPair = pair
+	s.identity = pair.Public
+}

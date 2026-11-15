@@ -13,6 +13,7 @@ import (
 
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
+	"github.com/angga0x3/whatscore/protocol/signal"
 )
 
 // ErrInvalidMessage is returned for unusable send requests.
@@ -29,7 +30,9 @@ type Sender struct {
 	codec    binary.Codec
 	newID    func() (string, error)
 	identity [32]byte
+	idPair   signal.KeyPair
 	peers    map[string]*PeerSession
+	bundles  PreKeyBundleSource
 }
 
 // Option configures a Sender.
