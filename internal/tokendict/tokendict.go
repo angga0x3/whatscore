@@ -136,6 +136,11 @@ type Table struct {
 	License      string     `json:"license"`
 	Single       []string   `json:"single"`
 	Double       [][]string `json:"double"`
+	// AllowHoles permits empty slots inside the single-byte table. A partial
+	// table derived from observed traffic legitimately has them: an index that
+	// never appeared in the captured stanza has no known string. A complete
+	// table should leave this false, because then a hole really is a bug.
+	AllowHoles bool `json:"allow_holes,omitempty"`
 }
 
 // Provenance is the attribution half of a Table. It is what the CLI prints
@@ -212,18 +217,23 @@ func validateEntries(t Table) error {
 	singleSeen := make(map[string]int, len(t.Single))
 	total := 0
 	for i := 1; i < len(t.Single); i++ {
-		if err := validateToken("single", t.Single[i], i, -1, singleSeen); err != nil {
+		if err := validateToken("single", t.Single[i], i, -1, singleSeen, t.AllowHoles); err != nil {
 			return err
 		}
-		singleSeen[t.Single[i]] = i
+		if t.Single[i] != "" {
+			singleSeen[t.Single[i]] = i
+		}
 		total++
 	}
 
 	doubleSeen := make(map[string]struct{ dict, index int }, MaxDictionaries*MaxDictionaryEntries/4)
 	for dict, row := range t.Double {
 		for index, token := range row {
-			if err := validateToken("double", token, index, dict, nil); err != nil {
+			if err := validateToken("double", token, index, dict, nil, t.AllowHoles); err != nil {
 				return err
+			}
+			if token == "" {
+				continue // an observed-holes placeholder is not a token
 			}
 			if first, ok := doubleSeen[token]; ok {
 				return failure(KindDuplicateToken, "double", index, dict,
@@ -249,9 +259,12 @@ func validateEntries(t Table) error {
 
 // validateToken checks one entry. It returns only index/row positions, never
 // the token itself, so rejected tables do not leak into logs.
-func validateToken(field, token string, index, dict int, singleSeen map[string]int) error {
+func validateToken(field, token string, index, dict int, singleSeen map[string]int, allowHoles bool) error {
 	if token == "" {
-		return failure(KindEmptyToken, field, index, dict, "token must not be empty; truncate trailing slots instead of leaving holes")
+		if allowHoles {
+			return nil
+		}
+		return failure(KindEmptyToken, field, index, dict, "token must not be empty; truncate trailing slots instead of leaving holes (set allow_holes for a partial table derived from observation)")
 	}
 	if !utf8.ValidString(token) {
 		return failure(KindInvalidUTF8, field, index, dict, "token is not valid UTF-8")
@@ -324,7 +337,7 @@ func LoadAndValidate(r io.Reader) (Table, error) {
 
 func allowedField(name string) bool {
 	switch name {
-	case "source", "observed_date", "license", "single", "double":
+	case "source", "observed_date", "license", "single", "double", "allow_holes":
 		return true
 	default:
 		return false

@@ -55,3 +55,25 @@ Status: QR payload construction/parsing, the pair-device/pair-success stanza
 parsers, and device-identity authentication are implemented and proven with
 synthetic keys and nodes. Device-signature generation, credential
 provisioning, and a live pairing run remain.
+
+## PF-069: The live pair-device stanza decodes with nine tokens
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-069 |
+| **Title** | The server's `pair-device` stanza uses exactly seven single-byte token indices and one dictionary-1 index; with those nine strings it decodes as `<iq type=set id from t><pair-device><ref>×6</ref></pair-device></iq>`, and the client's iq result is accepted and answered |
+| **Layer** | pairing |
+| **Source** | direct observation of own session |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `deployments/tokendict` live run: 6 refs decoded, ack sent, server replied; three runs used the identical index set |
+| **Related findings** | PF-016, PF-068 |
+| **Notes** | Captured from an unpaired session, so no account was involved. The index set is stable across runs, which makes a nine-token partial table sufficient for this stanza — the reason a full 1,259-entry table is not required to start pairing. Indices that appear only on the *reply* (the ack's `type` value and two attribute names) had to be placed by structural position and are marked unverified in `deployments/tokendict/README.md`. Anything outside this stanza fails loudly with `unknown token`, which is the intended behaviour for a partial table. |
+
+---
+
+Status: the pairing stanza is decoded against the live server with a
+nine-token table, and the acknowledgement round-trips. Completing the flow needs
+the remaining reply tokens plus the device-identity signature, which is
+implemented but has not been exercised live.

@@ -429,3 +429,35 @@ func TestValidateCrossTableDuplicate(t *testing.T) {
 		t.Fatalf("kind = %s", typed.Kind)
 	}
 }
+
+// TestValidateAllowHoles pins the partial-table escape hatch: a table derived
+// from observed traffic legitimately has unknown slots, but only when the table
+// says so. Holes stay rejected by default.
+func TestValidateAllowHoles(t *testing.T) {
+	base := Table{
+		Source:       "synthetic",
+		ObservedDate: "2026-11-15",
+		License:      "Apache-2.0",
+		Single:       []string{"", "", "known"},
+		Double:       [][]string{{""}, {"", "also-known"}},
+	}
+	if err := Validate(base); err == nil {
+		t.Fatal("holes must be rejected without allow_holes")
+	}
+
+	base.AllowHoles = true
+	if err := Validate(base); err != nil {
+		t.Fatalf("holes must be accepted with allow_holes: %v", err)
+	}
+
+	// A hole is not a token: two empty slots must not read as a duplicate.
+	base.Double = [][]string{{""}, {""}}
+	if err := Validate(base); err != nil {
+		t.Fatalf("empty slots must not collide: %v", err)
+	}
+	// A real duplicate is still caught.
+	base.Double = [][]string{{"known"}}
+	if err := Validate(base); err == nil {
+		t.Fatal("cross-table duplicate must still fail")
+	}
+}
