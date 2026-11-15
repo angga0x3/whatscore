@@ -268,6 +268,21 @@ func (c *Client) SendMessage(ctx context.Context, msg Message) (string, error) {
 	return c.sender.SendText(ctx, msg.To, msg.Text)
 }
 
+// SetSignalIdentity sets this client's Signal identity public key, which is
+// mixed into every message MAC.
+func (c *Client) SetSignalIdentity(identity [32]byte) { c.sender.SetIdentity(identity) }
+
+// SetSignalPeer installs an established peer session. The caller owns
+// persistence through core/signalsession.
+func (c *Client) SetSignalPeer(peer string, session *coremessaging.PeerSession) error {
+	return c.sender.SetPeer(peer, session)
+}
+
+// SendEncryptedMessage encrypts and sends text using the peer session.
+func (c *Client) SendEncryptedMessage(ctx context.Context, to, text string) (string, *coremessaging.PeerSession, error) {
+	return c.sender.SendEncryptedText(ctx, to, text)
+}
+
 // SendReceipt writes a delivery/read/played receipt for a message id.
 func (c *Client) SendReceipt(ctx context.Context, to, id, receiptType string) error {
 	return c.sender.SendReceipt(ctx, to, id, receiptType)

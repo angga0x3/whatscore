@@ -11,9 +11,11 @@ import (
 
 	corecredentials "github.com/angga0x3/whatscore/core/credentials"
 	"github.com/angga0x3/whatscore/core/events"
+	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/session"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
+	"github.com/angga0x3/whatscore/protocol/signal"
 	"github.com/angga0x3/whatscore/protocol/transport"
 	storecreds "github.com/angga0x3/whatscore/storage/credentials"
 	"github.com/angga0x3/whatscore/storage/envelope"
@@ -478,5 +480,63 @@ func TestSendReceipt(t *testing.T) {
 	}
 	if receipt.ID != "MSG1" || receipt.Type != "read" {
 		t.Fatalf("receipt = %#v", receipt)
+	}
+}
+
+func TestSignalSendWiring(t *testing.T) {
+	conn := newFakeConn()
+	bus := events.NewBus()
+	c, err := New("session-1", WithDialer(&fakeDialer{conn: conn}), WithBus(bus))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+	ctx := context.Background()
+	if err := c.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	root := signal.RootKey{0x33}
+	chain := signal.ChainKey{0x44}
+	ratchet, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	peerState, err := signal.NewInitiator(root, ratchet.Public, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := [32]byte{0x11}
+	c.SetSignalIdentity(identity)
+	peer := "628123@s.whatsapp.net"
+	if err := c.SetSignalPeer(peer, &coremessaging.PeerSession{PeerIdentity: [32]byte{0x22}, State: peerState}); err != nil {
+		t.Fatal(err)
+	}
+
+	id, state, err := c.SendEncryptedMessage(ctx, peer, "halo")
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if id == "" || state == nil {
+		t.Fatalf("id = %q", id)
+	}
+	select {
+	case frame := <-conn.writes:
+		node, err := binary.NewCodec(nil).Decode(bytes.NewReader(frame))
+		if err != nil {
+			t.Fatal(err)
+		}
+		encrypted, err := stanza.ParseEncryptedText(node)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if encrypted.Carrier != stanza.CarrierMsg || encrypted.ID != id {
+			t.Fatalf("envelope = %#v", encrypted)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("encrypted frame was not written")
 	}
 }
