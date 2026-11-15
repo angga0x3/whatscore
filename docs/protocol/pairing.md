@@ -69,7 +69,7 @@ provisioning, and a live pairing run remain.
 | **Status** | Verified-by-test |
 | **Proving test** | `deployments/tokendict` live run: 6 refs decoded, ack sent, server replied; three runs used the identical index set |
 | **Related findings** | PF-016, PF-068 |
-| **Notes** | Captured from an unpaired session, so no account was involved. The index set is stable across runs, which makes a nine-token partial table sufficient for this stanza — the reason a full 1,259-entry table is not required to start pairing. Indices that appear only on the *reply* (the ack's `type` value and two attribute names) had to be placed by structural position and are marked unverified in `deployments/tokendict/README.md`. Anything outside this stanza fails loudly with `unknown token`, which is the intended behaviour for a partial table. |
+| **Notes** | Captured from an unpaired session, so no account was involved. The index set is stable across runs, which makes a nine-token partial table sufficient for this stanza — the reason a full 1,259-entry table is not required to start pairing. The server's reply decodes structurally to `iq{from, type=<41>, id, <26>=<43>}`, but those three indices appear nowhere we can read without them, so they stay empty and documented as unknown. A differential test (resend the ack with `type="get"`, with no `type`, and with the observed value) produced identical server behaviour in all three cases and therefore proved nothing; the earlier guess that `41` meant `xmlns` was removed rather than kept. The cause of the post-ack close is also undetermined, with three candidate explanations recorded. Anything outside this stanza fails loudly with `unknown token`, which is the intended behaviour for a partial table. |
 
 ---
 
