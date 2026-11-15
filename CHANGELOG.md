@@ -3,6 +3,36 @@
 All notable changes, newest first. Releases follow Semantic Versioning; the
 project is pre-1.0, so breaking changes happen in minor versions.
 
+## [Unreleased]
+
+### Fixed
+
+- The pairing payload now carries a real XEdDSA signed-prekey signature. It
+  previously carried 64 zero bytes, which is the correct length and therefore
+  passed local validation, but is not a signature the server can verify against
+  `eIdent` (PF-072).
+- Pairing runs now rotate the six QR codes instead of printing them at once.
+  Only one code is valid at a time — 60 s for the first, 20 s for each of the
+  rest (PF-074).
+- `pair-success` is now confirmed with `pair-device-sign`, without which the
+  phone never finishes linking a verified device (PF-073).
+- `protocol/auth` round-trips `DeviceProps.historySyncConfig`. The marshaller
+  emitted it and the parser discarded it, so building a payload and parsing it
+  back silently lost the capability block.
+- Undecodable stanzas are written to `undecoded/*.bin`. The raw frame is the
+  only record of a stanza that took a phone scan to produce.
+
+### Changed
+
+- A web QR login reports `DeviceProps.platformType = CHROME`, matching the
+  client-type field `1` the QR already carried (PF-071).
+
+### Known limits
+
+- No scan has succeeded. One phone attempt was refused with a generic message;
+  the three defects above are the ones it exposed, and whether they were
+  jointly sufficient is unknown.
+
 ## [v0.0.1] — 2026-11-15
 
 First tag. A protocol foundation preview: real transport and Noise against the
