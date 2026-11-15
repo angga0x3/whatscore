@@ -9,8 +9,10 @@ Sources); cross-validated between whatsmeow (2025 rewrite) and Baileys
 `noise-handler`.
 
 Algorithm-internal findings (state machine semantics) are Confirmed by
-deterministic vector tests (independently generated reference values);
-live-server-facing aspects stay Probable until manual interop.
+deterministic vector tests (independently generated reference values). Live
+interop was recorded on 2026-11-15: `cmd/whatscore-probe` completed this
+handshake against `wss://web.whatsapp.com/ws/chat` in four consecutive runs,
+including certificate-chain verification against the pinned root.
 
 ## PF-004: Handshake initialization and hash chain
 
@@ -108,3 +110,13 @@ Status: recorded 2026-11-15 from reference study (whatsmeow `main`,
 Baileys `master`). Vector tests and the fake-server round-trip prove the
 state machine; live-server confirmation of PF-002/PF-003 pending manual
 interop (Phase 3).
+
+---
+
+Live interop, 2026-11-15: `cmd/whatscore-probe` performed msg1→msg3 against the
+real endpoint and reported `handshake-completed` with
+`Noise_XX_25519_AESGCM_SHA256` four times out of four. That confirms PF-004
+through PF-009 as a set (hash chain, AEAD counters, HKDF mixing, message
+sequence, and the pinned certificate root). It does not confirm anything after
+the handshake: no ClientPayload was accepted, no pairing occurred, and no
+message was sent.

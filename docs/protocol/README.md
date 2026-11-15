@@ -56,7 +56,7 @@ Confidence and Status are deliberately separate axes:
   and Probable findings may inform experiments, prototypes, and discussions —
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
-- **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
+- **Exception — Probable wire/payload work (PF-010…PF-017,
   PF-020…PF-025, PF-030…PF-036, PF-040…PF-048, PF-057…PF-059,
   PF-064, PF-065, PF-066, PF-070…PF-072, PF-074, PF-076).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
@@ -85,8 +85,8 @@ Confidence and Status are deliberately separate axes:
 |----|-------|-------|------------|--------|--------------|
 | PF-000 | noise | EXAMPLE (synthetic): handshake frame header layout | Speculative | Observed-only | — |
 | PF-001 | transport | EXAMPLE (synthetic): WebSocket keepalive ping cadence | Speculative | Observed-only | — |
-| PF-002 | transport | WebSocket endpoint and dial headers | Probable | Observed-only | — |
-| PF-003 | transport | One-time intro header + 3-byte length framing across WS messages | Probable | Observed-only | `protocol/transport`, `tests/integration` |
+| PF-002 | transport | WebSocket endpoint and dial headers | Confirmed | Verified-by-test | `cmd/whatscore-probe` (live dial, 4/4) |
+| PF-003 | transport | One-time intro header + 3-byte length framing across WS messages | Confirmed | Verified-by-test | `cmd/whatscore-probe` (live), `protocol/transport`, `tests/integration` |
 | PF-004 | noise | Handshake initialization and hash chain | Confirmed | Verified-by-test | `protocol/noise` (vectors) |
 | PF-005 | noise | Handshake AEAD operations (AES-256-GCM, counter IV, hash AAD) | Confirmed | Verified-by-test | `protocol/noise` (vectors, handshake), `tests/integration` (fake server) |
 | PF-006 | noise | Key mixing via HKDF after each X25519 | Confirmed | Verified-by-test | `protocol/noise` (vectors) |
@@ -199,12 +199,15 @@ in CI.
 
 ---
 
-Status: findings recorded 2026-11-15 from reference study
+Status: PF-002 and PF-003 were promoted to Confirmed on 2026-11-15 by
+`cmd/whatscore-probe`, which completed a live Noise handshake against the real
+endpoint (4/4 runs). Everything after the handshake — auth, pairing,
+messaging — remains unproven live. Findings recorded from reference study
 (whatsmeow + Baileys; see [transport.md](transport.md),
 [noise.md](noise.md), [binary.md](binary.md), [pairing.md](pairing.md),
 [auth.md](auth.md), [messaging.md](messaging.md),
 [media.md](media.md), [signal.md](signal.md), and [sync.md](sync.md)). Algorithm findings are Confirmed by vector tests;
-live-server-facing findings (PF-002, PF-003, PF-010…PF-017, PF-020…PF-025,
+live-server-facing findings (PF-010…PF-017, PF-020…PF-025,
 PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
 `tests/integration` runs the fake-server path end to end (WebSocket dial →
 handshake → encrypted frames), which is what the Proving test column cites.
