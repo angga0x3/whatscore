@@ -67,7 +67,7 @@ func TestInboundPreKeyMessageBecomesText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := state.Encrypt(payload, peer.Public, identity.Public)
+	ciphertext, err := state.Encrypt(stanza.PadMessage(payload), peer.Public, identity.Public)
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}

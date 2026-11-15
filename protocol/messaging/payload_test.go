@@ -89,3 +89,54 @@ func TestTextSurvivesUTF8(t *testing.T) {
 		t.Fatalf("round trip = %q", got)
 	}
 }
+
+// TestPadUnpadRoundTrip pins the padding scheme the service actually applies
+// (whatsmeow padMessage/unpadMessage): v2 plaintexts carry N copies of the
+// byte N; version 3 carries none. The live queue replay decrypted to
+// wire-format errors and "no text" verdicts because the trailing pad bytes
+// are not protobuf.
+func TestPadUnpadRoundTrip(t *testing.T) {
+	raw, err := EncodeTextMessage("halo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	padded := PadMessage(raw)
+	if !bytes.HasPrefix(padded, raw) {
+		t.Fatal("padding did not append after the payload")
+	}
+	padLen := int(padded[len(padded)-1])
+	if padLen < 1 || padLen > 15 {
+		t.Fatalf("pad length %d outside the 1..15 range", padLen)
+	}
+	if !bytes.Equal(padded[len(padded)-padLen:], bytes.Repeat([]byte{byte(padLen)}, padLen)) {
+		t.Fatal("padding is not N copies of the byte N")
+	}
+
+	unpadded, err := UnpadMessage(padded, "2")
+	if err != nil {
+		t.Fatalf("unpad: %v", err)
+	}
+	if !bytes.Equal(unpadded, raw) {
+		t.Fatal("unpad did not restore the payload")
+	}
+	text, err := DecodeTextMessage(unpadded)
+	if err != nil || text != "halo" {
+		t.Fatalf("decode after unpad = %q, %v", text, err)
+	}
+
+	// Version 3 plaintexts are carried unpadded: unpad must be a no-op.
+	through, err := UnpadMessage(raw, "3")
+	if err != nil || !bytes.Equal(through, raw) {
+		t.Fatalf("v3 passthrough = %v, %q", err, through)
+	}
+}
+
+// TestUnpadRejectsUnpaddedPlaintext keeps the loud failure: an unpadded
+// plaintext is not something this protocol produced, and stripping its last
+// byte would corrupt it.
+func TestUnpadRejectsUnpaddedPlaintext(t *testing.T) {
+	raw, _ := EncodeTextMessage("tanpa padding")
+	if _, err := UnpadMessage(raw, "2"); err == nil {
+		t.Fatal("unpadded plaintext accepted")
+	}
+}

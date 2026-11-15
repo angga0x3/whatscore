@@ -584,7 +584,7 @@ func TestInboundEncryptedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := alice.Encrypt(payload, aliceID, bobID)
+	ciphertext, err := alice.Encrypt(stanza.PadMessage(payload), aliceID, bobID)
 	if err != nil {
 		t.Fatal(err)
 	}

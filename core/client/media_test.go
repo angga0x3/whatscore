@@ -77,7 +77,17 @@ func (r *mediaRig) descriptor(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("decrypt descriptor: %v", err)
 	}
-	return plaintext
+	plaintext, err = stanza.UnpadMessage(plaintext, "2")
+	if err != nil {
+		t.Fatalf("unpad descriptor: %v", err)
+	}
+	// The descriptor travels as a protobuf conversation payload, exactly like
+	// a text message; read it the way a real receiver would.
+	jsonBytes, err := stanza.DecodeTextMessage(plaintext)
+	if err != nil {
+		t.Fatalf("decode descriptor payload: %v", err)
+	}
+	return []byte(jsonBytes)
 }
 
 // sendAndDecrypt sends media and returns the result plus the descriptor bob

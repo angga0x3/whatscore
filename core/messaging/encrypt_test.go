@@ -77,8 +77,16 @@ func TestSendEncryptedText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("peer decrypt: %v", err)
 	}
-	if string(plaintext) != "rahasia" {
-		t.Fatalf("plaintext = %q", plaintext)
+	plaintext, err = stanza.UnpadMessage(plaintext, "2")
+	if err != nil {
+		t.Fatalf("unpad: %v", err)
+	}
+	text, err := stanza.DecodeTextMessage(plaintext)
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if text != "rahasia" {
+		t.Fatalf("plaintext = %q", text)
 	}
 }
 

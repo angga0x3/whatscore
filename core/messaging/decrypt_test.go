@@ -67,7 +67,7 @@ func TestReceiverDecryptsEncryptedMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := alice.Encrypt(payload, aliceID, bobID)
+	ciphertext, err := alice.Encrypt(stanza.PadMessage(payload), aliceID, bobID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestReceiverEncryptedDrops(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ciphertext, err := alice.Encrypt(secretPayload, aliceID, bobID)
+	ciphertext, err := alice.Encrypt(stanza.PadMessage(secretPayload), aliceID, bobID)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -99,7 +99,9 @@ func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, p
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
 	}
-	ciphertext, err := state.Encrypt(payload, s.identity, bundle.IdentityKey)
+	// Pad before encrypting (whatsmeow padMessage): a compliant receiver
+	// validates the padding and refuses unpadded plaintexts.
+	ciphertext, err := state.Encrypt(stanza.PadMessage(payload), s.identity, bundle.IdentityKey)
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: encrypt: %w", err)
 	}

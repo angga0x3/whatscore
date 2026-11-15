@@ -109,7 +109,7 @@ func TestReceiverBootstrapsPreKeyMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := alice.Encrypt(firstPayload, senderPair.Public, prekeys.identity.Public)
+	first, err := alice.Encrypt(stanza.PadMessage(firstPayload), senderPair.Public, prekeys.identity.Public)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestReceiverBootstrapsPreKeyMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := alice.Encrypt(payload, senderPair.Public, prekeys.identity.Public)
+	second, err := alice.Encrypt(stanza.PadMessage(payload), senderPair.Public, prekeys.identity.Public)
 	if err != nil {
 		t.Fatal(err)
 	}

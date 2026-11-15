@@ -1,6 +1,8 @@
 package messaging
 
 import (
+	"bytes"
+	"crypto/rand"
 	"fmt"
 
 	"google.golang.org/protobuf/proto"
@@ -50,3 +52,40 @@ func DecodeTextMessage(raw []byte) (string, error) {
 
 // ErrInvalidMessagePayload is returned for unusable application payloads.
 var ErrInvalidMessagePayload = fmt.Errorf("%w: invalid payload", ErrInvalidMessage)
+
+// PadMessage adds the padding the service expects around a v2 plaintext: one
+// to fifteen copies of a byte holding that same count. A compliant receiver
+// (whatsmeow's unpadMessage) strips it and refuses plaintexts that do not
+// carry valid padding, so sending unpadded bytes is how a message that "was
+// accepted by the server" still fails on the phone.
+func PadMessage(plaintext []byte) []byte {
+	pad := make([]byte, 1)
+	if _, err := rand.Read(pad); err != nil {
+		// Randomness is cosmetic here; the count is what matters, and any
+		// constant is a legal pad.
+		pad[0] = 0x0f
+	}
+	pad[0] &= 0x0f
+	if pad[0] == 0 {
+		pad[0] = 0x0f
+	}
+	return append(plaintext, bytes.Repeat(pad, int(pad[0]))...)
+}
+
+// UnpadMessage strips that padding after decryption. Version 3 plaintexts are
+// carried unpadded. The live queue replay decrypted to wire-format errors and
+// "no text" verdicts for exactly this reason: the trailing padding is not
+// protobuf.
+func UnpadMessage(plaintext []byte, version string) ([]byte, error) {
+	if version == "3" {
+		return plaintext, nil
+	}
+	if len(plaintext) == 0 {
+		return nil, fmt.Errorf("%w: empty plaintext", ErrInvalidMessagePayload)
+	}
+	last := plaintext[len(plaintext)-1]
+	if !bytes.HasSuffix(plaintext, bytes.Repeat([]byte{last}, int(last))) {
+		return nil, fmt.Errorf("%w: plaintext does not carry valid padding", ErrInvalidMessagePayload)
+	}
+	return plaintext[:len(plaintext)-int(last)], nil
+}

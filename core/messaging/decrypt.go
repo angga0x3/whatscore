@@ -73,6 +73,12 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 	}
 	session.State = attempt
 
+	// Strip the service's padding before parsing (see handlePreKey).
+	if plaintext, err = stanza.UnpadMessage(plaintext, envelope.Version); err != nil {
+		r.logger.WarnContext(ctx, "dropping encrypted message: unpad failed", "error", err)
+		return
+	}
+
 	// The decrypted bytes are a protobuf Message, not a raw string. A payload
 	// with no text (an image, a reaction, a protocol message) is not an error
 	// here: it decrypts fine and this layer simply has nothing to render.

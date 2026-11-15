@@ -89,6 +89,13 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 		r.logger.WarnContext(ctx, "dropping prekey message", "error", err)
 		return
 	}
+	// Strip the service's padding before parsing: the trailing pad bytes are
+	// not protobuf, and they are how a payload that decrypted fine still
+	// failed to parse (PF-087 queue replay).
+	if plaintext, err = stanza.UnpadMessage(plaintext, envelope.Version); err != nil {
+		r.logger.WarnContext(ctx, "dropping prekey message: unpad failed", "error", err)
+		return
+	}
 
 	// The decrypted payload is a protobuf Message, same as the msg carrier.
 	text, err := stanza.DecodeTextMessage(plaintext)

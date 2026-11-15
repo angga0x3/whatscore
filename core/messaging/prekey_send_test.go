@@ -70,6 +70,11 @@ func TestSendPreKeyText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("accept: %v", err)
 	}
+	// Strip the padding the compliant sender added before parsing.
+	plaintext, err = stanza.UnpadMessage(plaintext, "2")
+	if err != nil {
+		t.Fatalf("unpad: %v", err)
+	}
 	// The decrypted bytes are a protobuf Message, so compare the text it
 	// carries rather than the wire bytes.
 	gotText, err := stanza.DecodeTextMessage(plaintext)
@@ -102,8 +107,16 @@ func TestSendPreKeyText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decrypt follow-up: %v", err)
 	}
-	if string(plaintext) != "kedua" {
-		t.Fatalf("follow-up plaintext = %q", plaintext)
+	plaintext, err = stanza.UnpadMessage(plaintext, "2")
+	if err != nil {
+		t.Fatalf("unpad follow-up: %v", err)
+	}
+	text, err := stanza.DecodeTextMessage(plaintext)
+	if err != nil {
+		t.Fatalf("decode follow-up: %v", err)
+	}
+	if text != "kedua" {
+		t.Fatalf("follow-up plaintext = %q", text)
 	}
 }
 
