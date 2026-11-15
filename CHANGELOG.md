@@ -18,6 +18,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- Inbound media flows through the server: the session runtime fetches the
+  attachment from the CDN (mediaConn hosts, the whatsmeow URL shape, MAC and
+  SHA-256 verified), re-encrypts it at rest with a fresh media key — the
+  exact shape the upload routes store — and lands it in the API media store.
+  GET /sessions/{id}/media lists what arrived; downloads are deduped per
+  message id and never block the read loop.
 - The server delivers. POST /sessions/{id}/messages/text now sends over the
   session connection — an established ratchet continues it, first contact
   fetches the peer's prekey bundle and initiates — and stores the message

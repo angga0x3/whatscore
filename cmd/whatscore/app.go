@@ -4,6 +4,9 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -17,6 +20,8 @@ import (
 	"github.com/angga0x3/whatscore/buildinfo"
 	"github.com/angga0x3/whatscore/config"
 	"github.com/angga0x3/whatscore/core/events"
+	"github.com/angga0x3/whatscore/core/media"
+	protocolmedia "github.com/angga0x3/whatscore/protocol/media"
 	"github.com/angga0x3/whatscore/observability"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	"github.com/angga0x3/whatscore/server/api"
@@ -91,11 +96,16 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 		return nil, fmt.Errorf("load token dictionary: %w", err)
 	}
 
+	// The media store exists before the sessions do: inbound attachments are
+	// fetched, decrypted and stored by the session runtime through this saver.
+	mediaStore := api.NewMemoryMediaStore()
+
 	factory, err := newSessionFactory(sessionFactoryOptions{
 		vault:  vault,
 		bus:    bus,
 		logger: logger,
 		codec:  binary.NewCodec(dictionary),
+		media:  inboundMediaSaver{store: mediaStore},
 	})
 	if err != nil {
 		pool.Close()
@@ -121,6 +131,7 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 	// not a ledger of intents.
 	messages := api.NewMemoryMessageStore()
 	apiHandler.SetMessages(messages)
+	apiHandler.SetMedia(mediaStore)
 	apiHandler.SetTextDeliverer(textDelivererFunc(func(ctx context.Context, sessionID, to, text string) (string, error) {
 		return factory.deliverText(ctx, sessionID, to, text)
 	}))
@@ -159,6 +170,65 @@ type textDelivererFunc func(ctx context.Context, sessionID, to, text string) (st
 
 func (f textDelivererFunc) DeliverText(ctx context.Context, sessionID, to, text string) (string, error) {
 	return f(ctx, sessionID, to, text)
+}
+
+// inboundMediaSaver re-encrypts a decrypted CDN blob at rest with a fresh
+// media key — the exact shape the upload routes store — and hands it to the
+// API media store.
+type inboundMediaSaver struct {
+	store api.MediaStore
+}
+
+func (s inboundMediaSaver) SaveInboundMedia(ctx context.Context, sessionID, kind, fileName, mimetype string, plaintext []byte) (string, error) {
+	descriptor, blob, err := media.Encrypt(plaintext, atRestKeyTypeFor(kind), fileName)
+	if err != nil {
+		return "", fmt.Errorf("cmd/whatscore: re-encrypt inbound media: %w", err)
+	}
+	mediaID, err := newMediaID()
+	if err != nil {
+		return "", err
+	}
+	attachment := api.MediaAttachment{
+		ID:        mediaID,
+		SessionID: sessionID,
+		Kind:      kind,
+		FileName:  fileName,
+		MimeType:  mimetype,
+		Size:      descriptor.Size,
+		SHA256:    hex.EncodeToString(descriptor.SHA256[:]),
+		MediaKey:  base64.StdEncoding.EncodeToString(descriptor.MediaKey[:]),
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := s.store.Save(ctx, attachment, blob); err != nil {
+		return "", fmt.Errorf("cmd/whatscore: store inbound media: %w", err)
+	}
+	return mediaID, nil
+}
+
+// atRestKeyTypeFor picks the HKDF info string the at-rest envelope derives
+// from: the attachment's own class, so a future blob reader decrypts with the
+// type the metadata implies.
+func atRestKeyTypeFor(kind string) string {
+	switch kind {
+	case "video":
+		return protocolmedia.TypeVideo
+	case "audio":
+		return protocolmedia.TypeAudio
+	case "document":
+		return protocolmedia.TypeDocument
+	default:
+		return protocolmedia.TypeImage
+	}
+}
+
+func newMediaID() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", fmt.Errorf("cmd/whatscore: media id: %w", err)
+	}
+	raw[6] = (raw[6] & 0x0f) | 0x40
+	raw[8] = (raw[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:16]), nil
 }
 
 // appendInboundMessages stores every decrypted inbound message, so

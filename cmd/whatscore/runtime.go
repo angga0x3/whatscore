@@ -45,6 +45,8 @@ type sessionRuntime struct {
 	mu      sync.Mutex
 	waiters map[string]chan *binary.Node
 	retries map[string]int
+	// mediaSaved dedups the download goroutine across event redeliveries.
+	mediaSaved map[string]bool
 	// uploaded tracks the one-time prekey ids already pushed to the server,
 	// so reconnects upload only the delta instead of repeating the pool.
 	uploaded map[uint32]bool
@@ -53,6 +55,8 @@ type sessionRuntime struct {
 	identity signal.KeyPair
 	// sender delivers outbound text over the same write path.
 	sender *coremessaging.Sender
+	// mediaSaver stores decrypted inbound attachments; nil logs and drops.
+	mediaSaver mediaSaver
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
@@ -68,7 +72,7 @@ type sessionRuntime struct {
 
 // newSessionRuntime wires the receiver with the session's key material and
 // starts the bus loop that answers message events with delivery receipts.
-func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, bus *events.Bus) (*sessionRuntime, error) {
+func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, media mediaSaver, bus *events.Bus) (*sessionRuntime, error) {
 	receiver, err := coremessaging.NewReceiver(bus, id, coremessaging.WithReceiverCodec(codec))
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: receiver: %w", id, err)
@@ -90,9 +94,11 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		preKeys:        preKeys,
 		waiters:        make(map[string]chan *binary.Node),
 		retries:        make(map[string]int),
+		mediaSaved:     make(map[string]bool),
 		uploaded:       make(map[uint32]bool),
 		identity:       identity,
 		deviceIdentity: append([]byte(nil), deviceIdentity...),
+		mediaSaver:     media,
 		stop:           make(chan struct{}),
 	}
 
@@ -188,6 +194,19 @@ func (r *sessionRuntime) receiptLoop(sub *events.Subscription) {
 				continue
 			}
 			r.sendDeliveryReceipt(ev.Message.ID, ev.Message.Sender)
+			if m := ev.Message.Media; m != nil {
+				// The download must never block the event loop: one goroutine
+				// per attachment, deduped by message id.
+				r.mu.Lock()
+				seen := r.mediaSaved[ev.Message.ID]
+				if !seen {
+					r.mediaSaved[ev.Message.ID] = true
+				}
+				r.mu.Unlock()
+				if !seen {
+					go r.handleMediaEvent(ev.Message.ID, m)
+				}
+			}
 		}
 	}
 }

@@ -183,6 +183,9 @@ type sessionFactoryOptions struct {
 	// core/session still reads, so a dropped connection is detected.
 	handler session.FrameHandler
 
+	// media stores decrypted inbound attachments. Nil drops them with a log.
+	media mediaSaver
+
 	// codec encodes and decodes nodes. Unset means binary.NewCodec(nil), i.e.
 	// an empty token table (ADR 0002).
 	codec binary.Codec
@@ -203,6 +206,8 @@ type sessionFactory struct {
 
 	mu       sync.Mutex
 	runtimes map[string]*sessionRuntime
+	// media stores decrypted inbound attachments, re-encrypted at rest.
+	media mediaSaver
 }
 
 // runtimeFor returns the inbound runtime of a session, or nil. Entries appear
@@ -275,6 +280,7 @@ func newSessionFactory(opts sessionFactoryOptions) (*sessionFactory, error) {
 		rootPub:     append([]byte(nil), rootPub...),
 		handler:     opts.handler,
 		codec:       opts.codec,
+		media:       opts.media,
 		runtimes:    make(map[string]*sessionRuntime),
 	}, nil
 }
@@ -306,7 +312,7 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, signedIdentity, f.bus)
+	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, signedIdentity, f.media, f.bus)
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: runtime: %w", id, err)
 	}
