@@ -305,8 +305,9 @@ err = c.Disconnect(ctx)
 **Allowed deps.** `core/*`, `protocol/*` via §4 interfaces, `storage` interfaces, stdlib.
 **Tests.** Behavior tests vs fake server; option composition tables; examples compiled in CI.
 **Status.** `core/client` implements connect/disconnect/state/subscribe/credentials/close with
-option validation, `WithConnector`/`WithFrameHandler` pass-through, and `SendMessage` for plaintext
-text stanzas. Signal encryption and inbound message events remain.
+option validation, `WithConnector`/`WithFrameHandler` pass-through, plaintext `SendMessage`, and
+`SendEncrypted`, which loads a peer session, picks `pkmsg` vs `msg`, sends, and persists the advanced
+ratchet through an injected `SessionStore`. SDK orchestration (contacts/groups/media) remains.
 
 ### 4.12 `core/session`
 

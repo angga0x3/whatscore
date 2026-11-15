@@ -54,6 +54,7 @@ as workstreams land.
 | 2026-11-15 | Binary wiring | session API mounted in `cmd/whatscore`, sessions stopped on shutdown |
 | 2026-11-15 | SQLite backend | `storage/sqlite` (cgo-free), schema guard, WAL |
 | 2026-11-15 | Webhook routes | CRUD + deliveries, write-once secret, mount-prefix fix |
+| 2026-11-15 | SDK orchestration | `SendEncrypted` carrier choice + ratchet persistence |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 

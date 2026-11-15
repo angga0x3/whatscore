@@ -36,24 +36,28 @@ func NewTextMessage(text string) Message { return Message{Text: text} }
 // Client is one WhatsApp session plus its SDK surface. It is safe for
 // concurrent use.
 type Client struct {
-	id       string
-	session  *session.Session
-	sender   *coremessaging.Sender
-	receiver *coremessaging.Receiver
-	bus      *events.Bus
-	ownBus   bool
-	creds    *corecredentials.Manager
+	id             string
+	session        *session.Session
+	sender         *coremessaging.Sender
+	receiver       *coremessaging.Receiver
+	bus            *events.Bus
+	ownBus         bool
+	creds          *corecredentials.Manager
+	sessions       SessionStore
+	registrationID uint32
 }
 
 type options struct {
-	dialer    transport.Dialer
-	endpoint  transport.Endpoint
-	reconnect transport.ReconnectPolicy
-	connector session.Connector
-	handler   session.FrameHandler
-	bus       *events.Bus
-	logger    *slog.Logger
-	creds     *corecredentials.Manager
+	dialer         transport.Dialer
+	endpoint       transport.Endpoint
+	reconnect      transport.ReconnectPolicy
+	connector      session.Connector
+	handler        session.FrameHandler
+	bus            *events.Bus
+	logger         *slog.Logger
+	creds          *corecredentials.Manager
+	sessions       SessionStore
+	registrationID uint32
 }
 
 // Option configures New.
@@ -214,13 +218,15 @@ func New(id string, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		id:       id,
-		session:  sess,
-		sender:   sender,
-		receiver: receiver,
-		bus:      cfg.bus,
-		ownBus:   ownBus,
-		creds:    cfg.creds,
+		id:             id,
+		session:        sess,
+		sender:         sender,
+		receiver:       receiver,
+		bus:            cfg.bus,
+		ownBus:         ownBus,
+		creds:          cfg.creds,
+		sessions:       cfg.sessions,
+		registrationID: cfg.registrationID,
 	}, nil
 }
 

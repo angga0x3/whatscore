@@ -126,6 +126,7 @@ is installed; Signal lands next.
 ```go
 c, _ := client.New("session-1",
     client.WithCredentials(manager),   // optional encrypted credential manager
+    client.WithSessionStore(sessions), // optional per-peer Signal persistence
     client.WithConnector(noiseConnector), // optional transport wrapper
     client.WithFrameHandler(handler),  // optional inbound frame sink
     client.WithLogger(slog.Default()),
@@ -138,7 +139,13 @@ defer sub.Close()
 
 _ = c.Connect(ctx)
 state, _ := c.State(ctx)               // CONNECTED
+
+// Plaintext stanza (no Signal encryption):
 id, err := c.SendMessage(ctx, client.Message{To: "628123456789@s.whatsapp.net", Text: "Hello!"})
+
+// Signal-encrypted, choosing pkmsg vs msg and persisting the ratchet:
+id, err = c.SendEncrypted(ctx, client.Message{To: "628123456789@s.whatsapp.net", Text: "Hi!"})
+
 _ = c.SendReceipt(ctx, "628123456789@s.whatsapp.net", id, "read")
 _ = c.Disconnect(ctx)
 ```
