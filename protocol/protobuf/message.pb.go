@@ -220,8 +220,12 @@ type ProtocolMessage struct {
 	Type  *ProtocolMessage_Type  `protobuf:"varint,1,opt,name=type,enum=whatscore.protocol.protobuf.ProtocolMessage_Type" json:"type,omitempty"`
 	// Field 6 per the reference proto.
 	HistorySyncNotification *HistorySyncNotification `protobuf:"bytes,6,opt,name=historySyncNotification" json:"historySyncNotification,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Field 7 per the reference proto. The phone shares the app state keys
+	// with a freshly paired device through these; app state patches cannot be
+	// verified without them.
+	AppStateSyncKeyShare *AppStateSyncKeyShare `protobuf:"bytes,7,opt,name=appStateSyncKeyShare" json:"appStateSyncKeyShare,omitempty"`
+	unknownFields        protoimpl.UnknownFields
+	sizeCache            protoimpl.SizeCache
 }
 
 func (x *ProtocolMessage) Reset() {
@@ -268,6 +272,215 @@ func (x *ProtocolMessage) GetHistorySyncNotification() *HistorySyncNotification 
 	return nil
 }
 
+func (x *ProtocolMessage) GetAppStateSyncKeyShare() *AppStateSyncKeyShare {
+	if x != nil {
+		return x.AppStateSyncKeyShare
+	}
+	return nil
+}
+
+// App state key material (fields per the reference proto). KeyID names the
+// key in every patch MAC; KeyData is the 32-byte HKDF root.
+type AppStateSyncKeyShare struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Keys          []*AppStateSyncKey     `protobuf:"bytes,1,rep,name=keys" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyShare) Reset() {
+	*x = AppStateSyncKeyShare{}
+	mi := &file_message_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyShare) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyShare) ProtoMessage() {}
+
+func (x *AppStateSyncKeyShare) ProtoReflect() protoreflect.Message {
+	mi := &file_message_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyShare.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyShare) Descriptor() ([]byte, []int) {
+	return file_message_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *AppStateSyncKeyShare) GetKeys() []*AppStateSyncKey {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+type AppStateSyncKey struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyID         *AppStateSyncKeyId     `protobuf:"bytes,1,opt,name=keyID" json:"keyID,omitempty"`
+	KeyData       *AppStateSyncKeyData   `protobuf:"bytes,2,opt,name=keyData" json:"keyData,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKey) Reset() {
+	*x = AppStateSyncKey{}
+	mi := &file_message_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKey) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKey) ProtoMessage() {}
+
+func (x *AppStateSyncKey) ProtoReflect() protoreflect.Message {
+	mi := &file_message_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKey.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKey) Descriptor() ([]byte, []int) {
+	return file_message_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *AppStateSyncKey) GetKeyID() *AppStateSyncKeyId {
+	if x != nil {
+		return x.KeyID
+	}
+	return nil
+}
+
+func (x *AppStateSyncKey) GetKeyData() *AppStateSyncKeyData {
+	if x != nil {
+		return x.KeyData
+	}
+	return nil
+}
+
+type AppStateSyncKeyId struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ID            []byte                 `protobuf:"bytes,1,opt,name=ID" json:"ID,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyId) Reset() {
+	*x = AppStateSyncKeyId{}
+	mi := &file_message_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyId) ProtoMessage() {}
+
+func (x *AppStateSyncKeyId) ProtoReflect() protoreflect.Message {
+	mi := &file_message_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyId.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyId) Descriptor() ([]byte, []int) {
+	return file_message_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AppStateSyncKeyId) GetID() []byte {
+	if x != nil {
+		return x.ID
+	}
+	return nil
+}
+
+type AppStateSyncKeyData struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	KeyData       []byte                 `protobuf:"bytes,1,opt,name=keyData" json:"keyData,omitempty"`
+	Fingerprint   *uint64                `protobuf:"varint,2,opt,name=fingerprint" json:"fingerprint,omitempty"`
+	Timestamp     *int64                 `protobuf:"varint,3,opt,name=timestamp" json:"timestamp,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AppStateSyncKeyData) Reset() {
+	*x = AppStateSyncKeyData{}
+	mi := &file_message_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AppStateSyncKeyData) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AppStateSyncKeyData) ProtoMessage() {}
+
+func (x *AppStateSyncKeyData) ProtoReflect() protoreflect.Message {
+	mi := &file_message_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AppStateSyncKeyData.ProtoReflect.Descriptor instead.
+func (*AppStateSyncKeyData) Descriptor() ([]byte, []int) {
+	return file_message_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *AppStateSyncKeyData) GetKeyData() []byte {
+	if x != nil {
+		return x.KeyData
+	}
+	return nil
+}
+
+func (x *AppStateSyncKeyData) GetFingerprint() uint64 {
+	if x != nil && x.Fingerprint != nil {
+		return *x.Fingerprint
+	}
+	return 0
+}
+
+func (x *AppStateSyncKeyData) GetTimestamp() int64 {
+	if x != nil && x.Timestamp != nil {
+		return *x.Timestamp
+	}
+	return 0
+}
+
 // HistorySyncNotification points at one chunk of the account's chat
 // history on the CDN. Field numbers copied from the reference proto.
 type HistorySyncNotification struct {
@@ -289,7 +502,7 @@ type HistorySyncNotification struct {
 
 func (x *HistorySyncNotification) Reset() {
 	*x = HistorySyncNotification{}
-	mi := &file_message_proto_msgTypes[2]
+	mi := &file_message_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -301,7 +514,7 @@ func (x *HistorySyncNotification) String() string {
 func (*HistorySyncNotification) ProtoMessage() {}
 
 func (x *HistorySyncNotification) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[2]
+	mi := &file_message_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -314,7 +527,7 @@ func (x *HistorySyncNotification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HistorySyncNotification.ProtoReflect.Descriptor instead.
 func (*HistorySyncNotification) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{2}
+	return file_message_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *HistorySyncNotification) GetFileSHA256() []byte {
@@ -389,7 +602,7 @@ type ExtendedTextMessage struct {
 
 func (x *ExtendedTextMessage) Reset() {
 	*x = ExtendedTextMessage{}
-	mi := &file_message_proto_msgTypes[3]
+	mi := &file_message_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -401,7 +614,7 @@ func (x *ExtendedTextMessage) String() string {
 func (*ExtendedTextMessage) ProtoMessage() {}
 
 func (x *ExtendedTextMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[3]
+	mi := &file_message_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -414,7 +627,7 @@ func (x *ExtendedTextMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExtendedTextMessage.ProtoReflect.Descriptor instead.
 func (*ExtendedTextMessage) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{3}
+	return file_message_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ExtendedTextMessage) GetText() string {
@@ -443,7 +656,7 @@ type ImageMessage struct {
 
 func (x *ImageMessage) Reset() {
 	*x = ImageMessage{}
-	mi := &file_message_proto_msgTypes[4]
+	mi := &file_message_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -455,7 +668,7 @@ func (x *ImageMessage) String() string {
 func (*ImageMessage) ProtoMessage() {}
 
 func (x *ImageMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[4]
+	mi := &file_message_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -468,7 +681,7 @@ func (x *ImageMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImageMessage.ProtoReflect.Descriptor instead.
 func (*ImageMessage) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{4}
+	return file_message_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ImageMessage) GetUrl() string {
@@ -567,7 +780,7 @@ type StickerMessage struct {
 
 func (x *StickerMessage) Reset() {
 	*x = StickerMessage{}
-	mi := &file_message_proto_msgTypes[5]
+	mi := &file_message_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -579,7 +792,7 @@ func (x *StickerMessage) String() string {
 func (*StickerMessage) ProtoMessage() {}
 
 func (x *StickerMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[5]
+	mi := &file_message_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -592,7 +805,7 @@ func (x *StickerMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StickerMessage.ProtoReflect.Descriptor instead.
 func (*StickerMessage) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{5}
+	return file_message_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StickerMessage) GetUrl() string {
@@ -692,7 +905,7 @@ type VideoMessage struct {
 
 func (x *VideoMessage) Reset() {
 	*x = VideoMessage{}
-	mi := &file_message_proto_msgTypes[6]
+	mi := &file_message_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -704,7 +917,7 @@ func (x *VideoMessage) String() string {
 func (*VideoMessage) ProtoMessage() {}
 
 func (x *VideoMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[6]
+	mi := &file_message_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -717,7 +930,7 @@ func (x *VideoMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VideoMessage.ProtoReflect.Descriptor instead.
 func (*VideoMessage) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{6}
+	return file_message_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *VideoMessage) GetUrl() string {
@@ -823,7 +1036,7 @@ type AudioMessage struct {
 
 func (x *AudioMessage) Reset() {
 	*x = AudioMessage{}
-	mi := &file_message_proto_msgTypes[7]
+	mi := &file_message_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -835,7 +1048,7 @@ func (x *AudioMessage) String() string {
 func (*AudioMessage) ProtoMessage() {}
 
 func (x *AudioMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[7]
+	mi := &file_message_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -848,7 +1061,7 @@ func (x *AudioMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AudioMessage.ProtoReflect.Descriptor instead.
 func (*AudioMessage) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{7}
+	return file_message_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *AudioMessage) GetUrl() string {
@@ -939,7 +1152,7 @@ type DocumentMessage struct {
 
 func (x *DocumentMessage) Reset() {
 	*x = DocumentMessage{}
-	mi := &file_message_proto_msgTypes[8]
+	mi := &file_message_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -951,7 +1164,7 @@ func (x *DocumentMessage) String() string {
 func (*DocumentMessage) ProtoMessage() {}
 
 func (x *DocumentMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_message_proto_msgTypes[8]
+	mi := &file_message_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -964,7 +1177,7 @@ func (x *DocumentMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DocumentMessage.ProtoReflect.Descriptor instead.
 func (*DocumentMessage) Descriptor() ([]byte, []int) {
-	return file_message_proto_rawDescGZIP(), []int{8}
+	return file_message_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *DocumentMessage) GetUrl() string {
@@ -1050,17 +1263,29 @@ const file_message_proto_rawDesc = "" +
 	"\fvideoMessage\x18\t \x01(\v2).whatscore.protocol.protobuf.VideoMessageR\fvideoMessage\x12S\n" +
 	"\x0estickerMessage\x18\x1a \x01(\v2+.whatscore.protocol.protobuf.StickerMessageR\x0estickerMessage\x12V\n" +
 	"\x0fprotocolMessage\x18\f \x01(\v2,.whatscore.protocol.protobuf.ProtocolMessageR\x0fprotocolMessage\x12b\n" +
-	"\x13extendedTextMessage\x18\x06 \x01(\v20.whatscore.protocol.protobuf.ExtendedTextMessageR\x13extendedTextMessage\"\xd1\x02\n" +
+	"\x13extendedTextMessage\x18\x06 \x01(\v20.whatscore.protocol.protobuf.ExtendedTextMessageR\x13extendedTextMessage\"\xb8\x03\n" +
 	"\x0fProtocolMessage\x12E\n" +
 	"\x04type\x18\x01 \x01(\x0e21.whatscore.protocol.protobuf.ProtocolMessage.TypeR\x04type\x12n\n" +
-	"\x17historySyncNotification\x18\x06 \x01(\v24.whatscore.protocol.protobuf.HistorySyncNotificationR\x17historySyncNotification\"\x86\x01\n" +
+	"\x17historySyncNotification\x18\x06 \x01(\v24.whatscore.protocol.protobuf.HistorySyncNotificationR\x17historySyncNotification\x12e\n" +
+	"\x14appStateSyncKeyShare\x18\a \x01(\v21.whatscore.protocol.protobuf.AppStateSyncKeyShareR\x14appStateSyncKeyShare\"\x86\x01\n" +
 	"\x04Type\x12\n" +
 	"\n" +
 	"\x06REVOKE\x10\x00\x12\x15\n" +
 	"\x11EPHEMERAL_SETTING\x10\x03\x12\x1d\n" +
 	"\x19HISTORY_SYNC_NOTIFICATION\x10\x05\x12\x1c\n" +
 	"\x18APP_STATE_SYNC_KEY_SHARE\x10\x06\x12\x1e\n" +
-	"\x1aAPP_STATE_SYNC_KEY_REQUEST\x10\a\"\xc1\x02\n" +
+	"\x1aAPP_STATE_SYNC_KEY_REQUEST\x10\a\"X\n" +
+	"\x14AppStateSyncKeyShare\x12@\n" +
+	"\x04keys\x18\x01 \x03(\v2,.whatscore.protocol.protobuf.AppStateSyncKeyR\x04keys\"\xa3\x01\n" +
+	"\x0fAppStateSyncKey\x12D\n" +
+	"\x05keyID\x18\x01 \x01(\v2..whatscore.protocol.protobuf.AppStateSyncKeyIdR\x05keyID\x12J\n" +
+	"\akeyData\x18\x02 \x01(\v20.whatscore.protocol.protobuf.AppStateSyncKeyDataR\akeyData\"#\n" +
+	"\x11AppStateSyncKeyId\x12\x0e\n" +
+	"\x02ID\x18\x01 \x01(\fR\x02ID\"o\n" +
+	"\x13AppStateSyncKeyData\x12\x18\n" +
+	"\akeyData\x18\x01 \x01(\fR\akeyData\x12 \n" +
+	"\vfingerprint\x18\x02 \x01(\x04R\vfingerprint\x12\x1c\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\xc1\x02\n" +
 	"\x17HistorySyncNotification\x12\x1e\n" +
 	"\n" +
 	"fileSHA256\x18\x01 \x01(\fR\n" +
@@ -1190,34 +1415,42 @@ func file_message_proto_rawDescGZIP() []byte {
 }
 
 var file_message_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_message_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_message_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_message_proto_goTypes = []any{
 	(ProtocolMessage_Type)(0),       // 0: whatscore.protocol.protobuf.ProtocolMessage.Type
 	(*Message)(nil),                 // 1: whatscore.protocol.protobuf.Message
 	(*ProtocolMessage)(nil),         // 2: whatscore.protocol.protobuf.ProtocolMessage
-	(*HistorySyncNotification)(nil), // 3: whatscore.protocol.protobuf.HistorySyncNotification
-	(*ExtendedTextMessage)(nil),     // 4: whatscore.protocol.protobuf.ExtendedTextMessage
-	(*ImageMessage)(nil),            // 5: whatscore.protocol.protobuf.ImageMessage
-	(*StickerMessage)(nil),          // 6: whatscore.protocol.protobuf.StickerMessage
-	(*VideoMessage)(nil),            // 7: whatscore.protocol.protobuf.VideoMessage
-	(*AudioMessage)(nil),            // 8: whatscore.protocol.protobuf.AudioMessage
-	(*DocumentMessage)(nil),         // 9: whatscore.protocol.protobuf.DocumentMessage
+	(*AppStateSyncKeyShare)(nil),    // 3: whatscore.protocol.protobuf.AppStateSyncKeyShare
+	(*AppStateSyncKey)(nil),         // 4: whatscore.protocol.protobuf.AppStateSyncKey
+	(*AppStateSyncKeyId)(nil),       // 5: whatscore.protocol.protobuf.AppStateSyncKeyId
+	(*AppStateSyncKeyData)(nil),     // 6: whatscore.protocol.protobuf.AppStateSyncKeyData
+	(*HistorySyncNotification)(nil), // 7: whatscore.protocol.protobuf.HistorySyncNotification
+	(*ExtendedTextMessage)(nil),     // 8: whatscore.protocol.protobuf.ExtendedTextMessage
+	(*ImageMessage)(nil),            // 9: whatscore.protocol.protobuf.ImageMessage
+	(*StickerMessage)(nil),          // 10: whatscore.protocol.protobuf.StickerMessage
+	(*VideoMessage)(nil),            // 11: whatscore.protocol.protobuf.VideoMessage
+	(*AudioMessage)(nil),            // 12: whatscore.protocol.protobuf.AudioMessage
+	(*DocumentMessage)(nil),         // 13: whatscore.protocol.protobuf.DocumentMessage
 }
 var file_message_proto_depIdxs = []int32{
-	5, // 0: whatscore.protocol.protobuf.Message.imageMessage:type_name -> whatscore.protocol.protobuf.ImageMessage
-	9, // 1: whatscore.protocol.protobuf.Message.documentMessage:type_name -> whatscore.protocol.protobuf.DocumentMessage
-	8, // 2: whatscore.protocol.protobuf.Message.audioMessage:type_name -> whatscore.protocol.protobuf.AudioMessage
-	7, // 3: whatscore.protocol.protobuf.Message.videoMessage:type_name -> whatscore.protocol.protobuf.VideoMessage
-	6, // 4: whatscore.protocol.protobuf.Message.stickerMessage:type_name -> whatscore.protocol.protobuf.StickerMessage
-	2, // 5: whatscore.protocol.protobuf.Message.protocolMessage:type_name -> whatscore.protocol.protobuf.ProtocolMessage
-	4, // 6: whatscore.protocol.protobuf.Message.extendedTextMessage:type_name -> whatscore.protocol.protobuf.ExtendedTextMessage
-	0, // 7: whatscore.protocol.protobuf.ProtocolMessage.type:type_name -> whatscore.protocol.protobuf.ProtocolMessage.Type
-	3, // 8: whatscore.protocol.protobuf.ProtocolMessage.historySyncNotification:type_name -> whatscore.protocol.protobuf.HistorySyncNotification
-	9, // [9:9] is the sub-list for method output_type
-	9, // [9:9] is the sub-list for method input_type
-	9, // [9:9] is the sub-list for extension type_name
-	9, // [9:9] is the sub-list for extension extendee
-	0, // [0:9] is the sub-list for field type_name
+	9,  // 0: whatscore.protocol.protobuf.Message.imageMessage:type_name -> whatscore.protocol.protobuf.ImageMessage
+	13, // 1: whatscore.protocol.protobuf.Message.documentMessage:type_name -> whatscore.protocol.protobuf.DocumentMessage
+	12, // 2: whatscore.protocol.protobuf.Message.audioMessage:type_name -> whatscore.protocol.protobuf.AudioMessage
+	11, // 3: whatscore.protocol.protobuf.Message.videoMessage:type_name -> whatscore.protocol.protobuf.VideoMessage
+	10, // 4: whatscore.protocol.protobuf.Message.stickerMessage:type_name -> whatscore.protocol.protobuf.StickerMessage
+	2,  // 5: whatscore.protocol.protobuf.Message.protocolMessage:type_name -> whatscore.protocol.protobuf.ProtocolMessage
+	8,  // 6: whatscore.protocol.protobuf.Message.extendedTextMessage:type_name -> whatscore.protocol.protobuf.ExtendedTextMessage
+	0,  // 7: whatscore.protocol.protobuf.ProtocolMessage.type:type_name -> whatscore.protocol.protobuf.ProtocolMessage.Type
+	7,  // 8: whatscore.protocol.protobuf.ProtocolMessage.historySyncNotification:type_name -> whatscore.protocol.protobuf.HistorySyncNotification
+	3,  // 9: whatscore.protocol.protobuf.ProtocolMessage.appStateSyncKeyShare:type_name -> whatscore.protocol.protobuf.AppStateSyncKeyShare
+	4,  // 10: whatscore.protocol.protobuf.AppStateSyncKeyShare.keys:type_name -> whatscore.protocol.protobuf.AppStateSyncKey
+	5,  // 11: whatscore.protocol.protobuf.AppStateSyncKey.keyID:type_name -> whatscore.protocol.protobuf.AppStateSyncKeyId
+	6,  // 12: whatscore.protocol.protobuf.AppStateSyncKey.keyData:type_name -> whatscore.protocol.protobuf.AppStateSyncKeyData
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_message_proto_init() }
@@ -1231,7 +1464,7 @@ func file_message_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_message_proto_rawDesc), len(file_message_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

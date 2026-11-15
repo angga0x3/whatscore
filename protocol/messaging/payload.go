@@ -3,6 +3,7 @@ package messaging
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 
@@ -113,6 +114,9 @@ const (
 type ProtocolInfo struct {
 	Type        string
 	HistorySync *MediaAttachment
+	// AppKeys carries the app state sync keys from a key share, keyed by the
+	// hex of the key id. Patches reference these ids in their MACs.
+	AppKeys map[string][]byte
 }
 
 // MediaAttachment is the download metadata one media payload carries. KeysType
@@ -163,6 +167,15 @@ func DecodePayload(raw []byte) (*Payload, error) {
 		if hs := pm.GetHistorySyncNotification(); hs != nil {
 			info.HistorySync = mediaFrom(hs.GetDirectPath(), "", "", "history-chunk-"+strconv.FormatUint(uint64(hs.GetChunkOrder()), 10),
 				hs.GetFileLength(), hs.GetMediaKey(), hs.GetFileSHA256(), hs.GetFileEncSHA256(), 0, media.TypeHistory)
+		}
+		if share := pm.GetAppStateSyncKeyShare(); share != nil {
+			info.AppKeys = make(map[string][]byte, len(share.GetKeys()))
+			for _, key := range share.GetKeys() {
+				if key.GetKeyID() == nil {
+					continue
+				}
+				info.AppKeys[hex.EncodeToString(key.GetKeyID().GetID())] = append([]byte(nil), key.GetKeyData().GetKeyData()...)
+			}
 		}
 		return &Payload{Kind: PayloadProtocol, Protocol: info}, nil
 	case message.GetConversation() != "":

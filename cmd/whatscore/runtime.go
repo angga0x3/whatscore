@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -16,6 +19,7 @@ import (
 	"github.com/angga0x3/whatscore/core/prekeys"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	"github.com/angga0x3/whatscore/protocol/signal"
+	syncpkg "github.com/angga0x3/whatscore/protocol/sync"
 )
 
 // ServerJID is the WhatsApp service address client-facing stanzas address.
@@ -57,6 +61,12 @@ type sessionRuntime struct {
 	sender *coremessaging.Sender
 	// mediaSaver stores decrypted inbound attachments; nil logs and drops.
 	mediaSaver mediaSaver
+	// appStateKeys holds the app state sync keys the phone shared, keyed by
+	// the hex of the key id. Patch MACs reference these ids; without them the
+	// patches cannot be verified.
+	appStateKeysMu sync.Mutex
+	appStateKeys   map[string][]byte
+	appStatePath   string
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
@@ -72,7 +82,7 @@ type sessionRuntime struct {
 
 // newSessionRuntime wires the receiver with the session's key material and
 // starts the bus loop that answers message events with delivery receipts.
-func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, media mediaSaver, bus *events.Bus) (*sessionRuntime, error) {
+func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, media mediaSaver, bus *events.Bus, appStatePath string) (*sessionRuntime, error) {
 	receiver, err := coremessaging.NewReceiver(bus, id, coremessaging.WithReceiverCodec(codec))
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: receiver: %w", id, err)
@@ -94,6 +104,7 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		preKeys:        preKeys,
 		waiters:        make(map[string]chan *binary.Node),
 		retries:        make(map[string]int),
+		appStateKeys:   make(map[string][]byte),
 		mediaSaved:     make(map[string]bool),
 		uploaded:       make(map[uint32]bool),
 		identity:       identity,
@@ -101,6 +112,7 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		mediaSaver:     media,
 		stop:           make(chan struct{}),
 	}
+	r.loadAppStateKeys()
 
 	// A message the device cannot open must stay recoverable: the retry
 	// receipt asks the sender to re-encrypt with the inline keys.
@@ -192,6 +204,9 @@ func (r *sessionRuntime) receiptLoop(sub *events.Subscription) {
 			}
 			if ev.Type != events.TypeMessage || ev.Message == nil {
 				continue
+			}
+			if ev.Message.Protocol != nil && len(ev.Message.Protocol.AppKeys) > 0 {
+				r.storeAppStateKeys(ev.Message.Protocol.AppKeys)
 			}
 			if ev.Message.Protocol != nil && ev.Message.Protocol.HistorySync {
 				// The ack the phone's "keep both apps open" phase waits for:
@@ -384,7 +399,92 @@ func (r *sessionRuntime) runConnectSequence() {
 		r.logger.Warn("presence failed", "session", r.id, "error", err)
 	}
 
+	// The app state sync request is what starts provisioning: the server
+	// answers with patches (and pushes key shares when needed). WhatsApp Web
+	// requests these right after login; skipping it leaves the phone in the
+	// "keep both apps open" phase indefinitely.
+	r.requestAppStateSync(ctx)
+
 	r.topUpPreKeys(ctx)
+}
+
+// appStateCollections is the full patch list WhatsApp Web syncs
+// (Baileys ALL_WA_PATCH_NAMES).
+var appStateCollections = []string{
+	"critical_block",
+	"critical_unblock_low",
+	"regular_high",
+	"regular_low",
+	"regular",
+}
+
+// requestAppStateSync fetches the app state patches for every collection.
+// A fresh device has no stored versions, so every collection asks for a
+// snapshot; mutations verify against the shared app state keys.
+func (r *sessionRuntime) requestAppStateSync(ctx context.Context) {
+	r.appStateKeysMu.Lock()
+	keyCount := len(r.appStateKeys)
+	r.appStateKeysMu.Unlock()
+	if keyCount == 0 {
+		// Without keys the patch MACs cannot be verified. The key shares
+		// arrive as protocol messages; ask the server anyway — it pushes
+		// shares when the request arrives.
+		r.logger.Info("app state sync: no keys yet; requesting anyway", "session", r.id)
+	}
+
+	collections := make([]binary.Node, 0, len(appStateCollections))
+	for _, name := range appStateCollections {
+		collections = append(collections, binary.Node{
+			Tag: "collection",
+			Attrs: binary.Attrs{
+				"name":            name,
+				"return_snapshot": "true",
+			},
+		})
+	}
+	reply, err := r.request(ctx, &binary.Node{
+		Tag: "iq",
+		Attrs: binary.Attrs{
+			"to": serverJID, "type": "set", "xmlns": "w:sync:app:state", "id": r.newRequestID(),
+		},
+		Children: []binary.Node{{Tag: "sync", Children: collections}},
+	}, 30*time.Second)
+	if err != nil {
+		r.logger.Warn("app state sync request failed", "session", r.id, "error", err)
+		return
+	}
+	syncNode := child(reply, "sync")
+	if syncNode == nil {
+		r.logger.Warn("app state reply has no <sync>", "session", r.id, "children", len(reply.Children))
+		return
+	}
+	patches, err := syncpkg.ParsePatches(syncNode)
+	if err != nil {
+		r.logger.Warn("app state patches unreadable", "session", r.id, "error", err)
+		return
+	}
+	decoded, skipped := 0, 0
+	for _, patch := range patches {
+		for _, mutation := range patch.Mutations {
+			r.appStateKeysMu.Lock()
+			key, ok := r.appStateKeys[hex.EncodeToString(mutation.KeyID)]
+			r.appStateKeysMu.Unlock()
+			if !ok {
+				skipped++
+				continue
+			}
+			expanded, err := syncpkg.ExpandKeys(key)
+			if err != nil {
+				continue
+			}
+			if _, err := syncpkg.DecodeMutation(mutation, expanded); err != nil {
+				r.logger.Warn("mutation decode failed", "session", r.id, "error", err)
+				continue
+			}
+			decoded++
+		}
+	}
+	r.logger.Info("app state sync fetched", "session", r.id, "patches", len(patches), "decoded", decoded, "skipped-no-key", skipped)
 }
 
 // topUpPreKeys generates whatever the pool lacks and uploads the delta. The
@@ -535,6 +635,60 @@ func (r *sessionRuntime) sendRetryReceipt(node *binary.Node) {
 // Baileys sends them both ways).
 func (r *sessionRuntime) deviceIdentityBlob() []byte {
 	return r.deviceIdentity
+}
+
+// storeAppStateKeys keeps the phone-shared keys for patch verification and
+// persists them across restarts next to the session store.
+func (r *sessionRuntime) storeAppStateKeys(keys map[string][]byte) {
+	r.appStateKeysMu.Lock()
+	added := 0
+	for id, data := range keys {
+		if _, exists := r.appStateKeys[id]; !exists {
+			r.appStateKeys[id] = append([]byte(nil), data...)
+			added++
+		}
+	}
+	r.appStateKeysMu.Unlock()
+	if added > 0 {
+		r.logger.Info("app state keys stored", "session", r.id, "count", added)
+		if err := r.persistAppStateKeys(); err != nil {
+			r.logger.Warn("could not persist app state keys", "session", r.id, "error", err)
+		}
+	}
+}
+
+// persistAppStateKeys writes the key map with owner-only permissions.
+func (r *sessionRuntime) persistAppStateKeys() error {
+	if r.appStatePath == "" {
+		return nil
+	}
+	r.appStateKeysMu.Lock()
+	defer r.appStateKeysMu.Unlock()
+	blob, err := json.Marshal(r.appStateKeys)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.appStatePath, blob, 0o600)
+}
+
+// loadAppStateKeys restores persisted keys at construction time.
+func (r *sessionRuntime) loadAppStateKeys() {
+	if r.appStatePath == "" {
+		return
+	}
+	blob, err := os.ReadFile(r.appStatePath)
+	if err != nil {
+		return
+	}
+	var keys map[string][]byte
+	if err := json.Unmarshal(blob, &keys); err != nil {
+		r.logger.Warn("app state key file unreadable", "session", r.id, "error", err)
+		return
+	}
+	r.appStateKeysMu.Lock()
+	r.appStateKeys = keys
+	r.appStateKeysMu.Unlock()
+	r.logger.Info("app state keys restored", "session", r.id, "count", len(keys))
 }
 
 // sendHistSyncReceipt acknowledges one history chunk. Without it the phone

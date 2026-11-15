@@ -128,7 +128,10 @@ func (r *Receiver) publishIncoming(ctx context.Context, id string, peer stanza.J
 		msg.Text = payload.Text
 	case stanza.PayloadProtocol:
 		if payload.Protocol != nil {
-			msg.Protocol = &events.ProtocolInfo{Type: payload.Protocol.Type}
+			msg.Protocol = &events.ProtocolInfo{
+				Type:    payload.Protocol.Type,
+				AppKeys: payload.Protocol.AppKeys,
+			}
 		}
 	case stanza.PayloadImage, stanza.PayloadSticker, stanza.PayloadVideo, stanza.PayloadAudio, stanza.PayloadDocument:
 		m := payload.Media

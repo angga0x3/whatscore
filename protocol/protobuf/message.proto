@@ -54,6 +54,31 @@ message ProtocolMessage {
   optional Type type = 1;
   // Field 6 per the reference proto.
   optional HistorySyncNotification historySyncNotification = 6;
+  // Field 7 per the reference proto. The phone shares the app state keys
+  // with a freshly paired device through these; app state patches cannot be
+  // verified without them.
+  optional AppStateSyncKeyShare appStateSyncKeyShare = 7;
+}
+
+// App state key material (fields per the reference proto). KeyID names the
+// key in every patch MAC; KeyData is the 32-byte HKDF root.
+message AppStateSyncKeyShare {
+  repeated AppStateSyncKey keys = 1;
+}
+
+message AppStateSyncKey {
+  optional AppStateSyncKeyId keyID = 1;
+  optional AppStateSyncKeyData keyData = 2;
+}
+
+message AppStateSyncKeyId {
+  optional bytes ID = 1;
+}
+
+message AppStateSyncKeyData {
+  optional bytes keyData = 1;
+  optional uint64 fingerprint = 2;
+  optional int64 timestamp = 3;
 }
 
 // HistorySyncNotification points at one chunk of the account's chat

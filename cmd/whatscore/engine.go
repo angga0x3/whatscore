@@ -312,7 +312,7 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, signedIdentity, f.media, f.bus)
+	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, signedIdentity, f.media, f.bus, keys.appStatePath)
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: runtime: %w", id, err)
 	}
@@ -464,6 +464,8 @@ type sessionKeys struct {
 	preKeys        *prekeys.Manager
 	// deviceSigner signs the pairing device identity (PF-017) with XEdDSA.
 	deviceSigner engine.DeviceSigner
+	// appStatePath persists the app state sync keys the phone shares.
+	appStatePath string
 }
 
 // loadKeys loads the session's key material, generating and persisting it on
@@ -498,6 +500,7 @@ func (f *sessionFactory) loadKeys(ctx context.Context, id string) (*sessionKeys,
 			identity:       identity,
 			advSecret:      record.AdvSecret,
 			registrationID: record.RegistrationID,
+			appStatePath:   appStateKeyPath(id),
 		}
 		keys.deviceSigner = signal.XEdDSASigner{Private: identity.Private}
 		if err := f.attachPreKeys(ctx, id, keys, signer); err != nil {
@@ -535,6 +538,7 @@ func (f *sessionFactory) loadKeys(ctx context.Context, id string) (*sessionKeys,
 			identity:       identity,
 			advSecret:      record.AdvSecret,
 			registrationID: record.RegistrationID,
+			appStatePath:   appStateKeyPath(id),
 		}
 		keys.deviceSigner = signal.XEdDSASigner{Private: identity.Private}
 		if err := f.attachPreKeys(ctx, id, keys, signer); err != nil {
@@ -648,6 +652,9 @@ func noiseKeyFromRecord(record *corecredentials.Record) (noise.KeyPair, error) {
 // prefix with core/credentials and core/prekeys so one session's records sort
 // and delete together.
 func signerSeedKey(id string) string { return "sessions/" + id + signerSeedSuffix }
+
+// appStateKeyPath is the on-disk path for the session's app state sync keys.
+func appStateKeyPath(id string) string { return "sessions/" + id + "/appstate.keys.json" }
 
 // newRegistrationID returns a Signal registration id (1..16383, PF-023).
 func newRegistrationID() (uint32, error) {

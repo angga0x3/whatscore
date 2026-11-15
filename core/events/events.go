@@ -165,8 +165,13 @@ type Message struct {
 // CDN metadata of one history chunk; the ack for it is what the phone's
 // "keep both apps open" phase waits for.
 type ProtocolInfo struct {
-	Type        string
+	Type string
+	// HistorySync marks a history-sync notification: the receipt it needs is
+	// type=hist_sync, not the delivery receipt.
 	HistorySync bool
+	// AppKeys carries the app state sync keys from a key share, keyed by hex
+	// key id.
+	AppKeys map[string][]byte
 }
 
 // MediaAttachment carries everything a downloader needs to fetch and open one
