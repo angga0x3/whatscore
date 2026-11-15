@@ -102,11 +102,46 @@ out of scope here; this package owns the byte-level envelope only.
 | **Related findings** | PF-040, PF-043 |
 | **Notes** | whatsmeow `getMediaKeys` returns the tail as `refKey`, but `downloadAndDecrypt` and `Upload` discard it (`_`); Baileys slices only 80 bytes. Both request `L=112` regardless. `Upload` sets `resp.FileSHA256 = SHA256(plaintext)`, `resp.FileEncSHA256 = SHA256(ciphertext ‖ mac)`, `resp.FileLength = len(plaintext)`; Baileys `encryptedStream` hashes plaintext with `sha256Plain` and every ciphertext chunk plus the MAC with `sha256Enc`. Those hashes are checked by callers against the protobuf fields (`fileSHA256`, `fileEncSHA256`) and are **not** part of this package; WhatsCore leaves that bookkeeping to `core/media`, and their exact byte coverage is observed in the reference study rather than proven here. Not implemented and deliberately recorded as open: media-path/MMS host construction, streaming uploads, the 64 KiB video streaming sidecar (`makeStreamingSidecar`), and the media-retry key (`HKDF-SHA256(mediaKey, info="WhatsApp Media Retry Notification", L=32)` with AES-256-GCM and message-id AAD, Baileys `getMediaRetryKey`). |
 
+## PF-046: Streaming encrypt/decrypt with verify-before-write
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-046 |
+| **Title** | A media payload can be encrypted and decrypted in bounded memory without changing the envelope: encryption reads plaintext in chunks, emits `ciphertext ‖ mac[10]` with the MAC accumulated as blocks are produced, and decryption authenticates `iv ‖ ciphertext` in a first pass before writing any plaintext in a later pass |
+| **Layer** | media |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/media/stream_test.go` (sizes 0, 1, 16, 17, 1 MiB and 8 MiB; streamed blob byte-identical to `Encrypt`; incremental-write and per-write-bound checks; first/middle/last/MAC byte flips and authentic bad padding leave `dst` empty; truncation, read/write failures, nil endpoints, `MaxStreamBytes` table) |
+| **Related findings** | PF-042, PF-043, PF-044 |
+| **Notes** | Reference behaviour, from the same study as PF-043/PF-044: the MAC is updated per ciphertext chunk and written only after the final block, and a download reads the whole ciphertext, splits the last 10 bytes, and calls the MAC check **before** CBC decryption — so the tag is never computed in the same forward pass that decrypts. WhatsCore encodes that order in `protocol/media` as `EncryptStream`/`DecryptStream` (`protocol/media/stream.go`). Encryption reads through an `io.Reader` in 32 KiB chunks, holds back only the trailing partial block, always applies a whole PKCS#7 padding block, and writes each encrypted chunk before reading more, so the working set is a chunk plus one block. Decryption takes an `io.ReaderAt` plus the total blob size instead of a byte slice and reads the source in three passes: (1) HMAC-SHA256 over `iv ‖ ciphertext[0:size-10]`, compared in constant time with the trailing tag via `hmac.Equal`; (2) the final ciphertext block plus its predecessor (or the IV when only one block exists), decrypted alone to validate every PKCS#7 byte; (3) the body again, chunk by chunk, decrypting and truncating the padding. Nothing reaches `dst` until (1) and (2) succeed, which is what makes the streaming path fail closed on tampering rather than after writing a prefix — the property a single forward pass cannot provide. `MaxStreamBytes` (512 MiB default, `0` disables) is a placement policy, not a wire constant: it caps per-call work, and exceeding it returns a `*StreamLimitError` wrapping `ErrStreamLimit`. The ciphertext is byte-identical to `Encrypt` for the same key set, so streaming and buffered callers interoperate in both directions. Not modelled: ranged/resumed downloads, and decrypting into a destination that must be transactional on a mid-stream write error (the MAC and padding are already known at that point, so a failed write leaves an authenticated but partial prefix). |
+
+## PF-047: Video sidecar hash (SHA-256 over the plaintext)
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-047 |
+| **Title** | The media sidecar's `fileSHA256` is `SHA-256(plaintext)` over the unencrypted payload, computed in one streaming pass over the source and independent of the media key, IV and envelope bytes |
+| **Layer** | media |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/media/stream_test.go` (vectors for empty, one zero byte, 17 bytes and 1 MiB against hex digests computed with python3 `hashlib`; cross-check against `sha256.Sum256`; plaintext-vs-ciphertext separation) |
+| **Related findings** | PF-043, PF-045 |
+| **Notes** | Both references hash the plaintext as it is produced: `Upload` sets `resp.FileSHA256 = SHA256(plaintext)` and Baileys `encryptedStream` feeds every plaintext chunk to a `sha256Plain` hash, while the ciphertext-side companion `fileEncSHA256` covers `ciphertext ‖ mac` (PF-045). For videos the plaintext hash is the value recorded in the media sidecar that travels beside the message and is what a receiver recomputes after decryption to confirm it reassembled the same bytes. WhatsCore exposes the primitive as `SidecarHash(io.Reader)` (`protocol/media/stream.go`) so large payloads are digested in 32 KiB chunks; digesting the ciphertext instead yields a different value and is not a substitute. The digest is corroboration, not authentication: it can be recomputed over mangled bytes, so the envelope MAC (PF-043) remains the trust decision and comparisons against a remembered digest should be constant time. Verified vectors (hex): empty `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`; `00` `6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d`; the 17-byte pattern `b6ff0191041cc77b1ef514adaed53fdd247fd43221a629d3d7c91d14e21038a3`; the 1 MiB pattern `06b7bbfb7824aa03382051691630eb26de85102d1b08a81e907ec0744cd8a286`. Not implemented and deliberately recorded as open: the surrounding 64 KiB video streaming-sidecar envelope (`makeStreamingSidecar`) and where its fields are placed in the protobuf; this finding covers only the digest those bytes carry. |
+
 ---
 
 Status: media-key expansion, AES-256-CBC/PKCS#7 encryption, truncated
 HMAC-SHA256 authentication and fail-closed decryption are implemented in
 `protocol/media` and proven with synthetic vectors generated independently of
-the package (Python HKDF + AES). Live upload/download, the companion hashes,
-media paths, streaming sidecars and media retry remain; their findings stay
-Probable until manual interop.
+the package (Python HKDF + AES). Streaming encrypt/decrypt with
+verify-before-write (PF-046) and the plaintext sidecar digest (PF-047) are
+implemented in `protocol/media/stream.go` and proven there, with streamed
+ciphertext cross-checked byte-for-byte against the buffered `Encrypt` and the
+sidecar vectors computed with Python `hashlib`. Live upload/download, the
+ciphertext-side companion hash, media paths, the 64 KiB video streaming-sidecar
+envelope and media retry remain open; their findings stay Probable until manual
+interop.

@@ -57,7 +57,7 @@ Confidence and Status are deliberately separate axes:
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
-  PF-020…PF-025, PF-030…PF-036, PF-040…PF-045, PF-057…PF-059,
+  PF-020…PF-025, PF-030…PF-036, PF-040…PF-047, PF-057…PF-059,
   PF-064, PF-065, PF-066, PF-070…PF-072, PF-074, PF-076).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
@@ -122,6 +122,8 @@ Confidence and Status are deliberately separate axes:
 | PF-043 | media | Truncated HMAC-SHA256 over IV and ciphertext | Probable | Verified-by-test | `protocol/media` (MAC vectors) |
 | PF-044 | media | Download framing and verification order | Probable | Verified-by-test | `protocol/media` (tamper sweep) |
 | PF-045 | media | Media key size, unused expansion tail | Probable | Verified-by-test | `protocol/media` (key vectors) |
+| PF-046 | media | Streaming envelope with verify-before-write | Probable | Verified-by-test | `protocol/media` (stream tests) |
+| PF-047 | media | Video sidecar hash | Probable | Verified-by-test | `protocol/media` (sidecar vectors) |
 | PF-050 | signal | X3DH master secret and DH order | Confirmed | Verified-by-test | `protocol/signal` (independent vectors) |
 | PF-051 | signal | X3DH key derivation | Confirmed | Verified-by-test | `protocol/signal` (root/chain vectors) |
 | PF-052 | signal | Initial keys and identifiers | Confirmed | Verified-by-test | `protocol/signal` (agreement tests) |

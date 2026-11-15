@@ -3,10 +3,11 @@
 // PKCS#7 padding, and a truncated HMAC-SHA256 integrity tag.
 //
 // The wire format is recorded in docs/protocol/media.md as findings
-// PF-040..PF-045, cross-validated against two independent reference
-// implementations. This package uses the standard library only and performs
-// no I/O: media bytes move over injected transport interfaces in other
-// packages.
+// PF-040..PF-047, cross-validated against two independent reference
+// implementations. This package uses the standard library only: the buffered
+// entry points Encrypt and Decrypt work on byte slices, while the streaming
+// entry points in stream.go move bytes through injected io interfaces and
+// own no transport of their own.
 //
 // Layout produced by Encrypt and consumed by Decrypt:
 //

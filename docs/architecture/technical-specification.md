@@ -275,8 +275,9 @@ the LTHash accumulator and snapshot/patch envelope MACs (PF-077…PF-078). The e
 integrity sidecar computation via stdlib `crypto/aes`/`crypto/hmac`/`crypto/sha256`; bytes move over
 injected transport interfaces, not a hardcoded HTTP client. **Allowed deps.** stdlib,
 `internal/cbc`, `protocol/binary`. **Tests.** Round-trip with synthetic keys; corruption tables; fake media endpoint.
-**Status.** Byte envelope implemented (PF-040…045): HKDF-SHA256, AES-256-CBC/PKCS#7, truncated
-HMAC. Streaming uploads, sidecar hashes, and download range handling remain.
+**Status.** Byte envelope implemented (PF-040…047): HKDF-SHA256, AES-256-CBC/PKCS#7, truncated HMAC,
+streaming encrypt/decrypt with verify-before-write that requires `io.ReaderAt`, and the plaintext
+sidecar digest. Download range handling remains.
 
 ### 4.11 `core/client`
 
