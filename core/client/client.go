@@ -33,9 +33,6 @@ type Message struct {
 	Text string
 }
 
-// NewTextMessage builds a text message.
-func NewTextMessage(text string) Message { return Message{Text: text} }
-
 // Client is one WhatsApp session plus its SDK surface. It is safe for
 // concurrent use.
 type Client struct {

@@ -146,33 +146,3 @@ func Sign(priv [32]byte, msg, randomness []byte) ([]byte, error) {
 	return signature, nil
 }
 
-// EdwardsYFromMontgomeryU computes y = (u−1)/(u+1) mod p, encoded
-// little-endian with the sign bit cleared.
-func EdwardsYFromMontgomeryU(pub [32]byte) ([]byte, error) {
-	uLE := make([]byte, 32)
-	for i := range pub {
-		uLE[i] = pub[31-i]
-	}
-	u := new(big.Int).SetBytes(uLE)
-
-	uPlus1 := new(big.Int).Add(u, big.NewInt(1))
-	uPlus1.Mod(uPlus1, p25519)
-	if uPlus1.Sign() == 0 {
-		return nil, fmt.Errorf("%w: montgomery u + 1 is not invertible mod p", ErrInvalidKey)
-	}
-	inv := new(big.Int).ModInverse(uPlus1, p25519)
-	if inv == nil {
-		return nil, fmt.Errorf("%w: montgomery u + 1 is not invertible mod p", ErrInvalidKey)
-	}
-	uMinus1 := new(big.Int).Sub(u, big.NewInt(1))
-	y := new(big.Int).Mul(uMinus1, inv)
-	y.Mod(y, p25519)
-
-	be := y.FillBytes(make([]byte, 32))
-	out := make([]byte, 32)
-	for i := range be {
-		out[i] = be[31-i]
-	}
-	out[31] &= 0x7f
-	return out, nil
-}

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 )
 
 const maxDictionaryFileBytes = 4 << 20
@@ -24,14 +23,4 @@ func LoadDictionary(r io.Reader) (*Dictionary, error) {
 		return nil, fmt.Errorf("binary: decode dictionary: %w", err)
 	}
 	return NewDictionaryFromTokens(document.Single, document.Double)
-}
-
-// LoadDictionaryFile reads a token table from path.
-func LoadDictionaryFile(path string) (*Dictionary, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("binary: open dictionary: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-	return LoadDictionary(file)
 }

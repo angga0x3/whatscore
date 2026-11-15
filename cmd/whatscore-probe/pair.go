@@ -644,10 +644,3 @@ func writeCredentialRecord(path string, record *credentialRecord) error {
 // payload was being made to work; nothing about the protocol requires it, and
 // a WhatsCore session should not identify itself as another library.
 const probeOSName = "whatscore"
-
-// LoadDictionaryFor exposes dictionary loading to sibling tooling (an
-// undecoded-frame dumper) without each caller re-implementing the tokendict
-// wiring. It is not used by the probe itself.
-func LoadDictionaryFor(path string) (*wabinary.Dictionary, error) {
-	return loadDictionary(path)
-}

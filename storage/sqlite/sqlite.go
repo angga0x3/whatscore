@@ -227,14 +227,6 @@ type CredentialBackend struct {
 
 var _ credentials.Backend = (*CredentialBackend)(nil)
 
-// NewCredentialBackend returns a backend over db.
-func NewCredentialBackend(db *DB) (*CredentialBackend, error) {
-	if db == nil {
-		return nil, fmt.Errorf("storage/sqlite: nil database")
-	}
-	return &CredentialBackend{db: db}, nil
-}
-
 // CredentialBackend returns a credential backend that shares db's pool and
 // closed state.
 func (db *DB) CredentialBackend() *CredentialBackend {
