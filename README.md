@@ -36,7 +36,7 @@ implemented from first principles, documented in the open.
 
 | Layer | Status |
 |-------|--------|
-| Protocol engine | Transport, Noise, binary, pairing + auth payloads, messaging stanzas, media envelope; device signature, Signal/sync, token table pending |
+| Protocol engine | Transport, Noise, binary, pairing + auth payloads, messaging stanzas, media envelope, Signal (X3DH/ratchet/messages/prekeys), app-state patch parsing; device signature, sync blob decryption, token table pending |
 | Application core | `core/events`, `core/session`, `core/credentials`, `core/signalsession`, `core/messaging`, `core/media`, `core/contacts`, `core/groups`, `core/client` |
 | Storage | Interfaces + migrations; `storage/envelope`, `storage/credentials` vault, PostgreSQL credential backend |
 | Application core | Designed — implementation starts in Phase 5 |

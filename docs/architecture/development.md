@@ -14,7 +14,7 @@ whatscore/
 ├── buildinfo/
 ├── config/
 ├── observability/
-├── protocol/               # transport, noise, binary, protobuf, auth, pairing, messaging, media, signal
+├── protocol/               # transport, noise, binary, protobuf, auth, pairing, messaging, media, signal, sync
 ├── server/                 # http/{router,handlers}, middleware, auth
 ├── storage/                # interface.go, credentials/, envelope/, postgres/{...}
 ├── core/                   # events, session, credentials, signalsession, messaging, media, contacts, groups, client

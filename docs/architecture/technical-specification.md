@@ -262,6 +262,9 @@ unencrypted runs.
 action ordering, blob decryption boundaries (primitives from stdlib only). **Allowed deps.** stdlib,
 `protocol/binary`, `protocol/protobuf`, `protocol/signal` (key derivation inputs only). **Tests.**
 Synthetic app-state fixtures; truncated/corrupt patch tables; deterministic decode.
+**Status.** `protocol/sync` parses the app-state stanza and mutation protobuf with a strict,
+limits-bounded wire reader and verifies value MACs (PF-070…PF-074). Key expansion, CBC decryption,
+index MACs, LTHash, and snapshot/patch MAC verification stay with the caller.
 
 ### 4.10 `protocol/media`
 

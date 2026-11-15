@@ -47,6 +47,7 @@ as workstreams land.
 | 2026-11-15 | Inbound bootstrap | `PreKeySource`, `pkmsg` session creation, PF-065 |
 | 2026-11-15 | Media orchestration | `core/media` with descriptor hashes and 64 MiB cap |
 | 2026-11-15 | Contacts + groups | `core/contacts`, `core/groups` caches |
+| 2026-11-15 | App-state sync | `protocol/sync` patch parse + value MAC, PF-070…PF-074 |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
