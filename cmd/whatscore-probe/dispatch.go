@@ -23,6 +23,11 @@ type dispatcher struct {
 	codec  wabinary.Codec
 	onNode func(context.Context, *wabinary.Node)
 
+	// holeCodec decodes with every missing token replaced by a placeholder
+	// naming its slot. It is the second chance for a stanza the table almost
+	// covers; nil disables it.
+	holeCodec wabinary.Codec
+
 	mu      sync.Mutex
 	waiters map[string]chan *wabinary.Node
 
@@ -59,6 +64,9 @@ func (d *dispatcher) run(ctx context.Context) {
 			return
 		}
 		node, err := d.codec.Decode(bytes.NewReader(frame))
+		if err != nil {
+			node, err = d.decodeByShape(frame, err)
+		}
 		if err != nil {
 			path, werr := dumpFrame(frame)
 			if werr == nil {
@@ -153,4 +161,38 @@ func (d *dispatcher) readError() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.err
+}
+
+// decodeByShape gives a stanza the table almost covers a second chance, and
+// hands it on only when its shape alone is enough to act on it.
+//
+// The live offline announcement (PF-087) rides on attribute values the table
+// has never observed — counts that change with the queue size, sent as
+// dictionary tokens. A strict decode fails the whole stanza on one unknown
+// value, the frame lands in undecoded/, and a queue the server announced is
+// never answered. <ib> is server-state routing, not user data: the client
+// answers its shape (an <offline_preview/> earns an <offline_batch/>), and its
+// values are diagnostics. So an <ib> that decodes with placeholder holes is
+// routed, the holes printed so the table can be completed, and the frame kept.
+// Every other tag keeps the loud failure: a placeholder reaching the receiver
+// would only manufacture confusion downstream.
+func (d *dispatcher) decodeByShape(frame []byte, strictErr error) (*wabinary.Node, error) {
+	if d.holeCodec == nil {
+		return nil, strictErr
+	}
+	holed, herr := d.holeCodec.Decode(bytes.NewReader(frame))
+	if herr != nil || holed.Tag != "ib" {
+		return nil, strictErr
+	}
+	path, werr := dumpFrame(frame)
+	if werr == nil {
+		fmt.Printf("undecodable <ib> routed by shape (%d bytes, kept at %s):\n", len(frame), path)
+	} else {
+		fmt.Printf("undecodable <ib> routed by shape (%d bytes):\n", len(frame))
+	}
+	for i := range holed.Children {
+		fmt.Printf("  <%s> %v\n", holed.Children[i].Tag, holed.Children[i].Attrs)
+	}
+	fmt.Println("  (¿ slots above are table gaps to record; the values were never observed)")
+	return holed, nil
 }

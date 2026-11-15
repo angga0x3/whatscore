@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
@@ -311,6 +313,153 @@ func TestOfflineBatchRequestIsSentRepeatedly(t *testing.T) {
 	case <-conn.written:
 	default:
 		t.Fatal("a re-announced queue earned no second batch request")
+	}
+}
+
+// feedConn yields queued frames to the dispatcher's read loop, then blocks.
+type feedConn struct {
+	inbox chan []byte
+}
+
+func (c *feedConn) ReadFrame(ctx context.Context) ([]byte, error) {
+	select {
+	case f := <-c.inbox:
+		return f, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func (c *feedConn) WriteFrame(ctx context.Context, frame []byte) error { return nil }
+
+func (c *feedConn) Close() error { return nil }
+
+func (c *feedConn) CipherSuiteName() string { return "test" }
+
+// routingDict builds a token table that knows the offline announcement's shape
+// but not the counter values: exactly the live state that broke PF-087, where
+// the counts ride dictionary slots the table has never observed.
+func routingDict() *wabinary.Dictionary {
+	d := wabinary.NewDictionary()
+	_ = d.SetSingle(1, "ib")
+	_ = d.SetSingle(2, "message")
+	_ = d.SetDouble(0, 1, "offline_preview")
+	_ = d.SetDouble(0, 2, "count")
+	_ = d.SetDouble(0, 3, "known")
+	return d
+}
+
+// runDispatcherOnce feeds one frame through a dispatcher wired like runListen's
+// and reports what onNode saw, or nil if nothing fired within the deadline.
+func runDispatcherOnce(t *testing.T, frame []byte, strict, hole *wabinary.Dictionary) *wabinary.Node {
+	t.Helper()
+	t.Chdir(t.TempDir()) // dumpFrame writes relative to undecoded/
+	conn := &feedConn{inbox: make(chan []byte, 1)}
+	conn.inbox <- frame
+	d := newDispatcher(conn, wabinary.NewCodec(strict))
+	d.holeCodec = wabinary.NewCodec(hole)
+
+	fired := make(chan *wabinary.Node, 1)
+	d.onNode = func(ctx context.Context, n *wabinary.Node) {
+		select {
+		case fired <- n:
+		default:
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	runDone := make(chan struct{})
+	go func() {
+		defer close(runDone)
+		d.run(ctx)
+	}()
+
+	var seen *wabinary.Node
+	select {
+	case seen = <-fired:
+	case <-time.After(time.Second):
+	}
+	cancel()
+	<-runDone
+	return seen
+}
+
+// TestUndecodableIbRoutesByShape is the live PF-087 failure, pinned: the server
+// announces its queue with counter values the token table has never observed,
+// a strict decode fails the whole stanza, and a queue that was announced is
+// never answered. The dispatcher's second chance must route <ib> on its shape
+// with the holes named, because the answer depends on the shape alone.
+func TestUndecodableIbRoutesByShape(t *testing.T) {
+	hole := holeFilled(routingDict())
+	strict := routingDict()
+
+	preview := &wabinary.Node{
+		Tag: "ib",
+		Children: []wabinary.Node{{
+			Tag: "offline_preview",
+			Attrs: wabinary.Attrs{
+				"count": "known", "message": "¿d1[158]", "receipt": "¿d2[126]",
+			},
+		}},
+	}
+	frame, err := wabinary.NewCodec(hole).Encode(preview)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	// The strict table must refuse this frame, or the test proves nothing.
+	if _, err := wabinary.NewCodec(strict).Decode(bytes.NewReader(frame)); err == nil {
+		t.Fatal("the frame decodes strictly; the test no longer covers the failure")
+	}
+
+	seen := runDispatcherOnce(t, frame, strict, hole)
+	if seen == nil {
+		t.Fatal("an <ib> the table almost covers was not routed by shape")
+	}
+	if seen.Tag != "ib" || child(seen, "offline_preview") == nil {
+		t.Fatalf("routed node lost its shape: %s", attrSummary(seen))
+	}
+	// The holes must survive as placeholders naming their slots, so the
+	// operator can record exactly the entries the table is missing.
+	p := child(seen, "offline_preview")
+	if p.Attrs["message"] != "¿d1[158]" || p.Attrs["receipt"] != "¿d2[126]" {
+		t.Fatalf("holes were not named: %v", p.Attrs)
+	}
+	if got := p.Attrs["count"]; got != "known" {
+		t.Fatalf("known value corrupted: %q", got)
+	}
+	entries, err := os.ReadDir("undecoded")
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("routed-by-shape frame was not kept for the table work: %v", err)
+	}
+}
+
+// TestHoleFilledNonIbIsDropped keeps the loud failure for everything that is
+// not server-state routing: a message stanza decoded with placeholder holes
+// would carry fabricated values into the receiver.
+func TestHoleFilledNonIbIsDropped(t *testing.T) {
+	hole := holeFilled(routingDict())
+	strict := routingDict()
+
+	node := &wabinary.Node{
+		Tag:   "message",
+		Attrs: wabinary.Attrs{"count": "¿d2[126]"},
+	}
+	frame, err := wabinary.NewCodec(hole).Encode(node)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	if _, err := wabinary.NewCodec(strict).Decode(bytes.NewReader(frame)); err == nil {
+		t.Fatal("the frame decodes strictly; the test no longer covers the failure")
+	}
+
+	seen := runDispatcherOnce(t, frame, strict, hole)
+	if seen != nil {
+		t.Fatalf("a hole-decoded %q reached the receive path: %s", seen.Tag, attrSummary(seen))
+	}
+	entries, err := os.ReadDir("undecoded")
+	if err != nil || len(entries) == 0 {
+		t.Fatalf("dropped frame was not kept: %v", err)
 	}
 }
 

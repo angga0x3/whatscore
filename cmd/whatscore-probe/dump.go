@@ -18,22 +18,7 @@ func dumpUndecoded(dictPath, framePath string) error {
 	if err != nil {
 		return err
 	}
-	// Fill every hole with a placeholder so a frame the table almost covers
-	// still decodes far enough to show its shape. The placeholders name the
-	// exact slot to record in the table afterwards.
-	for i := 1; i <= 235; i++ {
-		if _, ok := dict.Single(byte(i)); !ok {
-			_ = dict.SetSingle(byte(i), fmt.Sprintf("¿s%d", i))
-		}
-	}
-	for dIndex := 0; dIndex < 4; dIndex++ {
-		for i := 0; i < 256; i++ {
-			if _, ok := dict.Double(byte(dIndex), byte(i)); !ok {
-				_ = dict.SetDouble(byte(dIndex), byte(i), fmt.Sprintf("¿d%d[%d]", dIndex, i))
-			}
-		}
-	}
-	codec := wabinary.NewCodec(dict)
+	codec := wabinary.NewCodec(holeFilled(dict))
 	raw, err := os.ReadFile(framePath)
 	if err != nil {
 		return err
@@ -55,4 +40,24 @@ func dumpUndecoded(dictPath, framePath string) error {
 	}
 	dump(node, 0)
 	return nil
+}
+
+// holeFilled returns the dictionary with every missing slot replaced by a
+// placeholder that names its position (¿s153, ¿d1[158]). A frame the table
+// almost covers then decodes far enough to show its shape, and the
+// placeholders name the exact entries to record in the table afterwards.
+func holeFilled(dict *wabinary.Dictionary) *wabinary.Dictionary {
+	for i := 1; i <= 235; i++ {
+		if _, ok := dict.Single(byte(i)); !ok {
+			_ = dict.SetSingle(byte(i), fmt.Sprintf("¿s%d", i))
+		}
+	}
+	for dIndex := 0; dIndex < 4; dIndex++ {
+		for i := 0; i < 256; i++ {
+			if _, ok := dict.Double(byte(dIndex), byte(i)); !ok {
+				_ = dict.SetDouble(byte(dIndex), byte(i), fmt.Sprintf("¿d%d[%d]", dIndex, i))
+			}
+		}
+	}
+	return dict
 }

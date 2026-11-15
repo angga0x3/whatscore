@@ -66,6 +66,7 @@ func runSend(cfg sendConfig) error {
 	defer func() { _ = sc.Close() }()
 
 	d := newDispatcher(sc, codec)
+	d.holeCodec = wabinary.NewCodec(holeFilled(dict))
 	loopDone := make(chan struct{})
 	go func() {
 		defer close(loopDone)

@@ -124,6 +124,10 @@ func runListen(cfg sendConfig) error {
 	})
 
 	d := newDispatcher(sc, codec)
+	// Second chance for stanzas the table almost covers: without it the
+	// offline announcement fails whole on unknown attribute tokens and the
+	// queue it announces is never answered (PF-087).
+	d.holeCodec = wabinary.NewCodec(holeFilled(dict))
 	offline := newOfflineQueue(sc, codec)
 	d.onNode = func(ctx context.Context, node *wabinary.Node) {
 		// Trace every stanza before any interpretation. A receive path that only
@@ -133,6 +137,10 @@ func runListen(cfg sendConfig) error {
 		switch node.Tag {
 		case "ib":
 			offline.handle(ctx, node)
+			// Server-state routing only; nothing here is user data, and a
+			// hole-decoded one carries placeholder values the strict codec
+			// cannot re-encode for the receiver.
+			return
 		case "message":
 			// A receipt goes back before decryption: a sender that never sees
 			// one retries the same message.
