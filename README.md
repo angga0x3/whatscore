@@ -59,20 +59,24 @@ against WhatsApp — see [compatibility](docs/architecture/compatibility.md).
 | 4 | Messaging (Signal) | **Complete** pending live interop |
 | 5 | Public SDK | **Complete** pending live interop |
 | 6 | API server | **Complete** pending live interop |
-| 7 | Release v0.1.0 | **Blocked** on phases 3 and 2 |
+| 7 | Release v0.1.0 | **Blocked** on phases 3 and 2; v0.0.1 shipped instead |
 
-**v0.0.1 target — protocol foundation preview:**
+**v0.0.1 — released 2026-11-15.** A protocol foundation preview, not a working
+WhatsApp client. What it proves, and what it deliberately does not claim, is in
+[docs/releases/v0.0.1.md](docs/releases/v0.0.1.md).
 
-- [x] WebSocket transport runs
-- [x] Noise handshake succeeds
-- [x] Binary node encode/decode works
-- [x] Fake-server integration test passes
-- [x] Protocol docs available
+Proven against the live service:
 
-v0.0.1 is not cut yet. The codec and protobuf messages round-trip, but the
-real WhatsApp token table is still an open licensing question (technical
-specification §10.2), and no compatibility with the live endpoint is claimed
-before manual interop is recorded as a protocol finding.
+- [x] WebSocket transport, intro header, frame reassembly
+- [x] Noise handshake, including certificate verification against the pinned root
+- [x] Registration payload accepted; `pair-device` stanza decoded to 6 refs
+- [x] iq result accepted by the server
+
+Not proven, and not claimed:
+
+- [ ] Pairing completion — three reply token indices are unobserved
+- [ ] Binary encoding against real traffic beyond the pairing stanza
+- [ ] Message send/receive, media, app-state sync
 
 ## SDK
 

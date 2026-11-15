@@ -147,6 +147,12 @@ Finding ID ranges are reserved per workstream to avoid collisions: auth
 PF-020…PF-029, messaging PF-030…PF-039, media PF-040…PF-049, signal
 PF-050…PF-059.
 
+## Release status
+
+v0.0.1 was tagged on 2026-11-15 as a protocol foundation preview; see
+[docs/releases/v0.0.1.md](../releases/v0.0.1.md). It is deliberately narrow: what
+is proven live is stated, and everything else is labelled untested.
+
 ## Current blockers
 
 | Blocker | State | What changed |
