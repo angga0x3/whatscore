@@ -40,6 +40,7 @@ as workstreams land.
 | 2026-11-15 | Signal message crypto | framing, MAC, AES-CBC payload, PF-060…062 |
 | 2026-11-15 | Signal prekey bootstrap | PreKeySignalMessage envelope + Accept, PF-063…064 |
 | 2026-11-15 | Crypto cleanup | shared `internal/cbc`, single-parse Signal decrypt, benchmarks |
+| 2026-11-15 | Ratchet persistence | deterministic versioned state encoding, limits, benchmarks |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 

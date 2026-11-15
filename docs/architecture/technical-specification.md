@@ -241,8 +241,9 @@ serialization (byte blobs handed to the stores, §4.19). **Decided:** never shar
 (Phase 4 exit criterion); out-of-order/replay tables; state-serialization round-trip; no network I/O.
 **Status.** X3DH agreement, signed-prekey verification, the key schedule, the Double Ratchet state
 machine, SignalMessage framing/MAC/payload encryption, and PreKeySignalMessage bootstrap are
-implemented (PF-050…PF-064). Prekey generation/rotation and signing (ADR 0001), one-time prekey
-deletion, durable session state, and WhatsApp `<enc>` wiring remain.
+implemented (PF-050…PF-064). Ratchet state also has a versioned, deterministic binary encoding with
+chain/skipped-key limits (`MarshalBinary`/`ParseState`). Prekey generation/rotation and signing
+(ADR 0001), one-time prekey deletion, store wiring, and WhatsApp `<enc>` wiring remain.
 
 ### 4.8 `protocol/messaging`
 
