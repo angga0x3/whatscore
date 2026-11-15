@@ -23,6 +23,9 @@ below are from a 4-core arm64 development machine with Go 1.26.
 | Ratchet state unmarshal | `BenchmarkStateUnmarshal` | 13 us | — | 7 |
 | Session save+load (vault) | `BenchmarkSaveLoad` | 3.3 us | — | 17 |
 | Prekey bundle read | `BenchmarkBundle` | 126 ns | — | 2 |
+| Rate limiter allow | `BenchmarkRateLimiterAllow` | 144 ns | — | **0** |
+| Rate limiter, 1024 keys | `BenchmarkRateLimiterManyKeys` | 155 ns | — | **0** |
+| Rate limiter denial | `BenchmarkRateLimiterDenied` | 171 ns | — | 1 |
 
 Reproduce with:
 
@@ -31,6 +34,7 @@ go test -run=XXX -bench=. -benchtime=300ms -benchmem ./protocol/binary/
 go test -run=XXX -bench=. -benchtime=300ms -benchmem ./protocol/signal/
 go test -run=XXX -bench=. -benchtime=300ms -benchmem ./protocol/media/
 go test -run=XXX -bench=. -benchtime=300ms -benchmem ./core/prekeys/ ./core/signalsession/
+go test -run=XXX -bench=BenchmarkRateLimiter -benchtime=300ms -benchmem ./server/middleware/
 ```
 
 ## Why streaming media is the default choice
@@ -58,7 +62,8 @@ engine is small:
   allocate without bound.
 - **Allocation discipline.** Hot paths avoid whole-payload buffers, borrow
   parse input, sort deterministically instead of iterating maps, and reuse
-  stack buffers for MAC inputs.
+  stack buffers for MAC inputs. The API rate limiter is zero-allocation on the
+  allow path, so it cannot become the throughput ceiling.
 
 ## What is *not* claimed
 

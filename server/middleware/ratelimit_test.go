@@ -634,3 +634,38 @@ func TestConcurrentUse(t *testing.T) {
 		t.Error("no request observed Remaining == 0")
 	}
 }
+
+func BenchmarkRateLimiterAllow(b *testing.B) {
+	limiter := NewRateLimiter(RateLimiterConfig{Rate: 1e9, Burst: 1 << 30})
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := limiter.Allow("628123@s.whatsapp.net"); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRateLimiterManyKeys(b *testing.B) {
+	limiter := NewRateLimiter(RateLimiterConfig{Rate: 1e9, Burst: 1 << 30, MaxBuckets: 4096})
+	keys := make([]string, 1024)
+	for i := range keys {
+		keys[i] = fmt.Sprintf("key-%d", i)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := limiter.Allow(keys[i%len(keys)]); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkRateLimiterDenied(b *testing.B) {
+	limiter := NewRateLimiter(RateLimiterConfig{Rate: 0.0001, Burst: 1})
+	_, _ = limiter.Allow("k")
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := limiter.Allow("k"); err == nil {
+			b.Fatal("expected denial")
+		}
+	}
+}
