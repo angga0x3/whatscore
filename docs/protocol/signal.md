@@ -282,3 +282,23 @@ signing (ADR 0001), one-time prekey deletion, and durable session state remain.
 Status update: inbound prekey bootstrap is implemented end to end: a `pkmsg`
 establishes the session, publishes the carried text, and later `msg` frames
 decrypt with the same state.
+
+## PF-066: Outbound prekey message
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-066 |
+| **Title** | Before a session exists, the initiator sends `pkmsg`; the client builds it from the peer's bundle, keeps the derived state, and switches to `msg` for later messages |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `core/messaging` (pkmsg send → responder accept → msg follow-up) |
+| **Related findings** | PF-052, PF-063, PF-065 |
+| **Notes** | whatsmeow `send.go` wraps the first SignalMessage in a PreKeySignalMessage with the base key, registration id, and both prekey ids while the session is unacknowledged. WhatsCore clears the flag as soon as the first message is written; retransmission handling and prekey-signature generation remain (ADR 0001 provides the injected `Signer`). |
+
+---
+
+Status update: both directions of first-contact messaging are wired: outbound
+`pkmsg` from a bundle and inbound `pkmsg` bootstrap.

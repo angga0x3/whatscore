@@ -58,7 +58,7 @@ Confidence and Status are deliberately separate axes:
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
   PF-020…PF-025, PF-030…PF-036, PF-040…PF-045, PF-057…PF-059,
-  PF-064, PF-065).** Framing, binary encoding,
+  PF-064, PF-065, PF-066).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
   while **Probable** because our own codec, synthetic vectors, independent
@@ -136,6 +136,7 @@ Confidence and Status are deliberately separate axes:
 | PF-063 | signal | PreKeySignalMessage envelope | Confirmed | Verified-by-test | `protocol/signal` (prekey vector), `protocol/protobuf` |
 | PF-064 | signal | Session bootstrap from a prekey message | Probable | Verified-by-test | `protocol/signal` (bootstrap tests) |
 | PF-065 | signal | Inbound prekey bootstrap | Probable | Verified-by-test | `core/messaging` (bootstrap + follow-up) |
+| PF-066 | signal | Outbound prekey message | Probable | Verified-by-test | `core/messaging` (pkmsg send, responder accept) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings

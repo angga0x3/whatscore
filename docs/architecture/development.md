@@ -40,6 +40,7 @@ your first PR.
 | `make fmt` | `gofmt -s -w .` |
 | `make lint` | golangci-lint (same as CI) |
 | `make check` | fmt + vet + lint + test — what CI expects green |
+| `go test -run=XXX -bench=. -benchmem ./protocol/signal/` | Crypto hot-path numbers (see performance.md) |
 | `make docker-up` | Full stack via Docker Compose |
 
 ## Local run without Docker
