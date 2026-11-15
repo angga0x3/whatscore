@@ -92,6 +92,10 @@ curl -s -X POST http://localhost:8080/api/v1/sessions \
 Session payloads carry `id`, `name`, `status`, `created_at`, `updated_at`;
 status values follow the OpenAPI enum.
 
+The server binary mounts these routes, so `docker compose up` exposes them as
+soon as `/ready` reports the database up. Sessions are managed in memory:
+restarting the process clears them.
+
 ## Not implemented yet (contract defined)
 
 Every other path under `/api/v1` currently answers `501 Not Implemented` with:

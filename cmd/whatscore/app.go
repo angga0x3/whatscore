@@ -17,6 +17,7 @@ import (
 	"github.com/angga0x3/whatscore/buildinfo"
 	"github.com/angga0x3/whatscore/config"
 	"github.com/angga0x3/whatscore/observability"
+	"github.com/angga0x3/whatscore/server/api"
 	httpapi "github.com/angga0x3/whatscore/server/http"
 	"github.com/angga0x3/whatscore/server/http/handlers"
 	"github.com/angga0x3/whatscore/storage/postgres"
@@ -38,6 +39,7 @@ type App struct {
 	cfg      *config.Config
 	logger   *slog.Logger
 	pool     *pgxpool.Pool
+	sessions *api.Manager
 	server   *http.Server
 	build    buildinfo.Info
 	draining atomic.Bool
@@ -67,11 +69,23 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 		}
 	}
 
+	sessions, err := api.NewManager()
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("build session service: %w", err)
+	}
+	apiHandler, err := api.NewHandler(sessions)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("build API handler: %w", err)
+	}
+
 	a := &App{
-		cfg:    cfg,
-		logger: logger,
-		pool:   pool,
-		build:  build,
+		cfg:      cfg,
+		logger:   logger,
+		pool:     pool,
+		sessions: sessions,
+		build:    build,
 	}
 
 	router := httpapi.NewRouter(httpapi.Deps{
@@ -80,6 +94,7 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 		Build:          build,
 		Readiness:      []handlers.Checker{postgres.PingChecker{Pool: pool}},
 		IsShuttingDown: a.draining.Load,
+		API:            apiHandler,
 	})
 
 	a.server = &http.Server{

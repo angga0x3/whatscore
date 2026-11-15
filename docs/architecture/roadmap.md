@@ -51,6 +51,7 @@ as workstreams land.
 | 2026-11-15 | Sync decode | key expansion + mutation decode, PF-075…PF-076 |
 | 2026-11-15 | REST sessions | `server/api` service + handlers, router mount |
 | 2026-11-15 | Webhooks | `server/webhook` signing, retries, delivery records |
+| 2026-11-15 | Binary wiring | session API mounted in `cmd/whatscore`, sessions stopped on shutdown |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
