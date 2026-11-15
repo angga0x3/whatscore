@@ -13,8 +13,8 @@ import (
 	"golang.org/x/crypto/curve25519"
 )
 
-func fixedKey(t *testing.T, seed byte) KeyPair {
-	t.Helper()
+func fixedKey(tb testing.TB, seed byte) KeyPair {
+	tb.Helper()
 	var pair KeyPair
 	for i := range pair.Private {
 		pair.Private[i] = seed
@@ -22,17 +22,17 @@ func fixedKey(t *testing.T, seed byte) KeyPair {
 	clamp(&pair.Private)
 	pub, err := curve25519.X25519(pair.Private[:], curve25519.Basepoint)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	copy(pair.Public[:], pub)
 	return pair
 }
 
-func signingKey(t *testing.T) (ed25519.PrivateKey, KeyPair) {
-	t.Helper()
+func signingKey(tb testing.TB) (ed25519.PrivateKey, KeyPair) {
+	tb.Helper()
 	_, private, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	digest := sha512.Sum512(private.Seed())
 	var pair KeyPair
@@ -40,14 +40,14 @@ func signingKey(t *testing.T) (ed25519.PrivateKey, KeyPair) {
 	clamp(&pair.Private)
 	pub, err := curve25519.X25519(pair.Private[:], curve25519.Basepoint)
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 	copy(pair.Public[:], pub)
 	return private, pair
 }
 
-func signPreKey(t *testing.T, identity ed25519.PrivateKey, preKey [32]byte) []byte {
-	t.Helper()
+func signPreKey(tb testing.TB, identity ed25519.PrivateKey, preKey [32]byte) []byte {
+	tb.Helper()
 	message := append([]byte{PublicKeyType}, preKey[:]...)
 	return ed25519.Sign(identity, message)
 }

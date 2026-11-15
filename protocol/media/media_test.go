@@ -253,7 +253,7 @@ func TestMACLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("aes.NewCipher: %v", err)
 	}
-	padded := pad(plaintext)
+	padded := padPKCS7(plaintext)
 	wantBody := make([]byte, len(padded))
 	cipher.NewCBCEncrypter(blockCipher, keys.IV[:]).CryptBlocks(wantBody, padded)
 	if !bytes.Equal(body, wantBody) {
@@ -587,4 +587,14 @@ func FuzzDecrypt(f *testing.F) {
 			t.Fatalf("re-encryption differs from the authenticated blob")
 		}
 	})
+}
+
+func padPKCS7(in []byte) []byte {
+	padding := aes.BlockSize - len(in)%aes.BlockSize
+	out := make([]byte, len(in)+padding)
+	copy(out, in)
+	for i := len(in); i < len(out); i++ {
+		out[i] = byte(padding)
+	}
+	return out
 }

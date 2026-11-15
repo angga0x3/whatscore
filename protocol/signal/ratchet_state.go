@@ -1,6 +1,6 @@
 package signal
 
-import "fmt"
+import "errors"
 
 const (
 	// MaxSkippedKeys bounds stored message keys for out-of-order delivery.
@@ -10,14 +10,14 @@ const (
 )
 
 var (
-	// ErrUninitialized is returned when no sender chain is available yet.
-	ErrUninitialized = fmt.Errorf("%w: no sender chain", ErrInvalidKey)
-	// ErrOldMessage is returned for a counter already consumed.
-	ErrOldMessage = fmt.Errorf("%w: old message counter", ErrInvalidKey)
-	// ErrTooFarInFuture is returned when a counter jumps past the limit.
-	ErrTooFarInFuture = fmt.Errorf("%w: counter too far in the future", ErrInvalidKey)
-	// ErrTooManySkipped is returned when the skipped-key cache is full.
-	ErrTooManySkipped = fmt.Errorf("%w: too many skipped keys", ErrInvalidKey)
+	// ErrUninitialized means no sender chain exists yet.
+	ErrUninitialized = errors.New("signal: no sender chain")
+	// ErrOldMessage means the counter was already consumed.
+	ErrOldMessage = errors.New("signal: old message counter")
+	// ErrTooFarInFuture means the counter jumped past the limit.
+	ErrTooFarInFuture = errors.New("signal: counter too far in the future")
+	// ErrTooManySkipped means the skipped-key cache is full.
+	ErrTooManySkipped = errors.New("signal: too many skipped keys")
 )
 
 // Header is the ratchet header carried with a message (PF-057).

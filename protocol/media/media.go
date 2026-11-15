@@ -19,13 +19,13 @@
 package media
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/sha256"
 	"errors"
 	"fmt"
+
+	"github.com/angga0x3/whatscore/internal/cbc"
 )
 
 const (
@@ -188,15 +188,10 @@ func DeriveKeys(mediaKey [MediaKeySize]byte, mediaType string, length int) (Keys
 // block and a 26-byte result. The returned slice is freshly allocated;
 // plaintext is not modified.
 func Encrypt(plaintext []byte, keys Keys) ([]byte, error) {
-	block, err := aes.NewCipher(keys.CipherKey[:])
+	ciphertext, err := cbc.Encrypt(keys.CipherKey[:], keys.IV[:], plaintext)
 	if err != nil {
-		return nil, fmt.Errorf("%w: aes: %w", ErrInvalidKey, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidKey, err)
 	}
-
-	padded := pad(plaintext)
-	ciphertext := make([]byte, len(padded))
-	cipher.NewCBCEncrypter(block, keys.IV[:]).CryptBlocks(ciphertext, padded)
-
 	out := make([]byte, len(ciphertext)+MACSize)
 	copy(out, ciphertext)
 	copy(out[len(ciphertext):], mac(keys, ciphertext))
@@ -211,24 +206,21 @@ func Encrypt(plaintext []byte, keys Keys) ([]byte, error) {
 // ciphertext that is not a multiple of 16 bytes, or invalid PKCS#7 padding
 // returns ErrInvalidCiphertext; a MAC mismatch returns ErrBadMAC.
 func Decrypt(ciphertext []byte, keys Keys) ([]byte, error) {
-	if len(ciphertext) < MACSize+aes.BlockSize {
-		return nil, fmt.Errorf("%w: %d bytes, need at least %d", ErrInvalidCiphertext, len(ciphertext), MACSize+aes.BlockSize)
+	if len(ciphertext) < MACSize+cbc.BlockSize {
+		return nil, fmt.Errorf("%w: %d bytes, need at least %d", ErrInvalidCiphertext, len(ciphertext), MACSize+cbc.BlockSize)
 	}
 	body, tag := ciphertext[:len(ciphertext)-MACSize], ciphertext[len(ciphertext)-MACSize:]
-	if len(body)%aes.BlockSize != 0 {
-		return nil, fmt.Errorf("%w: ciphertext length %d is not a multiple of %d", ErrInvalidCiphertext, len(body), aes.BlockSize)
+	if len(body)%cbc.BlockSize != 0 {
+		return nil, fmt.Errorf("%w: ciphertext length %d is not a multiple of %d", ErrInvalidCiphertext, len(body), cbc.BlockSize)
 	}
 	if !hmac.Equal(mac(keys, body), tag) {
 		return nil, ErrBadMAC
 	}
-
-	block, err := aes.NewCipher(keys.CipherKey[:])
+	plaintext, err := cbc.Decrypt(keys.CipherKey[:], keys.IV[:], body)
 	if err != nil {
-		return nil, fmt.Errorf("%w: aes: %w", ErrInvalidKey, err)
+		return nil, fmt.Errorf("%w: %w", ErrInvalidCiphertext, err)
 	}
-	plaintext := make([]byte, len(body))
-	cipher.NewCBCDecrypter(block, keys.IV[:]).CryptBlocks(plaintext, body)
-	return unpad(plaintext)
+	return plaintext, nil
 }
 
 // mac computes HMAC-SHA256(macKey, iv ‖ ciphertext) truncated to MACSize
@@ -239,37 +231,4 @@ func mac(keys Keys, ciphertext []byte) []byte {
 	h.Write(keys.IV[:])
 	h.Write(ciphertext)
 	return h.Sum(nil)[:MACSize]
-}
-
-// pad applies PKCS#7 padding, always adding between 1 and 16 bytes
-// (PF-042).
-func pad(plaintext []byte) []byte {
-	padLen := aes.BlockSize - len(plaintext)%aes.BlockSize
-	padded := make([]byte, len(plaintext)+padLen)
-	copy(padded, plaintext)
-	for i := len(plaintext); i < len(padded); i++ {
-		padded[i] = byte(padLen)
-	}
-	return padded
-}
-
-// unpad removes and validates PKCS#7 padding. Every padding byte must equal
-// the padding length, which is stricter than the reference helper (it only
-// rejects a length larger than the buffer). Stricter is safe for authentic
-// input and rejects malformed blobs outright.
-func unpad(plaintext []byte) ([]byte, error) {
-	if len(plaintext) == 0 || len(plaintext)%aes.BlockSize != 0 {
-		return nil, fmt.Errorf("%w: padded length %d is not a positive multiple of %d",
-			ErrInvalidCiphertext, len(plaintext), aes.BlockSize)
-	}
-	padLen := int(plaintext[len(plaintext)-1])
-	if padLen == 0 || padLen > aes.BlockSize {
-		return nil, fmt.Errorf("%w: invalid padding length %d", ErrInvalidCiphertext, padLen)
-	}
-	for _, b := range plaintext[len(plaintext)-padLen:] {
-		if int(b) != padLen {
-			return nil, fmt.Errorf("%w: inconsistent padding bytes", ErrInvalidCiphertext)
-		}
-	}
-	return plaintext[:len(plaintext)-padLen], nil
 }

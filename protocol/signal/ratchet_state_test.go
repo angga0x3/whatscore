@@ -10,28 +10,28 @@ type conversation struct {
 	bob   *State
 }
 
-func newConversation(t *testing.T) conversation {
-	t.Helper()
-	_, alice := signingKey(t)
-	bobSigning, bob := signingKey(t)
-	bobSigned := fixedKey(t, 0x21)
+func newConversation(tb testing.TB) conversation {
+	tb.Helper()
+	_, alice := signingKey(tb)
+	bobSigning, bob := signingKey(tb)
+	bobSigned := fixedKey(tb, 0x21)
 	bundle := PreKeyBundle{
 		IdentityKey:           bob.Public,
 		SignedPreKeyID:        7,
 		SignedPreKey:          bobSigned.Public,
-		SignedPreKeySignature: signPreKey(t, bobSigning, bobSigned.Public),
+		SignedPreKeySignature: signPreKey(tb, bobSigning, bobSigned.Public),
 	}
 	init, err := Initiate(alice, bundle)
 	if err != nil {
-		t.Fatalf("Initiate: %v", err)
+		tb.Fatalf("Initiate: %v", err)
 	}
 	responder, err := Respond(bob, bobSigned, nil, alice.Public, init.EphemeralPublic)
 	if err != nil {
-		t.Fatalf("Respond: %v", err)
+		tb.Fatalf("Respond: %v", err)
 	}
 	aliceState, err := NewInitiator(init.Keys.RootKey, bobSigned.Public, init.Keys.ChainKey)
 	if err != nil {
-		t.Fatalf("NewInitiator: %v", err)
+		tb.Fatalf("NewInitiator: %v", err)
 	}
 	return conversation{alice: aliceState, bob: NewResponder(responder.RootKey, bobSigned, responder.ChainKey)}
 }

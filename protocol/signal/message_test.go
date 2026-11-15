@@ -119,6 +119,15 @@ func TestMessageVectors(t *testing.T) {
 		Plaintext        string `json:"plaintext"`
 		Ciphertext       string `json:"ciphertext"`
 		Wire             string `json:"wire"`
+		PreKey           struct {
+			RegistrationID uint32 `json:"registration_id"`
+			PreKeyID       uint32 `json:"pre_key_id"`
+			SignedPreKeyID uint32 `json:"signed_pre_key_id"`
+			BaseKey        string `json:"base_key"`
+			IdentityKey    string `json:"identity_key"`
+			Message        string `json:"message"`
+		} `json:"prekey"`
+		PreKeyWire string `json:"prekey_wire"`
 	}
 	if err := json.Unmarshal(raw, &vector); err != nil {
 		t.Fatal(err)
@@ -154,6 +163,25 @@ func TestMessageVectors(t *testing.T) {
 	}
 	if !bytes.Equal(got, plaintext) {
 		t.Fatalf("plaintext = %q", got)
+	}
+
+	preKeyMessage, err := hex.DecodeString(vector.PreKey.Message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preKeyWire, err := BuildPreKeyMessage(PreKeyMessage{
+		RegistrationID: vector.PreKey.RegistrationID,
+		PreKeyID:       vector.PreKey.PreKeyID,
+		SignedPreKeyID: vector.PreKey.SignedPreKeyID,
+		BaseKey:        decodeHex(t, vector.PreKey.BaseKey),
+		IdentityKey:    decodeHex(t, vector.PreKey.IdentityKey),
+		Message:        preKeyMessage,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hex.EncodeToString(preKeyWire); got != vector.PreKeyWire {
+		t.Fatalf("prekey wire mismatch\n got %s\nwant %s", got, vector.PreKeyWire)
 	}
 }
 
