@@ -73,6 +73,22 @@ func (r *Receiver) SetPreKeySource(source PreKeySource) { r.prekeys = source }
 // this to delete the private half.
 func (r *Receiver) SetPreKeyConsumer(consume func(id uint32)) { r.consumePreKey = consume }
 
+// SetDecryptFailureHandler installs a callback invoked with the original
+// stanza whenever an encrypted message fails to open — malformed envelope,
+// missing prekey, failed decrypt, failed unpad. The caller is expected to
+// answer with a retry receipt so the sender re-encrypts to a session this
+// device can open.
+func (r *Receiver) SetDecryptFailureHandler(fn func(node *binary.Node)) {
+	r.onDecryptFailure = fn
+}
+
+// decryptFailed is the nil-safe failure notify.
+func (r *Receiver) decryptFailed(node *binary.Node) {
+	if r.onDecryptFailure != nil {
+		r.onDecryptFailure(node)
+	}
+}
+
 // SetSessionObserver installs a callback invoked whenever a peer session is
 // installed by a bootstrap or advanced by a decrypt. A caller that does not
 // persist it loses the ratchet with the process, and every later msg-carrier
@@ -94,6 +110,7 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed prekey message", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 	// The session belongs to whoever encrypted to us: the sender. Keying by
@@ -103,6 +120,7 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 	_, plaintext, err := r.bootstrapPeer(ctx, envelope, r.prekeys, peer)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping prekey message", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 	// Strip the service's padding before parsing: the trailing pad bytes are
@@ -110,6 +128,7 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 	// failed to parse (PF-087 queue replay).
 	if plaintext, err = stanza.UnpadMessage(plaintext, envelope.Version); err != nil {
 		r.logger.WarnContext(ctx, "dropping prekey message: unpad failed", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 

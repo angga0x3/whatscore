@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	gosignal "os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -149,6 +150,32 @@ func runListen(cfg sendConfig) error {
 		}
 	})
 
+	// A message that will not open is not a dead end: whatsmeow answers it
+	// with a retry receipt, and the sender re-encrypts to a fresh bundle —
+	// one that names keys this device actually holds. The cap stops a
+	// permanently broken message from looping forever.
+	retryMu := sync.Mutex{}
+	retryCounts := map[string]int{}
+	receiver.SetDecryptFailureHandler(func(node *wabinary.Node) {
+		id := node.Attrs["id"]
+		from := node.Attrs["from"]
+		if id == "" || from == "" {
+			return
+		}
+		retryMu.Lock()
+		retryCounts[id]++
+		count := retryCounts[id]
+		retryMu.Unlock()
+		if count > 3 {
+			return
+		}
+		if err := sendRetryReceipt(ctx, sc, codec, node, record.RegistrationID, count); err != nil {
+			fmt.Printf("retry receipt: %v\n", err)
+		} else {
+			fmt.Printf("retry receipt sent for %s (attempt %d)\n", id, count)
+		}
+	})
+
 	d := newDispatcher(sc, codec)
 	// Second chance for stanzas the table almost covers: without it the
 	// offline announcement fails whole on unknown attribute tokens and the
@@ -220,6 +247,20 @@ func runListen(cfg sendConfig) error {
 		fmt.Printf("DIAG prekey count: %v\n", err)
 	} else {
 		fmt.Printf("DIAG server holds %d one-time prekeys\n", n)
+		// An empty store is why senders drift to the signed prekey — and once
+		// one of those messages bootstraps, the key is spent on our side and
+		// every later message becomes unreadable. Top up now; whatsmeow
+		// uploads whenever the count runs low, and the server's own count
+		// re-tests the "repeat upload is refused" reading in PF-082.
+		if n == 0 {
+			if err := publishFreshBatch(ctx, d, record, keys, signer, cfg.KeyPath); err != nil {
+				fmt.Printf("prekeys: top-up failed: %v\n", err)
+			} else if n2, err2 := diagPreKeyCount(ctx, d); err2 != nil {
+				fmt.Printf("DIAG prekey count after top-up: %v\n", err2)
+			} else {
+				fmt.Printf("DIAG server holds %d one-time prekeys after top-up\n", n2)
+			}
+		}
 	}
 
 	if err := setActiveDispatcher(ctx, d); err != nil {
@@ -388,6 +429,41 @@ func (o *offlineQueue) requestBatch(ctx context.Context) error {
 		return err
 	}
 	return o.sc.WriteFrame(ctx, frame)
+}
+
+// sendRetryReceipt asks the sender to re-encrypt a message this device could
+// not open, shaped like whatsmeow's retry receipt (retry.go): the original
+// receipt attrs with type="retry", a <retry count id t v=1> child naming the
+// message, and the device's 4-byte registration id. The sender answers by
+// fetching a fresh bundle and sending a new prekey message.
+func sendRetryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, registrationID uint32, count int) error {
+	var reg [4]byte
+	reg[0] = byte(registrationID >> 24)
+	reg[1] = byte(registrationID >> 16)
+	reg[2] = byte(registrationID >> 8)
+	reg[3] = byte(registrationID)
+	receipt := &wabinary.Node{
+		Tag: "receipt",
+		Attrs: wabinary.Attrs{
+			"id":   node.Attrs["id"],
+			"to":   node.Attrs["from"],
+			"type": "retry",
+		},
+		Children: []wabinary.Node{
+			{Tag: "retry", Attrs: wabinary.Attrs{
+				"count": strconv.Itoa(count),
+				"id":    node.Attrs["id"],
+				"t":     node.Attrs["t"],
+				"v":     "1",
+			}},
+			{Tag: "registration", Bytes: reg[:]},
+		},
+	}
+	frame, err := codec.Encode(receipt)
+	if err != nil {
+		return err
+	}
+	return sc.WriteFrame(ctx, frame)
 }
 
 // sendAvailablePresence marks the device available, the way whatsmeow's

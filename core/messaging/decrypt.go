@@ -40,6 +40,7 @@ func (r *Receiver) handleEnc(ctx context.Context, node *binary.Node) {
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed encrypted message", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 	if envelope.Carrier == stanza.CarrierPKMsg {
@@ -58,17 +59,20 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 	session := r.peers[peer.String()]
 	if session == nil {
 		r.logger.WarnContext(ctx, "dropping encrypted message without session", "peer", peer)
+		r.decryptFailed(node)
 		return
 	}
 
 	attempt, err := session.State.Clone()
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping encrypted message: clone failed", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 	plaintext, err := attempt.Decrypt(envelope.Ciphertext, session.PeerIdentity, r.identity)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping encrypted message: decrypt failed", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 	session.State = attempt
@@ -77,6 +81,7 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 	// Strip the service's padding before parsing (see handlePreKey).
 	if plaintext, err = stanza.UnpadMessage(plaintext, envelope.Version); err != nil {
 		r.logger.WarnContext(ctx, "dropping encrypted message: unpad failed", "error", err)
+		r.decryptFailed(node)
 		return
 	}
 

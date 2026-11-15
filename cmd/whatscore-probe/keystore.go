@@ -105,6 +105,31 @@ func (k *keyFile) save(path string) error {
 	return nil
 }
 
+// publishFreshBatch tops the server up with a brand-new set of one-time
+// prekeys. The private halves are written to disk BEFORE the upload: a crash
+// mid-upload must not orphan a key the server has already handed to peers
+// (PF-085). Silence from the upload is not fatal — the server's own count,
+// queried right after, is the only verdict that matters (PF-082 re-test).
+func publishFreshBatch(ctx context.Context, d *dispatcher, record *credentialRecord, keys *keyFile, signer signal.XEdDSASigner, path string) error {
+	fresh, err := keys.generateFresh(preKeyBatch, signer)
+	if err != nil {
+		return err
+	}
+	signed, err := keys.signedPreKey()
+	if err != nil {
+		return err
+	}
+	if err := keys.save(path); err != nil {
+		return err
+	}
+	if uploadErr := uploadPreKeysVia(ctx, d, record, fresh, *signed); uploadErr != nil {
+		fmt.Printf("prekeys: top-up upload not acknowledged (%v)\n", uploadErr)
+		return nil
+	}
+	keys.Published = true
+	return keys.save(path)
+}
+
 // store converts the file into the receiver's key source.
 func (k *keyFile) store(identity signal.KeyPair) (*preKeyStore, error) {
 	signed, err := k.signedPreKey()
@@ -212,6 +237,22 @@ func (k *keyFile) generate(count int, signer signal.Signer) ([]signal.PreKey, er
 			return nil, fmt.Errorf("signed prekey: %w", err)
 		}
 		k.addSigned(signed)
+	}
+	return added, nil
+}
+
+// generateFresh creates count new one-time prekeys regardless of how many the
+// file already holds, for a top-up upload when the server's count hits zero.
+func (k *keyFile) generateFresh(count int, signer signal.Signer) ([]signal.PreKey, error) {
+	var added []signal.PreKey
+	for i := 0; i < count; i++ {
+		key, err := signal.GeneratePreKey(k.NextOneTimeID)
+		if err != nil {
+			return nil, fmt.Errorf("one-time prekey %d: %w", k.NextOneTimeID, err)
+		}
+		k.NextOneTimeID++
+		k.addOneTime(key)
+		added = append(added, key)
 	}
 	return added, nil
 }

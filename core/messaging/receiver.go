@@ -32,6 +32,12 @@ type Receiver struct {
 	// ratchet advances, so a persistent store can keep the state a later run
 	// needs to decrypt the msg-carrier follow-ups (PF-087 redelivery).
 	observeSession func(peer string, session *PeerSession)
+
+	// onDecryptFailure is invoked with the original stanza whenever an
+	// encrypted message could not be opened, so the caller can send the
+	// sender a retry receipt and receive the message re-encrypted to a
+	// session this device can actually open (whatsmeow SendRetryReceipt).
+	onDecryptFailure func(node *binary.Node)
 }
 
 // ReceiverOption configures a Receiver.

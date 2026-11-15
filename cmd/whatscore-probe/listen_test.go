@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"os"
 	"testing"
 	"time"
@@ -655,5 +656,60 @@ func TestSessionsPersistAcrossRuns(t *testing.T) {
 	ev = waitForMessage(t, sub)
 	if ev.Message.Text != "kedua dari phone" {
 		t.Fatalf("follow-up text = %q", ev.Message.Text)
+	}
+}
+
+// TestRetryReceiptShape pins the stanza that turns a message this device
+// cannot open into one it can: the sender answers it by fetching a fresh
+// bundle and re-encrypting (whatsmeow retry.go SendRetryReceipt).
+func TestRetryReceiptShape(t *testing.T) {
+	conn := newCaptureConn()
+	orig := &wabinary.Node{
+		Tag: "message",
+		Attrs: wabinary.Attrs{
+			"id": "3EB00120C39FC05B2F4CDB", "from": "266988689592415:35@lid",
+			"t": "1794751484", "type": "text",
+		},
+	}
+	const registrationID = uint32(884371735)
+	if err := sendRetryReceipt(context.Background(), conn, wabinary.NewCodec(nil), orig, registrationID, 1); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+
+	select {
+	case frame := <-conn.written:
+		node, err := wabinary.NewCodec(nil).Decode(bytes.NewReader(frame))
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if node.Tag != "receipt" {
+			t.Fatalf("tag = %q", node.Tag)
+		}
+		if node.Attrs["type"] != "retry" {
+			t.Fatalf("type = %q, want retry", node.Attrs["type"])
+		}
+		if node.Attrs["to"] != orig.Attrs["from"] {
+			t.Fatalf("to = %q, want the sender", node.Attrs["to"])
+		}
+		retry := child(node, "retry")
+		if retry == nil {
+			t.Fatal("no <retry> child")
+		}
+		for k, want := range map[string]string{
+			"count": "1", "id": orig.Attrs["id"], "t": orig.Attrs["t"], "v": "1",
+		} {
+			if got := retry.Attrs[k]; got != want {
+				t.Fatalf("retry.%s = %q, want %q", k, got, want)
+			}
+		}
+		reg := childBytes(node, "registration")
+		if len(reg) != 4 {
+			t.Fatalf("registration is %d bytes, want 4", len(reg))
+		}
+		if got := binary.BigEndian.Uint32(reg); got != registrationID {
+			t.Fatalf("registration = %d, want %d", got, registrationID)
+		}
+	default:
+		t.Fatal("a decryption failure earned no retry receipt on the wire")
 	}
 }
