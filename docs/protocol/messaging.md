@@ -238,3 +238,33 @@ A real client must:
 - treat `conflict type="replaced"` as "another instance took over", not as a
   protocol error to retry into;
 - never open a second socket for a send while the read loop is live.
+
+## PF-087: The server can hold a queue and never deliver it
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-087 |
+| **Title** | After login the server reports pending messages with `<ib><offline_preview message="N" …/></ib>` and then **may not send any of them**; a receive path that only waits will report success while nothing arrives |
+| **Layer** | transport |
+| **Source** | direct observation of own session, repeated |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed that the queue is announced and not delivered |
+| **Status** | Open — cause not established |
+| **Proving test** | `cmd/whatscore-probe -listen` live runs: `offline_preview` reported `message=24`, the socket stayed established for three minutes, and zero `message` stanzas arrived |
+| **Related findings** | PF-086, PF-088 |
+| **Notes** | Earlier in the same account's history, `message` stanzas *were* delivered (during pairing, before any `-listen` run), so the transport and the shape are known good. What changed between then and now is not established. Candidate causes, none confirmed: the server considers the device's session with the phone stale and will not encrypt to it; the queue is addressed to a signed prekey this device no longer holds (PF-085); or the queue needs a stanza we do not send. **This is deliberately not written as a conclusion.** What is proven is the failure mode: a client that treats "connected and quiet" as healthy will silently lose every queued message. |
+
+## PF-088: Silent logging hides a broken receive path
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-088 |
+| **Title** | A dropped decryption failure is indistinguishable from "no message arrived", so a receive path must log its failures or it cannot be diagnosed |
+| **Layer** | messaging |
+| **Source** | direct observation of own debugging |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` — `NewReceiver` defaults to `slog.DiscardHandler`, and the probe now passes a debug handler |
+| **Related findings** | PF-087 |
+| **Notes** | `core/messaging.NewReceiver` discards its logger by default, which is reasonable for a library and wrong for an operator-facing tool: `bad message MAC`, a missing prekey, and a malformed envelope all became the same observable — nothing. The probe now logs at debug level, and the listen path reports a closed connection as an error instead of waiting out the timeout and printing "window ended". Both changes exist because the first live receive attempt produced a log that could not distinguish success from silent failure. |

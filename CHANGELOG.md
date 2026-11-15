@@ -73,6 +73,16 @@ project is pre-1.0, so breaking changes happen in minor versions.
   read for itself and silently discarded whatever else arrived, which is how the
   inbound backlog was thrown away during a send.
 
+### Changed
+
+- `-listen` reported a dead connection as "listen window ended". It now fails
+  with the transport error, which is how an evicted session (PF-086) stops
+  looking like a quiet one.
+- The probe's receiver logs at debug level instead of discarding. A dropped
+  `bad message MAC` and "no message arrived" were previously the same
+  observation, which made the first live receive attempt undiagnosable
+  (PF-088).
+
 ### Known limits
 
 - Sending is proven: the server acknowledged a real text message and attached a
@@ -82,8 +92,11 @@ project is pre-1.0, so breaking changes happen in minor versions.
   run discarded, so they cannot be opened. Messages sent to this device **after**
   a run that wrote its key file can be decrypted; that has not yet been shown
   against the live service.
-- The server does not answer a repeated prekey upload. Whether that is
-  "already set" or a rejection is unknown; the client treats it as non-fatal.
+- Live receive has **not** been demonstrated. The server announced a queue of
+  24 messages, the socket stayed up for three minutes, and none were delivered
+  (PF-087). The cause is not established. The earlier theory — that a repeated
+  prekey upload was being refused — was wrong: the upload request was malformed
+  (two-byte key ids instead of three), which is now fixed and acknowledged.
 - The token table is partial by design: it covers only what the server has
   actually sent to this project, and any other stanza still fails loudly.
 

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
 	gosignal "os/signal"
 	"syscall"
 	"time"
@@ -100,7 +102,12 @@ func runListen(cfg sendConfig) error {
 	sub := bus.Subscribe()
 	defer sub.Close()
 
-	receiver, err := coremessaging.NewReceiver(bus, "probe", coremessaging.WithReceiverCodec(codec))
+	// A silent logger turns every decryption failure into "no message arrived",
+	// which is exactly the wrong answer when diagnosing a receive path.
+	receiver, err := coremessaging.NewReceiver(bus, "probe",
+		coremessaging.WithReceiverCodec(codec),
+		coremessaging.WithReceiverLogger(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))),
+	)
 	if err != nil {
 		return err
 	}
@@ -187,11 +194,24 @@ func runListen(cfg sendConfig) error {
 
 	fmt.Println("\nlistening for inbound messages...")
 
-	<-ctx.Done()
-	d.shutdown()
-	<-loopDone
-	fmt.Println("\nlisten window ended")
-	return nil
+	// Wait for the window to close or for the connection to end, whichever comes
+	// first. Waiting only on the context made a dead socket look identical to a
+	// quiet one: the process sat silent for the full timeout and then reported
+	// "window ended", which is a false negative an operator cannot see through.
+	select {
+	case <-ctx.Done():
+		d.shutdown()
+		<-loopDone
+		fmt.Println("\nlisten window ended")
+		return nil
+	case <-loopDone:
+		if err := d.readError(); err != nil {
+			fmt.Printf("\nconnection ended: %v\n", err)
+			return fmt.Errorf("connection ended while listening: %w", err)
+		}
+		fmt.Println("\nconnection closed by the server")
+		return nil
+	}
 }
 
 // awaitSuccessVerdict consumes the login verdict from the dispatcher's stream.
