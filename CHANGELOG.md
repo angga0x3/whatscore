@@ -18,6 +18,13 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- Provisioning completes and the phone releases the "keep both apps open"
+  banner. The full sequence ran live after a fresh pairing: login → prekey
+  top-up (the count query answered) → app state sync request → the phone
+  pushed 11 key shares unprompted → 15 patches fetched, 39/39 mutations
+  verified and decoded, zero skipped → history chunks ACK'd with hist_sync
+  receipts, each confirmed by the server. The offline queue drained with its
+  marker on the same run.
 - Live media receive, proven end to end: after a fresh pairing, a sticker
   sent from the phone arrived, decrypted, downloaded from the real CDN,
   passed the SHA-256 check, and landed on disk as a valid 51 KB WebP — the
