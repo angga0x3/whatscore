@@ -93,6 +93,90 @@ func (x *WhisperMessage) GetCiphertext() []byte {
 	return nil
 }
 
+type PreKeySignalMessage struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	RegistrationId *uint32                `protobuf:"varint,5,opt,name=registrationId" json:"registrationId,omitempty"`
+	PreKeyId       *uint32                `protobuf:"varint,1,opt,name=preKeyId" json:"preKeyId,omitempty"`
+	SignedPreKeyId *uint32                `protobuf:"varint,6,opt,name=signedPreKeyId" json:"signedPreKeyId,omitempty"`
+	BaseKey        []byte                 `protobuf:"bytes,2,opt,name=baseKey" json:"baseKey,omitempty"`
+	IdentityKey    []byte                 `protobuf:"bytes,3,opt,name=identityKey" json:"identityKey,omitempty"`
+	Message        []byte                 `protobuf:"bytes,4,opt,name=message" json:"message,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *PreKeySignalMessage) Reset() {
+	*x = PreKeySignalMessage{}
+	mi := &file_signal_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PreKeySignalMessage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PreKeySignalMessage) ProtoMessage() {}
+
+func (x *PreKeySignalMessage) ProtoReflect() protoreflect.Message {
+	mi := &file_signal_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PreKeySignalMessage.ProtoReflect.Descriptor instead.
+func (*PreKeySignalMessage) Descriptor() ([]byte, []int) {
+	return file_signal_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PreKeySignalMessage) GetRegistrationId() uint32 {
+	if x != nil && x.RegistrationId != nil {
+		return *x.RegistrationId
+	}
+	return 0
+}
+
+func (x *PreKeySignalMessage) GetPreKeyId() uint32 {
+	if x != nil && x.PreKeyId != nil {
+		return *x.PreKeyId
+	}
+	return 0
+}
+
+func (x *PreKeySignalMessage) GetSignedPreKeyId() uint32 {
+	if x != nil && x.SignedPreKeyId != nil {
+		return *x.SignedPreKeyId
+	}
+	return 0
+}
+
+func (x *PreKeySignalMessage) GetBaseKey() []byte {
+	if x != nil {
+		return x.BaseKey
+	}
+	return nil
+}
+
+func (x *PreKeySignalMessage) GetIdentityKey() []byte {
+	if x != nil {
+		return x.IdentityKey
+	}
+	return nil
+}
+
+func (x *PreKeySignalMessage) GetMessage() []byte {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
 var File_signal_proto protoreflect.FileDescriptor
 
 const file_signal_proto_rawDesc = "" +
@@ -106,7 +190,14 @@ const file_signal_proto_rawDesc = "" +
 	"\x0fpreviousCounter\x18\x03 \x01(\rR\x0fpreviousCounter\x12\x1e\n" +
 	"\n" +
 	"ciphertext\x18\x04 \x01(\fR\n" +
-	"ciphertextB1Z/github.com/angga0x3/whatscore/protocol/protobuf"
+	"ciphertext\"\xd7\x01\n" +
+	"\x13PreKeySignalMessage\x12&\n" +
+	"\x0eregistrationId\x18\x05 \x01(\rR\x0eregistrationId\x12\x1a\n" +
+	"\bpreKeyId\x18\x01 \x01(\rR\bpreKeyId\x12&\n" +
+	"\x0esignedPreKeyId\x18\x06 \x01(\rR\x0esignedPreKeyId\x12\x18\n" +
+	"\abaseKey\x18\x02 \x01(\fR\abaseKey\x12 \n" +
+	"\videntityKey\x18\x03 \x01(\fR\videntityKey\x12\x18\n" +
+	"\amessage\x18\x04 \x01(\fR\amessageB1Z/github.com/angga0x3/whatscore/protocol/protobuf"
 
 var (
 	file_signal_proto_rawDescOnce sync.Once
@@ -120,9 +211,10 @@ func file_signal_proto_rawDescGZIP() []byte {
 	return file_signal_proto_rawDescData
 }
 
-var file_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 1)
+var file_signal_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
 var file_signal_proto_goTypes = []any{
-	(*WhisperMessage)(nil), // 0: whatscore.protocol.protobuf.WhisperMessage
+	(*WhisperMessage)(nil),      // 0: whatscore.protocol.protobuf.WhisperMessage
+	(*PreKeySignalMessage)(nil), // 1: whatscore.protocol.protobuf.PreKeySignalMessage
 }
 var file_signal_proto_depIdxs = []int32{
 	0, // [0:0] is the sub-list for method output_type
@@ -143,7 +235,7 @@ func file_signal_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_signal_proto_rawDesc), len(file_signal_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   1,
+			NumMessages:   2,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

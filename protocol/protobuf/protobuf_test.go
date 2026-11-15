@@ -204,3 +204,25 @@ func TestWhisperMessageWireFields(t *testing.T) {
 		t.Fatalf("WhisperMessage fields = %v", fields)
 	}
 }
+
+func TestPreKeySignalMessageWireFields(t *testing.T) {
+	registration, preKey, signedPreKey := uint32(1), uint32(2), uint32(3)
+	message := &protobuf.PreKeySignalMessage{
+		RegistrationId: &registration,
+		PreKeyId:       &preKey,
+		SignedPreKeyId: &signedPreKey,
+		BaseKey:        bytes.Repeat([]byte{0x01}, 33),
+		IdentityKey:    bytes.Repeat([]byte{0x02}, 33),
+		Message:        []byte("signal message"),
+	}
+	raw := roundTrip(t, message)
+	fields := splitFields(t, raw)
+	for number, want := range map[protowire.Number]protowire.Type{
+		1: protowire.VarintType, 2: protowire.BytesType, 3: protowire.BytesType,
+		4: protowire.BytesType, 5: protowire.VarintType, 6: protowire.VarintType,
+	} {
+		if fields[number] != want {
+			t.Fatalf("PreKeySignalMessage field %d type = %v, want %v (%v)", number, fields[number], want, fields)
+		}
+	}
+}

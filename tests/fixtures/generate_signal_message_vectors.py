@@ -63,6 +63,19 @@ def main():
         MAC_KEY, b"\x05" + SENDER + b"\x05" + RECEIVER + body, hashlib.sha256
     ).digest()[:8]
 
+    prekey_base = bytes([0x33]) * 32
+    prekey_identity = bytes([0x44]) * 32
+    prekey_message = b"embedded-signal-message"
+    prekey_proto = (
+        field_varint(1, 9)
+        + field_bytes(2, b"\x05" + prekey_base)
+        + field_bytes(3, b"\x05" + prekey_identity)
+        + field_bytes(4, prekey_message)
+        + field_varint(5, 1234)
+        + field_varint(6, 7)
+    )
+    prekey_wire = b"\x33" + prekey_proto
+
     print(
         json.dumps(
             {
@@ -77,6 +90,15 @@ def main():
                 "plaintext": PLAINTEXT.hex(),
                 "ciphertext": ciphertext.hex(),
                 "wire": (body + mac).hex(),
+                "prekey": {
+                    "registration_id": 1234,
+                    "pre_key_id": 9,
+                    "signed_pre_key_id": 7,
+                    "base_key": prekey_base.hex(),
+                    "identity_key": prekey_identity.hex(),
+                    "message": prekey_message.hex(),
+                },
+                "prekey_wire": prekey_wire.hex(),
             },
             indent=2,
         )
