@@ -1,17 +1,17 @@
 // Command whatscore-probe performs a read-only reachability probe of the
-// WhatsApp Web transport: dial, send the intro header, run Noise msg1, and read
-// the server's msg2. It never pairs, never authenticates, and never sends a
-// message.
+// WhatsApp Web transport: dial, send the intro header, run the Noise handshake
+// with a real registration ClientPayload, then read what the server answers.
 //
-// Its only purpose is to raise the confidence of the transport findings
-// (PF-002, PF-003, PF-004..PF-009) against the real endpoint. A failure is also
-// a result: it tells us which layer diverges first.
+// It never pairs, never authenticates an account, and never sends a message.
+// Its purpose is to prove the transport, the handshake, and the auth payload
+// against the real endpoint; a failure is also a result, because it names the
+// layer that diverges first.
 package main
 
 import (
 	"context"
 	"crypto/rand"
-	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"flag"
 	"fmt"
@@ -19,7 +19,9 @@ import (
 	"time"
 
 	"github.com/angga0x3/whatscore/internal/waref"
+	"github.com/angga0x3/whatscore/protocol/auth"
 	"github.com/angga0x3/whatscore/protocol/noise"
+	"github.com/angga0x3/whatscore/protocol/protobuf"
 	"github.com/angga0x3/whatscore/protocol/transport"
 )
 
@@ -57,7 +59,7 @@ func (o outcome) String() string {
 func main() {
 	endpoint := flag.String("endpoint", transport.DefaultURL, "WebSocket endpoint to probe")
 	timeout := flag.Duration("timeout", 20*time.Second, "overall probe deadline")
-	payload := flag.Bool("payload", false, "send a minimal synthetic ClientPayload in msg3 (still no auth)")
+	payload := flag.Bool("payload", false, "send a complete registration ClientPayload and read the server's answer")
 	printRoot := flag.Bool("root", false, "print the pinned root key and exit")
 	flag.Parse()
 
@@ -116,9 +118,15 @@ func probeWithRoot(ctx context.Context, endpoint string, timeout time.Duration, 
 		return Result{Outcome: outcomeUnknown, Detail: err.Error()}, err
 	}
 
+	// -payload sends a structurally complete registration payload with fresh
+	// keys, which is what the server needs before it answers (PF-068).
 	var payload []byte
 	if sendPayload {
-		payload = syntheticPayload()
+		built, buildErr := buildRegistrationPayload()
+		if buildErr != nil {
+			return Result{Outcome: outcomeUnknown, Detail: buildErr.Error()}, buildErr
+		}
+		payload = built
 	}
 
 	sc, err := noise.DoClientHandshake(ctx, fr, noiseKey, rootPub, payload)
@@ -130,18 +138,74 @@ func probeWithRoot(ctx context.Context, endpoint string, timeout time.Duration, 
 	}
 	defer func() { _ = sc.Close() }()
 
+	// Read whatever the server answers. With an incomplete payload it closes
+	// the socket without a stanza (PF-068); with a complete one it speaks.
+	reply, replyErr := sc.ReadFrame(ctx)
+	if replyErr != nil {
+		return Result{
+			Outcome: outcomeHandshakeCompleted,
+			Detail: fmt.Sprintf("cipher suite %s established, then %v",
+				sc.CipherSuiteName(), replyErr),
+		}, nil
+	}
 	return Result{
 		Outcome: outcomeHandshakeCompleted,
-		Detail:  fmt.Sprintf("cipher suite %s established", sc.CipherSuiteName()),
+		Detail: fmt.Sprintf("cipher suite %s established; server answered %d bytes (first %x)",
+			sc.CipherSuiteName(), len(reply), reply[:minInt(16, len(reply))]),
 	}, nil
 }
 
-// syntheticPayload is a minimal, obviously fake registration payload used only
-// to exercise msg3. It carries no account material.
-func syntheticPayload() []byte {
-	var buf [64]byte
-	if _, err := rand.Read(buf[:]); err != nil {
-		return []byte("whatscore-probe")
+// buildRegistrationPayload builds a complete registration ClientPayload with
+// fresh key material. No token table is involved: this is protobuf inside the
+// Noise msg3 payload, not the binary node format.
+func buildRegistrationPayload() ([]byte, error) {
+	identity, err := noise.GenerateKeyPair()
+	if err != nil {
+		return nil, err
 	}
-	return []byte("whatscore-probe:" + base64.RawURLEncoding.EncodeToString(buf[:]))
+	signed, err := noise.GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+	var registrationID [4]byte
+	if _, err := rand.Read(registrationID[:]); err != nil {
+		return nil, err
+	}
+	return auth.BuildClientPayload(auth.Input{
+		Version: auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
+		UserAgent: auth.UserAgent{
+			Platform:       protobuf.ClientPayload_UserAgent_WEB,
+			ReleaseChannel: protobuf.ClientPayload_UserAgent_RELEASE,
+			MCC:            "000",
+			MNC:            "000",
+			OSVersion:      "0.1",
+			Device:         "Desktop",
+			OSBuildNumber:  "0.1",
+			LocaleLanguage: "en",
+			LocaleCountry:  "US",
+		},
+		WebInfo:       auth.WebInfo{SubPlatform: protobuf.ClientPayload_WebInfo_WEB_BROWSER},
+		ConnectType:   protobuf.ClientPayload_WIFI_UNKNOWN,
+		ConnectReason: protobuf.ClientPayload_USER_ACTIVATED,
+		Registration: auth.Registration{
+			RegistrationID:        binary.BigEndian.Uint32(registrationID[:]),
+			IdentityKey:           identity.Pub[:],
+			SignedPreKeyID:        1,
+			SignedPreKey:          signed.Pub[:],
+			SignedPreKeySignature: make([]byte, 64),
+		},
+		DeviceProps: auth.DeviceProps{
+			OS:           "whatsmeow",
+			Version:      auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
+			PlatformType: protobuf.DeviceProps_UNKNOWN,
+		},
+	})
+}
+
+// minInt avoids shadowing the builtin min, which the linter flags.
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

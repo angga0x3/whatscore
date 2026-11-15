@@ -172,24 +172,24 @@ against a fake server: no live registration, pairing, or login run is
 recorded, so findings stay Probable. ADVSignedDeviceIdentity signing and
 credential provisioning remain out of scope.
 
-## PF-068: The server closes the connection after msg3 when the payload is incomplete
+## PF-068: The server answers a complete registration payload
 
 | Field | Value |
 |-------|-------|
 | **ID** | PF-068 |
-| **Title** | After a valid Noise handshake, the real server closes the WebSocket (1006) as soon as it reads a ClientPayload that lacks a complete `DevicePairingRegistrationData`; it sends no `<success>`, `<failure>`, or `stream:error` first |
+| **Title** | After a valid Noise handshake the server answers a structurally complete registration `ClientPayload` (real identity and signed-prekey keys, `historySyncConfig`-shaped `DeviceProps`) with a binary node carrying six base64 pairing refs; an incomplete payload — or no payload at all — makes it close the socket (1006) without sending a stanza |
 | **Layer** | auth |
 | **Source** | direct observation of own session |
 | **Observed date** | 2026-11-15 |
 | **Confidence** | Confirmed |
 | **Status** | Verified-by-test |
-| **Proving test** | `cmd/whatscore-probe` live runs (handshake completes, then read fails with close 1006) |
-| **Related findings** | PF-007, PF-020, PF-023 |
-| **Notes** | Two payloads were tried against `wss://web.whatsapp.com/ws/chat`: an opaque byte string, and a minimal valid protobuf (`passive=false`, `pull=true`). Both completed the handshake and were then followed by an immediate 1006 close with zero bytes of application data. This is a real result, not a test gap: it means the registration payload must carry the full prekey material (`eRegid`, `eKeytype`, `eIdent`, `eSkeyID`, `eSkeyVal`, `eSkeySig`, `buildHash`, `deviceProps`) before the server will respond. It also means a connection that reports `CONNECTED` after handshake alone is reporting nothing — which is why `AuthConnector` now gates on the verdict. |
+| **Proving test** | `cmd/whatscore-probe -payload` (live: `server answered 679 bytes`), plus the no-payload run that closes 1006 |
+| **Related findings** | PF-007, PF-020, PF-023, PF-024 |
+| **Notes** | The decisive variable is **valid key material, not the token table**: payloads built by `protocol/auth` with zero-filled identity/signed-prekey keys were rejected, while the same builder with freshly generated keys was accepted and produced a 679-byte reply. A payload produced by whatsmeow was accepted the same way, which isolates the failure to the key values rather than the protobuf shape. The reply decodes as a node whose children carry base64 `ref` payloads (`f8 0a … 06 fa 00 03 04 5a 08 …`), i.e. the `pair-device` stage of PF-016 — but decoding it needs the token table, since the empty dictionary fails with `unknown token: single-byte index 25`. That is the concrete proof that the table is the next blocker, and it is the first time this project has seen the server's own stanza. |
 
 ---
 
-Status: both payload forms are implemented, signed-prekey material is generated, and
-the live server's behaviour on an incomplete payload is recorded (PF-068). The
-next live step needs a complete registration payload, which in turn needs the
-token table for the stanza layer.
+Status: registration payloads are accepted live when built with real keys (PF-068),
+which is the first stage of pairing to work end to end. Reading the server's
+reply requires the token table (ADR 0002), and that is the only remaining
+blocker for the pairing milestone.

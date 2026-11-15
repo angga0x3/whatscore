@@ -151,9 +151,9 @@ PF-050…PF-059.
 
 | Blocker | State | What changed |
 |---------|-------|--------------|
-| Token table (spec §10.2) | **Decided** — ADR 0002: operator data | `WHATSAPP_TOKEN_DICTIONARY` + startup validation; nothing table-shaped ships in the repo |
+| Token table (spec §10.2) | **Decided + now the single blocker** | ADR 0002 makes it operator data; PF-068 shows the server's reply cannot be decoded without it, so pairing stops here until a table is supplied |
 | XEdDSA signing (ADR 0001) | **Resolved** — implemented, validated against reference vectors | `internal/xeddsa` signs; vectors come from `go.mau.fi/libsignal v0.2.2`, and the verifier must accept them (PF-067) |
-| Auth acceptance live | **Measured, failing** (PF-068) | The server closes 1006 after msg3 when the payload is incomplete. A complete registration payload needs the token table, so this is downstream of the table decision, not a separate problem |
+| Auth acceptance live | **Resolved** (PF-068) | A registration payload with real keys is accepted and answered; the earlier 1006 close was caused by zero-filled test keys, not by the payload shape |
 
 Nothing else in the stack is blocked: transport, Noise, Signal, media, sync,
 REST, and the SDK all have green tests and only need the three items above to

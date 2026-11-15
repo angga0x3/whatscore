@@ -85,13 +85,33 @@ type Registration struct {
 	SignedPreKeySignature []byte
 }
 
+// HistorySync is the capability block the server expects in DeviceProps
+// (PF-069). Every field is explicit so nothing is guessed.
+type HistorySync struct {
+	StorageQuotaMB                 uint32
+	InlineInitialPayload           bool
+	SupportCallLogHistory          bool
+	SupportBotUserAgentChatHistory bool
+	SupportCagReactionsAndPolls    bool
+	SupportBizHostedMsg            bool
+	SupportRecentSyncChunkTuning   bool
+	SupportHostedGroupMsg          bool
+	SupportFbidBotChatHistory      bool
+	SupportMessageAssociation      bool
+	SupportGroupHistory            bool
+	ThumbnailSyncDaysLimit         uint32
+	SupportManusHistory            bool
+	SupportHatchHistory            bool
+}
+
 // DeviceProps is the companion DeviceProps message carried inside the
-// registration data (PF-024). HistorySyncConfig is out of scope.
+// registration data (PF-024, PF-069).
 type DeviceProps struct {
 	OS              string
 	Version         Version
 	PlatformType    protobuf.DeviceProps_PlatformType
 	RequireFullSync bool
+	HistorySync     *HistorySync
 }
 
 // Input is the typed input for BuildClientPayload.
@@ -385,13 +405,39 @@ func marshalDeviceProps(props DeviceProps) ([]byte, error) {
 			Secondary: proto.Uint32(props.Version.Secondary),
 			Tertiary:  proto.Uint32(props.Version.Tertiary),
 		},
-		PlatformType:    props.PlatformType.Enum(),
-		RequireFullSync: proto.Bool(props.RequireFullSync),
+		PlatformType:      props.PlatformType.Enum(),
+		RequireFullSync:   proto.Bool(props.RequireFullSync),
+		HistorySyncConfig: historySyncConfig(props.HistorySync),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("%w: marshaling: %w", ErrInvalidDeviceProps, err)
 	}
 	return raw, nil
+}
+
+// historySyncConfig emits the PF-069 capability block. A nil HistorySync in
+// the input keeps the field absent, so callers that do not need it are not
+// forced to guess values.
+func historySyncConfig(h *HistorySync) *protobuf.DeviceProps_HistorySyncConfig {
+	if h == nil {
+		return nil
+	}
+	return &protobuf.DeviceProps_HistorySyncConfig{
+		StorageQuotaMb:                           proto.Uint32(h.StorageQuotaMB),
+		InlineInitialPayloadInE2EeMsg:            proto.Bool(h.InlineInitialPayload),
+		SupportCallLogHistory:                    proto.Bool(h.SupportCallLogHistory),
+		SupportBotUserAgentChatHistory:           proto.Bool(h.SupportBotUserAgentChatHistory),
+		SupportCagReactionsAndPolls:              proto.Bool(h.SupportCagReactionsAndPolls),
+		SupportBizHostedMsg:                      proto.Bool(h.SupportBizHostedMsg),
+		SupportRecentSyncChunkMessageCountTuning: proto.Bool(h.SupportRecentSyncChunkTuning),
+		SupportHostedGroupMsg:                    proto.Bool(h.SupportHostedGroupMsg),
+		SupportFbidBotChatHistory:                proto.Bool(h.SupportFbidBotChatHistory),
+		SupportMessageAssociation:                proto.Bool(h.SupportMessageAssociation),
+		SupportGroupHistory:                      proto.Bool(h.SupportGroupHistory),
+		ThumbnailSyncDaysLimit:                   proto.Uint32(h.ThumbnailSyncDaysLimit),
+		SupportManusHistory:                      proto.Bool(h.SupportManusHistory),
+		SupportHatchHistory:                      proto.Bool(h.SupportHatchHistory),
+	}
 }
 
 func validateInput(in Input) error {

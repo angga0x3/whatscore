@@ -746,13 +746,14 @@ func (x *ClientPayload) GetLidDbMigrated() bool {
 }
 
 type DeviceProps struct {
-	state           protoimpl.MessageState    `protogen:"open.v1"`
-	Os              *string                   `protobuf:"bytes,1,opt,name=os" json:"os,omitempty"`
-	Version         *DeviceProps_AppVersion   `protobuf:"bytes,2,opt,name=version" json:"version,omitempty"`
-	PlatformType    *DeviceProps_PlatformType `protobuf:"varint,3,opt,name=platformType,enum=whatscore.protocol.protobuf.DeviceProps_PlatformType" json:"platformType,omitempty"`
-	RequireFullSync *bool                     `protobuf:"varint,4,opt,name=requireFullSync" json:"requireFullSync,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state             protoimpl.MessageState         `protogen:"open.v1"`
+	Os                *string                        `protobuf:"bytes,1,opt,name=os" json:"os,omitempty"`
+	Version           *DeviceProps_AppVersion        `protobuf:"bytes,2,opt,name=version" json:"version,omitempty"`
+	PlatformType      *DeviceProps_PlatformType      `protobuf:"varint,3,opt,name=platformType,enum=whatscore.protocol.protobuf.DeviceProps_PlatformType" json:"platformType,omitempty"`
+	RequireFullSync   *bool                          `protobuf:"varint,4,opt,name=requireFullSync" json:"requireFullSync,omitempty"`
+	HistorySyncConfig *DeviceProps_HistorySyncConfig `protobuf:"bytes,5,opt,name=historySyncConfig" json:"historySyncConfig,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *DeviceProps) Reset() {
@@ -811,6 +812,13 @@ func (x *DeviceProps) GetRequireFullSync() bool {
 		return *x.RequireFullSync
 	}
 	return false
+}
+
+func (x *DeviceProps) GetHistorySyncConfig() *DeviceProps_HistorySyncConfig {
+	if x != nil {
+		return x.HistorySyncConfig
+	}
+	return nil
 }
 
 type ClientPayload_UserAgent struct {
@@ -1233,6 +1241,218 @@ func (x *DeviceProps_AppVersion) GetQuinary() uint32 {
 	return 0
 }
 
+type DeviceProps_HistorySyncConfig struct {
+	state                                    protoimpl.MessageState `protogen:"open.v1"`
+	FullSyncDaysLimit                        *uint32                `protobuf:"varint,1,opt,name=fullSyncDaysLimit" json:"fullSyncDaysLimit,omitempty"`
+	FullSyncSizeMbLimit                      *uint32                `protobuf:"varint,2,opt,name=fullSyncSizeMbLimit" json:"fullSyncSizeMbLimit,omitempty"`
+	StorageQuotaMb                           *uint32                `protobuf:"varint,3,opt,name=storageQuotaMb" json:"storageQuotaMb,omitempty"`
+	InlineInitialPayloadInE2EeMsg            *bool                  `protobuf:"varint,4,opt,name=inlineInitialPayloadInE2EeMsg" json:"inlineInitialPayloadInE2EeMsg,omitempty"`
+	RecentSyncDaysLimit                      *uint32                `protobuf:"varint,5,opt,name=recentSyncDaysLimit" json:"recentSyncDaysLimit,omitempty"`
+	SupportCallLogHistory                    *bool                  `protobuf:"varint,6,opt,name=supportCallLogHistory" json:"supportCallLogHistory,omitempty"`
+	SupportBotUserAgentChatHistory           *bool                  `protobuf:"varint,7,opt,name=supportBotUserAgentChatHistory" json:"supportBotUserAgentChatHistory,omitempty"`
+	SupportCagReactionsAndPolls              *bool                  `protobuf:"varint,8,opt,name=supportCagReactionsAndPolls" json:"supportCagReactionsAndPolls,omitempty"`
+	SupportBizHostedMsg                      *bool                  `protobuf:"varint,9,opt,name=supportBizHostedMsg" json:"supportBizHostedMsg,omitempty"`
+	SupportRecentSyncChunkMessageCountTuning *bool                  `protobuf:"varint,10,opt,name=supportRecentSyncChunkMessageCountTuning" json:"supportRecentSyncChunkMessageCountTuning,omitempty"`
+	SupportHostedGroupMsg                    *bool                  `protobuf:"varint,11,opt,name=supportHostedGroupMsg" json:"supportHostedGroupMsg,omitempty"`
+	SupportFbidBotChatHistory                *bool                  `protobuf:"varint,12,opt,name=supportFbidBotChatHistory" json:"supportFbidBotChatHistory,omitempty"`
+	SupportAddOnHistorySyncMigration         *bool                  `protobuf:"varint,13,opt,name=supportAddOnHistorySyncMigration" json:"supportAddOnHistorySyncMigration,omitempty"`
+	SupportMessageAssociation                *bool                  `protobuf:"varint,14,opt,name=supportMessageAssociation" json:"supportMessageAssociation,omitempty"`
+	SupportGroupHistory                      *bool                  `protobuf:"varint,15,opt,name=supportGroupHistory" json:"supportGroupHistory,omitempty"`
+	OnDemandReady                            *bool                  `protobuf:"varint,16,opt,name=onDemandReady" json:"onDemandReady,omitempty"`
+	SupportGuestChat                         *bool                  `protobuf:"varint,17,opt,name=supportGuestChat" json:"supportGuestChat,omitempty"`
+	CompleteOnDemandReady                    *bool                  `protobuf:"varint,18,opt,name=completeOnDemandReady" json:"completeOnDemandReady,omitempty"`
+	ThumbnailSyncDaysLimit                   *uint32                `protobuf:"varint,19,opt,name=thumbnailSyncDaysLimit" json:"thumbnailSyncDaysLimit,omitempty"`
+	InitialSyncMaxMessagesPerChat            *uint32                `protobuf:"varint,20,opt,name=initialSyncMaxMessagesPerChat" json:"initialSyncMaxMessagesPerChat,omitempty"`
+	SupportManusHistory                      *bool                  `protobuf:"varint,21,opt,name=supportManusHistory" json:"supportManusHistory,omitempty"`
+	SupportHatchHistory                      *bool                  `protobuf:"varint,22,opt,name=supportHatchHistory" json:"supportHatchHistory,omitempty"`
+	unknownFields                            protoimpl.UnknownFields
+	sizeCache                                protoimpl.SizeCache
+}
+
+func (x *DeviceProps_HistorySyncConfig) Reset() {
+	*x = DeviceProps_HistorySyncConfig{}
+	mi := &file_auth_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeviceProps_HistorySyncConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeviceProps_HistorySyncConfig) ProtoMessage() {}
+
+func (x *DeviceProps_HistorySyncConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeviceProps_HistorySyncConfig.ProtoReflect.Descriptor instead.
+func (*DeviceProps_HistorySyncConfig) Descriptor() ([]byte, []int) {
+	return file_auth_proto_rawDescGZIP(), []int{1, 1}
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetFullSyncDaysLimit() uint32 {
+	if x != nil && x.FullSyncDaysLimit != nil {
+		return *x.FullSyncDaysLimit
+	}
+	return 0
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetFullSyncSizeMbLimit() uint32 {
+	if x != nil && x.FullSyncSizeMbLimit != nil {
+		return *x.FullSyncSizeMbLimit
+	}
+	return 0
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetStorageQuotaMb() uint32 {
+	if x != nil && x.StorageQuotaMb != nil {
+		return *x.StorageQuotaMb
+	}
+	return 0
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetInlineInitialPayloadInE2EeMsg() bool {
+	if x != nil && x.InlineInitialPayloadInE2EeMsg != nil {
+		return *x.InlineInitialPayloadInE2EeMsg
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetRecentSyncDaysLimit() uint32 {
+	if x != nil && x.RecentSyncDaysLimit != nil {
+		return *x.RecentSyncDaysLimit
+	}
+	return 0
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportCallLogHistory() bool {
+	if x != nil && x.SupportCallLogHistory != nil {
+		return *x.SupportCallLogHistory
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportBotUserAgentChatHistory() bool {
+	if x != nil && x.SupportBotUserAgentChatHistory != nil {
+		return *x.SupportBotUserAgentChatHistory
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportCagReactionsAndPolls() bool {
+	if x != nil && x.SupportCagReactionsAndPolls != nil {
+		return *x.SupportCagReactionsAndPolls
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportBizHostedMsg() bool {
+	if x != nil && x.SupportBizHostedMsg != nil {
+		return *x.SupportBizHostedMsg
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportRecentSyncChunkMessageCountTuning() bool {
+	if x != nil && x.SupportRecentSyncChunkMessageCountTuning != nil {
+		return *x.SupportRecentSyncChunkMessageCountTuning
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportHostedGroupMsg() bool {
+	if x != nil && x.SupportHostedGroupMsg != nil {
+		return *x.SupportHostedGroupMsg
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportFbidBotChatHistory() bool {
+	if x != nil && x.SupportFbidBotChatHistory != nil {
+		return *x.SupportFbidBotChatHistory
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportAddOnHistorySyncMigration() bool {
+	if x != nil && x.SupportAddOnHistorySyncMigration != nil {
+		return *x.SupportAddOnHistorySyncMigration
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportMessageAssociation() bool {
+	if x != nil && x.SupportMessageAssociation != nil {
+		return *x.SupportMessageAssociation
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportGroupHistory() bool {
+	if x != nil && x.SupportGroupHistory != nil {
+		return *x.SupportGroupHistory
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetOnDemandReady() bool {
+	if x != nil && x.OnDemandReady != nil {
+		return *x.OnDemandReady
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportGuestChat() bool {
+	if x != nil && x.SupportGuestChat != nil {
+		return *x.SupportGuestChat
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetCompleteOnDemandReady() bool {
+	if x != nil && x.CompleteOnDemandReady != nil {
+		return *x.CompleteOnDemandReady
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetThumbnailSyncDaysLimit() uint32 {
+	if x != nil && x.ThumbnailSyncDaysLimit != nil {
+		return *x.ThumbnailSyncDaysLimit
+	}
+	return 0
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetInitialSyncMaxMessagesPerChat() uint32 {
+	if x != nil && x.InitialSyncMaxMessagesPerChat != nil {
+		return *x.InitialSyncMaxMessagesPerChat
+	}
+	return 0
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportManusHistory() bool {
+	if x != nil && x.SupportManusHistory != nil {
+		return *x.SupportManusHistory
+	}
+	return false
+}
+
+func (x *DeviceProps_HistorySyncConfig) GetSupportHatchHistory() bool {
+	if x != nil && x.SupportHatchHistory != nil {
+		return *x.SupportHatchHistory
+	}
+	return false
+}
+
 var File_auth_proto protoreflect.FileDescriptor
 
 const file_auth_proto_rawDesc = "" +
@@ -1372,12 +1592,13 @@ const file_auth_proto_rawDesc = "" +
 	"\x0fERROR_RECONNECT\x10\x03\x12\x12\n" +
 	"\x0eNETWORK_SWITCH\x10\x04\x12\x12\n" +
 	"\x0ePING_RECONNECT\x10\x05\x12\v\n" +
-	"\aUNKNOWN\x10\x06\"\xf0\x05\n" +
+	"\aUNKNOWN\x10\x06\"\xd8\x10\n" +
 	"\vDeviceProps\x12\x0e\n" +
 	"\x02os\x18\x01 \x01(\tR\x02os\x12M\n" +
 	"\aversion\x18\x02 \x01(\v23.whatscore.protocol.protobuf.DeviceProps.AppVersionR\aversion\x12Y\n" +
 	"\fplatformType\x18\x03 \x01(\x0e25.whatscore.protocol.protobuf.DeviceProps.PlatformTypeR\fplatformType\x12(\n" +
-	"\x0frequireFullSync\x18\x04 \x01(\bR\x0frequireFullSync\x1a\x9a\x01\n" +
+	"\x0frequireFullSync\x18\x04 \x01(\bR\x0frequireFullSync\x12h\n" +
+	"\x11historySyncConfig\x18\x05 \x01(\v2:.whatscore.protocol.protobuf.DeviceProps.HistorySyncConfigR\x11historySyncConfig\x1a\x9a\x01\n" +
 	"\n" +
 	"AppVersion\x12\x18\n" +
 	"\aprimary\x18\x01 \x01(\rR\aprimary\x12\x1c\n" +
@@ -1386,7 +1607,31 @@ const file_auth_proto_rawDesc = "" +
 	"\n" +
 	"quaternary\x18\x04 \x01(\rR\n" +
 	"quaternary\x12\x18\n" +
-	"\aquinary\x18\x05 \x01(\rR\aquinary\"\xdf\x02\n" +
+	"\aquinary\x18\x05 \x01(\rR\aquinary\x1a\xfb\t\n" +
+	"\x11HistorySyncConfig\x12,\n" +
+	"\x11fullSyncDaysLimit\x18\x01 \x01(\rR\x11fullSyncDaysLimit\x120\n" +
+	"\x13fullSyncSizeMbLimit\x18\x02 \x01(\rR\x13fullSyncSizeMbLimit\x12&\n" +
+	"\x0estorageQuotaMb\x18\x03 \x01(\rR\x0estorageQuotaMb\x12D\n" +
+	"\x1dinlineInitialPayloadInE2EeMsg\x18\x04 \x01(\bR\x1dinlineInitialPayloadInE2EeMsg\x120\n" +
+	"\x13recentSyncDaysLimit\x18\x05 \x01(\rR\x13recentSyncDaysLimit\x124\n" +
+	"\x15supportCallLogHistory\x18\x06 \x01(\bR\x15supportCallLogHistory\x12F\n" +
+	"\x1esupportBotUserAgentChatHistory\x18\a \x01(\bR\x1esupportBotUserAgentChatHistory\x12@\n" +
+	"\x1bsupportCagReactionsAndPolls\x18\b \x01(\bR\x1bsupportCagReactionsAndPolls\x120\n" +
+	"\x13supportBizHostedMsg\x18\t \x01(\bR\x13supportBizHostedMsg\x12Z\n" +
+	"(supportRecentSyncChunkMessageCountTuning\x18\n" +
+	" \x01(\bR(supportRecentSyncChunkMessageCountTuning\x124\n" +
+	"\x15supportHostedGroupMsg\x18\v \x01(\bR\x15supportHostedGroupMsg\x12<\n" +
+	"\x19supportFbidBotChatHistory\x18\f \x01(\bR\x19supportFbidBotChatHistory\x12J\n" +
+	" supportAddOnHistorySyncMigration\x18\r \x01(\bR supportAddOnHistorySyncMigration\x12<\n" +
+	"\x19supportMessageAssociation\x18\x0e \x01(\bR\x19supportMessageAssociation\x120\n" +
+	"\x13supportGroupHistory\x18\x0f \x01(\bR\x13supportGroupHistory\x12$\n" +
+	"\ronDemandReady\x18\x10 \x01(\bR\ronDemandReady\x12*\n" +
+	"\x10supportGuestChat\x18\x11 \x01(\bR\x10supportGuestChat\x124\n" +
+	"\x15completeOnDemandReady\x18\x12 \x01(\bR\x15completeOnDemandReady\x126\n" +
+	"\x16thumbnailSyncDaysLimit\x18\x13 \x01(\rR\x16thumbnailSyncDaysLimit\x12D\n" +
+	"\x1dinitialSyncMaxMessagesPerChat\x18\x14 \x01(\rR\x1dinitialSyncMaxMessagesPerChat\x120\n" +
+	"\x13supportManusHistory\x18\x15 \x01(\bR\x13supportManusHistory\x120\n" +
+	"\x13supportHatchHistory\x18\x16 \x01(\bR\x13supportHatchHistory\"\xdf\x02\n" +
 	"\fPlatformType\x12\v\n" +
 	"\aUNKNOWN\x10\x00\x12\n" +
 	"\n" +
@@ -1431,7 +1676,7 @@ func file_auth_proto_rawDescGZIP() []byte {
 }
 
 var file_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_auth_proto_goTypes = []any{
 	(ClientPayload_ConnectType)(0),                      // 0: whatscore.protocol.protobuf.ClientPayload.ConnectType
 	(ClientPayload_ConnectReason)(0),                    // 1: whatscore.protocol.protobuf.ClientPayload.ConnectReason
@@ -1446,6 +1691,7 @@ var file_auth_proto_goTypes = []any{
 	(*ClientPayload_DevicePairingRegistrationData)(nil), // 10: whatscore.protocol.protobuf.ClientPayload.DevicePairingRegistrationData
 	(*ClientPayload_UserAgent_AppVersion)(nil),          // 11: whatscore.protocol.protobuf.ClientPayload.UserAgent.AppVersion
 	(*DeviceProps_AppVersion)(nil),                      // 12: whatscore.protocol.protobuf.DeviceProps.AppVersion
+	(*DeviceProps_HistorySyncConfig)(nil),               // 13: whatscore.protocol.protobuf.DeviceProps.HistorySyncConfig
 }
 var file_auth_proto_depIdxs = []int32{
 	8,  // 0: whatscore.protocol.protobuf.ClientPayload.userAgent:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent
@@ -1455,15 +1701,16 @@ var file_auth_proto_depIdxs = []int32{
 	10, // 4: whatscore.protocol.protobuf.ClientPayload.devicePairingData:type_name -> whatscore.protocol.protobuf.ClientPayload.DevicePairingRegistrationData
 	12, // 5: whatscore.protocol.protobuf.DeviceProps.version:type_name -> whatscore.protocol.protobuf.DeviceProps.AppVersion
 	5,  // 6: whatscore.protocol.protobuf.DeviceProps.platformType:type_name -> whatscore.protocol.protobuf.DeviceProps.PlatformType
-	2,  // 7: whatscore.protocol.protobuf.ClientPayload.UserAgent.platform:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent.Platform
-	11, // 8: whatscore.protocol.protobuf.ClientPayload.UserAgent.appVersion:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent.AppVersion
-	3,  // 9: whatscore.protocol.protobuf.ClientPayload.UserAgent.releaseChannel:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent.ReleaseChannel
-	4,  // 10: whatscore.protocol.protobuf.ClientPayload.WebInfo.webSubPlatform:type_name -> whatscore.protocol.protobuf.ClientPayload.WebInfo.WebSubPlatform
-	11, // [11:11] is the sub-list for method output_type
-	11, // [11:11] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	13, // 7: whatscore.protocol.protobuf.DeviceProps.historySyncConfig:type_name -> whatscore.protocol.protobuf.DeviceProps.HistorySyncConfig
+	2,  // 8: whatscore.protocol.protobuf.ClientPayload.UserAgent.platform:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent.Platform
+	11, // 9: whatscore.protocol.protobuf.ClientPayload.UserAgent.appVersion:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent.AppVersion
+	3,  // 10: whatscore.protocol.protobuf.ClientPayload.UserAgent.releaseChannel:type_name -> whatscore.protocol.protobuf.ClientPayload.UserAgent.ReleaseChannel
+	4,  // 11: whatscore.protocol.protobuf.ClientPayload.WebInfo.webSubPlatform:type_name -> whatscore.protocol.protobuf.ClientPayload.WebInfo.WebSubPlatform
+	12, // [12:12] is the sub-list for method output_type
+	12, // [12:12] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_auth_proto_init() }
@@ -1477,7 +1724,7 @@ func file_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_proto_rawDesc), len(file_auth_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

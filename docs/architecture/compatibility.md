@@ -13,8 +13,9 @@ run.
 | Intro header + frame reassembly | **supported** | same runs |
 | Noise handshake (msg1→msg3) | **supported** | same runs, suite `Noise_XX_25519_AESGCM_SHA256` |
 | Server certificate chain | **supported** | same runs (pinned root verified) |
-| Auth payload accepted | **broken** | live probe: the server closes 1006 immediately after msg3 and sends no verdict, because the payload lacks a complete `DevicePairingRegistrationData` (PF-068) |
-| Pairing (QR → success) | **untested** | the flow now signs `pair-device-sign` with an XEdDSA signer validated against libsignal's own vectors (ADR 0001). It has not been attempted against a real account |
+| Auth payload accepted | **supported** | live: `whatscore-probe -payload` builds a real registration payload and the server answers 679 bytes (PF-068) |
+| Pairing reply decoded | **blocked** | the server's answer is a binary node holding six base64 refs; decoding it needs the token table (ADR 0002) |
+| Pairing (QR → success) | **partially working** | the server accepts the payload and sends `pair-device` refs (PF-068); turning them into a scannable QR needs the token table to decode the stanza |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
 | Message send/receive | **untested** | needs pairing |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |
