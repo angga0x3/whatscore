@@ -35,12 +35,13 @@ func NewTextMessage(text string) Message { return Message{Text: text} }
 // Client is one WhatsApp session plus its SDK surface. It is safe for
 // concurrent use.
 type Client struct {
-	id      string
-	session *session.Session
-	sender  *coremessaging.Sender
-	bus     *events.Bus
-	ownBus  bool
-	creds   *corecredentials.Manager
+	id       string
+	session  *session.Session
+	sender   *coremessaging.Sender
+	receiver *coremessaging.Receiver
+	bus      *events.Bus
+	ownBus   bool
+	creds    *corecredentials.Manager
 }
 
 type options struct {
@@ -212,12 +213,13 @@ func New(id string, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		id:      id,
-		session: sess,
-		sender:  sender,
-		bus:     cfg.bus,
-		ownBus:  ownBus,
-		creds:   cfg.creds,
+		id:       id,
+		session:  sess,
+		sender:   sender,
+		receiver: receiver,
+		bus:      cfg.bus,
+		ownBus:   ownBus,
+		creds:    cfg.creds,
 	}, nil
 }
 
@@ -281,6 +283,17 @@ func (c *Client) SetSignalPeer(peer string, session *coremessaging.PeerSession) 
 // SendEncryptedMessage encrypts and sends text using the peer session.
 func (c *Client) SendEncryptedMessage(ctx context.Context, to, text string) (string, *coremessaging.PeerSession, error) {
 	return c.sender.SendEncryptedText(ctx, to, text)
+}
+
+// SetReceiveSignalPeer installs the peer session used for inbound decryption.
+func (c *Client) SetReceiveSignalPeer(peer string, session *coremessaging.PeerSession) error {
+	return c.receiver.SetReceiverPeer(peer, session)
+}
+
+// SetReceiveSignalIdentity sets the identity used to authenticate inbound
+// Signal messages.
+func (c *Client) SetReceiveSignalIdentity(identity [32]byte) {
+	c.receiver.SetReceiverIdentity(identity)
 }
 
 // SendReceipt writes a delivery/read/played receipt for a message id.

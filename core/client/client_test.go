@@ -540,3 +540,63 @@ func TestSignalSendWiring(t *testing.T) {
 		t.Fatal("encrypted frame was not written")
 	}
 }
+
+func TestInboundEncryptedEvent(t *testing.T) {
+	conn := newFakeConn()
+	bus := events.NewBus()
+	c, err := New("session-1", WithDialer(&fakeDialer{conn: conn}), WithBus(bus))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+	sub := c.Subscribe()
+	defer sub.Close()
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, sub, events.TypeConnected)
+
+	aliceID, bobID := [32]byte{0x11}, [32]byte{0x22}
+	root := signal.RootKey{0x33}
+	chain := signal.ChainKey{0x44}
+	ratchet, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	alice, err := signal.NewInitiator(root, ratchet.Public, chain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob := signal.NewResponder(root, ratchet, chain)
+
+	peer := "628123@s.whatsapp.net"
+	c.SetReceiveSignalIdentity(bobID)
+	if err := c.SetReceiveSignalPeer(peer, &coremessaging.PeerSession{PeerIdentity: aliceID, State: bob}); err != nil {
+		t.Fatal(err)
+	}
+
+	ciphertext, err := alice.Encrypt([]byte("masuk"), aliceID, bobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
+		ID: "IN9", To: stanza.JID{User: "628123", Server: stanza.UserServer},
+		Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := binary.NewCodec(nil).Encode(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.frames <- frame
+
+	ev := waitEvent(t, sub, events.TypeMessage)
+	if ev.Message == nil || ev.Message.ID != "IN9" || ev.Message.Text != "masuk" {
+		t.Fatalf("message = %#v", ev.Message)
+	}
+}
