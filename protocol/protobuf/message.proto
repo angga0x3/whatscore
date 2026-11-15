@@ -58,6 +58,13 @@ message ProtocolMessage {
   // with a freshly paired device through these; app state patches cannot be
   // verified without them.
   optional AppStateSyncKeyShare appStateSyncKeyShare = 7;
+  // Field 8 per the reference proto. A device missing a key id asks for it
+  // here; the phone answers with a key share.
+  optional AppStateSyncKeyRequest appStateSyncKeyRequest = 8;
+}
+
+message AppStateSyncKeyRequest {
+  repeated AppStateSyncKeyId keyIDs = 1;
 }
 
 // App state key material (fields per the reference proto). KeyID names the
