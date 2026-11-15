@@ -49,6 +49,8 @@ type options struct {
 	dialer    transport.Dialer
 	endpoint  transport.Endpoint
 	reconnect transport.ReconnectPolicy
+	connector session.Connector
+	handler   session.FrameHandler
 	bus       *events.Bus
 	logger    *slog.Logger
 	creds     *corecredentials.Manager
@@ -86,6 +88,28 @@ func WithReconnectPolicy(policy transport.ReconnectPolicy) Option {
 			return fmt.Errorf("%w: nil reconnect policy", ErrInvalidConfig)
 		}
 		o.reconnect = policy
+		return nil
+	}
+}
+
+// WithConnector wraps each dialed connection, for example with Noise.
+func WithConnector(connector session.Connector) Option {
+	return func(o *options) error {
+		if connector == nil {
+			return fmt.Errorf("%w: nil connector", ErrInvalidConfig)
+		}
+		o.connector = connector
+		return nil
+	}
+}
+
+// WithFrameHandler receives inbound frames after the connector.
+func WithFrameHandler(handler session.FrameHandler) Option {
+	return func(o *options) error {
+		if handler == nil {
+			return fmt.Errorf("%w: nil frame handler", ErrInvalidConfig)
+		}
+		o.handler = handler
 		return nil
 	}
 }
@@ -150,12 +174,14 @@ func New(id string, opts ...Option) (*Client, error) {
 	}
 
 	sess, err := session.New(session.Config{
-		ID:        id,
-		Endpoint:  cfg.endpoint,
-		Dialer:    cfg.dialer,
-		Reconnect: cfg.reconnect,
-		Bus:       cfg.bus,
-		Logger:    cfg.logger,
+		ID:           id,
+		Endpoint:     cfg.endpoint,
+		Dialer:       cfg.dialer,
+		Reconnect:    cfg.reconnect,
+		Connector:    cfg.connector,
+		FrameHandler: cfg.handler,
+		Bus:          cfg.bus,
+		Logger:       cfg.logger,
 	})
 	if err != nil {
 		if ownBus {

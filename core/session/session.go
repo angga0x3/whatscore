@@ -86,6 +86,27 @@ func (s State) String() string {
 	}
 }
 
+// Connector wraps a dialed frame connection, for example with the Noise
+// handshake. The returned connection must close the raw connection when it is
+// closed. A non-nil error aborts the dial attempt.
+type Connector interface {
+	Connect(ctx context.Context, raw transport.FrameConn) (transport.FrameConn, error)
+}
+
+// FrameHandler consumes inbound frames. Calls are serialized per connection;
+// a returned error tears the connection down and feeds the reconnect policy.
+type FrameHandler interface {
+	HandleFrame(ctx context.Context, frame []byte) error
+}
+
+// FrameHandlerFunc adapts a function to FrameHandler.
+type FrameHandlerFunc func(ctx context.Context, frame []byte) error
+
+// HandleFrame implements FrameHandler.
+func (f FrameHandlerFunc) HandleFrame(ctx context.Context, frame []byte) error {
+	return f(ctx, frame)
+}
+
 // Config describes one session. ID, Dialer, and Bus are required.
 //
 // Treat Config as immutable after New. A Dialer may be shared by several
@@ -106,6 +127,14 @@ type Config struct {
 	// Reconnect decides whether and when a lost connection is retried. A nil
 	// policy disables reconnection: the first failure becomes terminal.
 	Reconnect transport.ReconnectPolicy
+
+	// Connector optionally wraps the dialed connection before it is used
+	// (for example with the Noise handshake). Nil uses the raw connection.
+	Connector Connector
+
+	// FrameHandler receives inbound frames after the connector, if any.
+	// Nil discards frames; reading still detects drops.
+	FrameHandler FrameHandler
 
 	// Bus receives lifecycle events. It is shared by all sessions owned by
 	// the caller and is never closed by a Session.
@@ -482,11 +511,25 @@ func (a *actor) startDial() {
 
 	dialer := a.s.cfg.Dialer
 	endpoint := a.s.cfg.Endpoint
+	connector := a.s.cfg.Connector
 	ack := make(chan struct{})
 	a.s.logger.Debug("dialing transport")
 
 	go func() {
 		conn, err := dialer.Dial(ctx, endpoint)
+		if err == nil && conn != nil && connector != nil {
+			wrapped, connectErr := connector.Connect(ctx, conn)
+			switch {
+			case connectErr != nil:
+				_ = conn.Close()
+				conn, err = nil, fmt.Errorf("core/session: connector: %w", connectErr)
+			case wrapped == nil:
+				_ = conn.Close()
+				conn, err = nil, errors.New("core/session: connector returned a nil connection")
+			default:
+				conn = wrapped
+			}
+		}
 		result := dialResult{gen: gen, conn: conn, err: err, cancel: cancel, ack: ack}
 		select {
 		case a.s.dialResults <- result:
@@ -584,15 +627,24 @@ func (a *actor) startReader(conn transport.FrameConn) {
 	ch := make(chan error, 1)
 	a.readCancel = cancel
 	a.readCh = ch
+	handler := a.s.cfg.FrameHandler
 
 	go func() {
 		for {
-			// Frame contents are deliberately ignored here; core/messaging
-			// consumes them once implemented. Reading keeps drop detection
-			// live and preserves ownership of the connection.
-			if _, err := conn.ReadFrame(ctx); err != nil {
+			frame, err := conn.ReadFrame(ctx)
+			if err != nil {
 				select {
 				case ch <- err:
+				case <-a.s.done:
+				}
+				return
+			}
+			if handler == nil {
+				continue
+			}
+			if err := handler.HandleFrame(ctx, frame); err != nil {
+				select {
+				case ch <- fmt.Errorf("core/session: frame handler: %w", err):
 				case <-a.s.done:
 				}
 				return

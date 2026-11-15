@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,14 +18,19 @@ import (
 )
 
 type fakeConn struct {
+	frames chan []byte
 	closed chan struct{}
 	once   sync.Once
 }
 
-func newFakeConn() *fakeConn { return &fakeConn{closed: make(chan struct{})} }
+func newFakeConn() *fakeConn {
+	return &fakeConn{frames: make(chan []byte), closed: make(chan struct{})}
+}
 
 func (f *fakeConn) ReadFrame(ctx context.Context) ([]byte, error) {
 	select {
+	case frame := <-f.frames:
+		return frame, nil
 	case <-f.closed:
 		return nil, transport.ErrClosed
 	case <-ctx.Done():
@@ -101,6 +107,8 @@ func TestNewValidation(t *testing.T) {
 		"nil creds":      WithCredentials(nil),
 		"nil reconnect":  WithReconnectPolicy(nil),
 		"empty endpoint": WithEndpoint(transport.Endpoint{}),
+		"nil connector":  WithConnector(nil),
+		"nil handler":    WithFrameHandler(nil),
 	}
 	for name, opt := range options {
 		t.Run(name, func(t *testing.T) {
@@ -236,6 +244,54 @@ func mustVault(t *testing.T, key *envelope.Key) *storecreds.Vault {
 		t.Fatal(err)
 	}
 	return vault
+}
+
+type recordingConnector struct {
+	called atomic.Bool
+}
+
+func (c *recordingConnector) Connect(_ context.Context, raw transport.FrameConn) (transport.FrameConn, error) {
+	c.called.Store(true)
+	return raw, nil
+}
+
+func TestConnectorAndFrameHandler(t *testing.T) {
+	conn := newFakeConn()
+	connector := &recordingConnector{}
+	frames := make(chan []byte, 1)
+	bus := events.NewBus()
+	c, err := New("session-1",
+		WithDialer(&fakeDialer{conn: conn}),
+		WithBus(bus),
+		WithConnector(connector),
+		WithFrameHandler(session.FrameHandlerFunc(func(_ context.Context, frame []byte) error {
+			frames <- append([]byte(nil), frame...)
+			return nil
+		})),
+	)
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	if !connector.called.Load() {
+		t.Fatal("connector was not called")
+	}
+	conn.frames <- []byte("frame")
+	select {
+	case got := <-frames:
+		if string(got) != "frame" {
+			t.Fatalf("frame = %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("frame handler was not called")
+	}
 }
 
 func TestConcurrentStateQueries(t *testing.T) {
