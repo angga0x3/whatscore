@@ -73,6 +73,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Proven live
 
+- Live receive, end to end, including a third party: with the token table
+  completed, two queued text messages from a real contact bootstrapped pkmsg
+  sessions, decrypted, rendered their text ("uy", "nng kamar", "ngpo", …) and
+  earned delivery receipts; six messages total decrypted in one run, the last
+  arriving while the listener was connected. The ratchet state persisted to
+  disk mid-run (`paired.keys.sessions.json`).
 - The offline queue drains. A 2026-11-15 session answered the announcement and
   the backlog streamed: 21 `message` stanzas with a delivery receipt for each,
   plus notifications, statuses and newsletter plaintexts. The queue count moves
