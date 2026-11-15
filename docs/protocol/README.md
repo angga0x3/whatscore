@@ -107,6 +107,8 @@ Confidence and Status are deliberately separate axes:
 | PF-023 | auth | DevicePairingRegistrationData encoding | Probable | Verified-by-test | `protocol/auth` (round-trip, validation) |
 | PF-024 | auth | DeviceProps schema | Probable | Verified-by-test | `protocol/auth` (round-trip) |
 | PF-025 | auth | Registration versus login payloads | Probable | Verified-by-test | `protocol/auth` (validation table) |
+| PF-026 | auth | Login ClientPayload envelope | Probable | Verified-by-test | `protocol/auth` (login round-trip) |
+| PF-027 | auth | Registration vs login discrimination | Probable | Verified-by-test | `protocol/auth` (mutual rejection) |
 | PF-030 | messaging | JID textual grammar | Probable | Verified-by-test | `protocol/messaging` (JID table) |
 | PF-031 | messaging | JID normalization | Probable | Verified-by-test | `protocol/messaging` (normalization table) |
 | PF-032 | messaging | JID rendering | Probable | Verified-by-test | `protocol/messaging` (round-trip) |
