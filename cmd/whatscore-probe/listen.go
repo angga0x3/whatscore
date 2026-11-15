@@ -203,6 +203,15 @@ func runListen(cfg sendConfig) error {
 	}
 	fmt.Println("session: active")
 
+	// whatsmeow marks the client available with a presence stanza right after
+	// login; without it the server keeps the device passive and every stanza
+	// this probe has ever seen was offline-queue replay, never live fan-out.
+	if err := sendAvailablePresence(ctx, sc, codec); err != nil {
+		fmt.Printf("presence: %v\n", err)
+	} else {
+		fmt.Println("presence: available")
+	}
+
 	if err := publishMissingKeys(ctx, d, record, keys, cfg.KeyPath); err != nil {
 		d.shutdown()
 		<-loopDone
