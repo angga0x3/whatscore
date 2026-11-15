@@ -152,7 +152,7 @@ PF-050…PF-059.
 | Blocker | State | What changed |
 |---------|-------|--------------|
 | Token table (spec §10.2) | **Decided** — ADR 0002: operator data | `WHATSAPP_TOKEN_DICTIONARY` + startup validation; nothing table-shaped ships in the repo |
-| XEdDSA signing (ADR 0001) | **Decided** — deferred, seam stays | pairing returns `ErrSignerRequired`; no unsigned credential can be persisted |
+| XEdDSA signing (ADR 0001) | **Blocked** — implementation attempt failed its cross-check | signing differs from Ed25519 in three places (PF-067); a first-party attempt verified locally but diverged from the reference, so the seam stays and pairing returns `ErrSignerRequired` |
 | Auth acceptance unverified live | Open — engineering | `WaitAuth`/`AuthConnector` now surface the verdict; a live run with a real payload is the remaining step |
 
 Nothing else in the stack is blocked: transport, Noise, Signal, media, sync,

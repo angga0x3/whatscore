@@ -302,3 +302,24 @@ decrypt with the same state.
 
 Status update: both directions of first-contact messaging are wired: outbound
 `pkmsg` from a bundle and inbound `pkmsg` bootstrap.
+
+## PF-067: XEdDSA signing is not Ed25519 signing
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-067 |
+| **Title** | XEdDSA signing differs from RFC 8032 in three places: the signing scalar is `clamp(SHA-512(privScalar)[:32])` while the public point uses `clamp(privScalar)`; the nonce is `SHA-512(prefix ‖ msg ‖ pubkey)`; and the Edwards sign bit is written into the top bit of S |
+| **Layer** | signal |
+| **Source** | derived from test |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | Comparison against an independent RFC 8032 reference and `crypto/ed25519` during the ADR 0001 investigation; recorded in ADR 0001 |
+| **Related findings** | PF-053, PF-017 |
+| **Notes** | An implementation built on `filippo.io/edwards25519` verified against itself but diverged from a from-scratch reference and from standard Ed25519 verification. Each divergence alone would break a real pairing while passing local tests, which is why WhatsCore verifies XEdDSA but does not sign. This finding exists so the next attempt starts from the three differences instead of rediscovering them. |
+
+---
+
+Status: signing remains unimplemented by decision (ADR 0001). Verification is
+implemented and live-confirmed: the pinned certificate root validated the real
+server's chain during the 2026-11-15 interop run.
