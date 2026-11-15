@@ -169,8 +169,13 @@ func runListen(cfg sendConfig) error {
 		if count > 3 {
 			return
 		}
+		// The keys block goes on every attempt, not just the second: the
+		// sender's re-encryption arrives under a new message id, which resets
+		// any per-id count, so waiting for attempt two never fires. A fresh
+		// one-time prekey per retry is cheap; the sender's cached bundle is
+		// what produced the unreadable message.
 		var keysBlock *wabinary.Node
-		if count >= 2 {
+		{
 			block, err := retryKeysBlock(record, keys, signer)
 			if err != nil {
 				fmt.Printf("retry keys: %v\n", err)
