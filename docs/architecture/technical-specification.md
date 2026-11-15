@@ -323,10 +323,10 @@ the connection and feeds the reconnect policy.
 messages into `core/events` values. **Allowed deps.** `protocol/*` via interfaces, `core/events`,
 storage interfaces, stdlib. **Tests.** Fake-server conversation scripts; retry/backoff and dedup
 tables.
-**Status.** `core/messaging.Sender` builds and writes plaintext text stanzas and receipts over a
-`FrameWriter`; `core/messaging.Receiver` decodes inbound text and receipts into `events.Message` /
-`events.Receipt` values (malformed frames are logged and dropped). Retries/dedup and Signal wrapping
-remain.
+**Status.** `core/messaging.Sender` builds and writes plaintext and Signal-encrypted text stanzas and
+receipts over a `FrameWriter`; `Receiver` decodes inbound text and receipts into `events.Message` /
+`events.Receipt` values (malformed frames are logged and dropped). Inbound `<enc>` decryption,
+retries/dedup, and carrier selection for prekey messages remain.
 
 ### 4.14 `core/events`
 

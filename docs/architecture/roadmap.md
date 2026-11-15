@@ -17,7 +17,7 @@ as workstreams land.
 | Messaging | JID, text `<message>`, `<receipt>` | encrypted `<enc>` carrier (PF-034) |
 | Media | HKDF + CBC/HMAC byte envelope | streaming, sidecar hashes |
 | Storage | envelope, credential vault, PostgreSQL backend, `core/credentials` manager | Signal-addressed stores |
-| Core | event bus, single-actor session runtime with connector/frame handler, credential manager, SDK facade with plaintext send, inbound text, receipts, per-peer Signal store | encrypted send path, contacts/groups/media, SQLite |
+| Core | event bus, single-actor session runtime with connector/frame handler, credential manager, SDK facade with plaintext + encrypted send, inbound text, receipts, per-peer Signal store | inbound `<enc>` decryption, contacts/groups/media, SQLite |
 | SDK / API | — | everything |
 
 ## Execution log
@@ -42,6 +42,7 @@ as workstreams land.
 | 2026-11-15 | Crypto cleanup | shared `internal/cbc`, single-parse Signal decrypt, benchmarks |
 | 2026-11-15 | Ratchet persistence | deterministic versioned state encoding, limits, benchmarks |
 | 2026-11-15 | Signal storage + enc | encrypted per-peer state manager, `<enc>` stanza |
+| 2026-11-15 | Encrypted send path | peer records, `SendEncryptedText`, client wiring |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
