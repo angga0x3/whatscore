@@ -55,6 +55,25 @@ func DefaultDictionary() *Dictionary {
 	return NewDictionary()
 }
 
+// Clone returns a deep copy. A caller that mutates a working copy — the probe's
+// hole-filled table — must not quietly change the table a strict codec is
+// still reading: one shared pointer turned every unknown token into a
+// placeholder and silently ended the loud failure the table exists for.
+func (d *Dictionary) Clone() *Dictionary {
+	out := NewDictionary()
+	out.single = d.single
+	out.singleOK = d.singleOK
+	out.double = d.double
+	out.doubleOK = d.doubleOK
+	for token, index := range d.singleIdx {
+		out.singleIdx[token] = index
+	}
+	for token, ref := range d.doubleIdx {
+		out.doubleIdx[token] = ref
+	}
+	return out
+}
+
 // SetSingle sets token at index 1..235.
 func (d *Dictionary) SetSingle(index byte, token string) error {
 	if index == 0 || index > singleByteTokenMax {

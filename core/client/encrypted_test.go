@@ -148,6 +148,8 @@ func TestSendEncryptedCarrierChoice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ParseEncryptedText reads the inbound shape, which stamps "from".
+	node.Attrs["from"] = peer
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		t.Fatal(err)

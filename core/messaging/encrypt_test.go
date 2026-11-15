@@ -63,6 +63,9 @@ func TestSendEncryptedText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ParseEncryptedText reads the inbound shape, which stamps "from"; the
+	// wire here is outbound, so the round trip adds a sender the parser needs.
+	node.Attrs["from"] = peer
 	encrypted, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		t.Fatal(err)

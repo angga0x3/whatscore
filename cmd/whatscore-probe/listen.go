@@ -239,6 +239,13 @@ func runListen(cfg sendConfig) error {
 		}
 		return nil
 	case <-loopDone:
+		// The window's deadline fires on the socket at the same instant it
+		// fires on the context; whichever wins, a read error from that race
+		// is the window ending, not the connection dying.
+		if ctx.Err() != nil {
+			fmt.Println("\nlisten window ended")
+			return nil
+		}
 		if err := d.readError(); err != nil {
 			fmt.Printf("\nconnection ended: %v\n", err)
 			return fmt.Errorf("connection ended while listening: %w", err)
@@ -259,6 +266,10 @@ func runListen(cfg sendConfig) error {
 			fmt.Println("listen window ended (post-drain grace elapsed)")
 			return nil
 		case <-loopDone:
+			if ctx.Err() != nil {
+				fmt.Println("listen window ended")
+				return nil
+			}
 			if err := d.readError(); err != nil {
 				fmt.Printf("\nconnection ended: %v\n", err)
 				return fmt.Errorf("connection ended while listening: %w", err)

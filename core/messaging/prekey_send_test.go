@@ -53,6 +53,9 @@ func TestSendPreKeyText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ParseEncryptedText reads the inbound shape, which stamps "from"; the
+	// wire here is outbound, so the round trip adds a sender the parser needs.
+	node.Attrs["from"] = "100000000000000@s.whatsapp.net"
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +92,8 @@ func TestSendPreKeyText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Outbound wire parsed with the inbound-shape parser: stamp "from".
+	node.Attrs["from"] = "100000000000000@s.whatsapp.net"
 	secondEnvelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		t.Fatal(err)

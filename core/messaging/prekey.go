@@ -80,7 +80,10 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 		r.logger.WarnContext(ctx, "dropping malformed prekey message", "error", err)
 		return
 	}
-	peer := envelope.To
+	// The session belongs to whoever encrypted to us: the sender. Keying by
+	// "to" — our own address — only ever worked against a fake node that
+	// happened to be symmetric, and the live service does not even send "to".
+	peer := envelope.From
 	_, plaintext, err := r.bootstrapPeer(ctx, envelope, r.prekeys, peer)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping prekey message", "error", err)

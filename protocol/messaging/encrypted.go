@@ -21,7 +21,8 @@ const (
 // plus the Signal ciphertext in an <enc> child (PF-036).
 type EncryptedText struct {
 	ID         string
-	To         JID
+	To         JID // the recipient on outbound stanzas; the live service omits it inbound
+	From       JID // the sender on inbound stanzas; the reference omits it outbound
 	Version    string
 	Carrier    string
 	Ciphertext []byte
@@ -71,6 +72,11 @@ func BuildEncryptedText(message EncryptedText) (*binary.Node, error) {
 }
 
 // ParseEncryptedText reads the envelope and the first <enc> child.
+//
+// "to" is optional and "from" is required, reversing the outbound shape: the
+// live service addresses inbound stanzas with "from" alone — the queue replay
+// arrived with no "to" at all — while the peer that owns the session is the
+// sender, not the recipient.
 func ParseEncryptedText(node *binary.Node) (*EncryptedText, error) {
 	if node == nil || node.Tag != tagMessage {
 		return nil, fmt.Errorf("%w: expected %q, got %s", ErrInvalidMessage, tagMessage, tagOf(node))
@@ -78,17 +84,29 @@ func ParseEncryptedText(node *binary.Node) (*EncryptedText, error) {
 	if msgType := node.Attrs["type"]; msgType != MessageTypeText {
 		return nil, fmt.Errorf("%w: type %q is not %q", ErrInvalidMessage, msgType, MessageTypeText)
 	}
-	to, err := ParseJID(node.Attrs["to"])
-	if err != nil {
-		return nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
-	}
-	if to.User == "" {
-		return nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
-	}
-	id := node.Attrs["id"]
-	if err := validateMessageID(id); err != nil {
+	envelope := &EncryptedText{ID: node.Attrs["id"]}
+	if err := validateMessageID(envelope.ID); err != nil {
 		return nil, err
 	}
+	if raw := node.Attrs["to"]; raw != "" {
+		to, err := ParseJID(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
+		}
+		if to.User == "" {
+			return nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
+		}
+		envelope.To = to
+	}
+	from, err := ParseJID(node.Attrs["from"])
+	if err != nil {
+		return nil, fmt.Errorf("%w: from: %w", ErrInvalidMessage, err)
+	}
+	if from.User == "" {
+		return nil, fmt.Errorf("%w: from %q has no user", ErrInvalidMessage, from)
+	}
+	envelope.From = from
+
 	enc := firstChild(node, tagEnc)
 	if enc == nil {
 		return nil, fmt.Errorf("%w: no %q child", ErrInvalidMessage, tagEnc)
@@ -100,12 +118,12 @@ func ParseEncryptedText(node *binary.Node) (*EncryptedText, error) {
 	if version != EncVersion2 {
 		return nil, fmt.Errorf("%w: unsupported enc version %q", ErrInvalidMessage, version)
 	}
+	envelope.Version = version
 	switch carrier := enc.Attrs[attrCarrier]; carrier {
 	case CarrierMsg, CarrierPKMsg, CarrierSKMsg:
-		return &EncryptedText{
-			ID: id, To: to, Version: version, Carrier: carrier,
-			Ciphertext: append([]byte(nil), enc.Bytes...),
-		}, nil
+		envelope.Carrier = carrier
+		envelope.Ciphertext = append([]byte(nil), enc.Bytes...)
+		return envelope, nil
 	default:
 		return nil, fmt.Errorf("%w: unknown enc carrier %q", ErrInvalidMessage, enc.Attrs[attrCarrier])
 	}

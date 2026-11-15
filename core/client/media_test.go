@@ -63,6 +63,9 @@ func (r *mediaRig) descriptor(t *testing.T) []byte {
 	if err != nil {
 		t.Fatalf("decode frame: %v", err)
 	}
+	// ParseEncryptedText reads the inbound shape, which stamps "from"; the
+	// wire here is outbound, so the round trip adds a sender for it.
+	node.Attrs["from"] = "100000000000000@s.whatsapp.net"
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		t.Fatalf("parse envelope: %v", err)

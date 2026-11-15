@@ -12,15 +12,20 @@ import (
 	"github.com/angga0x3/whatscore/protocol/signal"
 )
 
-func encryptedFrame(t *testing.T, id, to string, ciphertext []byte, carrier string, timestamp int64) []byte {
+// encryptedFrame builds the inbound wire shape: the service stamps "from"
+// (the sender, who owns the session) and omits "to" — the PF-087 queue replay
+// carried no "to" at all.
+func encryptedFrame(t *testing.T, id, from string, ciphertext []byte, carrier string, timestamp int64) []byte {
 	t.Helper()
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
-		ID: id, To: stanza.JID{User: mustUser(to), Server: mustServer(to)},
+		ID: id, To: stanza.JID{User: mustUser(from), Server: mustServer(from)},
 		Carrier: carrier, Ciphertext: ciphertext,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	delete(node.Attrs, "to")
+	node.Attrs["from"] = from
 	if timestamp != 0 {
 		node.Attrs["t"] = strconv.FormatInt(timestamp, 10)
 	}

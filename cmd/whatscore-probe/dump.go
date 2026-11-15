@@ -42,22 +42,26 @@ func dumpUndecoded(dictPath, framePath string) error {
 	return nil
 }
 
-// holeFilled returns the dictionary with every missing slot replaced by a
-// placeholder that names its position (¿s153, ¿d1[158]). A frame the table
-// almost covers then decodes far enough to show its shape, and the
+// holeFilled returns a clone of the dictionary with every missing slot
+// replaced by a placeholder that names its position (¿s153, ¿d1[158]). A frame
+// the table almost covers then decodes far enough to show its shape, and the
 // placeholders name the exact entries to record in the table afterwards.
+//
+// The clone matters: filling the caller's dictionary in place made every
+// codec sharing it lenient, and the strict decode stopped failing loudly.
 func holeFilled(dict *wabinary.Dictionary) *wabinary.Dictionary {
+	d := dict.Clone()
 	for i := 1; i <= 235; i++ {
-		if _, ok := dict.Single(byte(i)); !ok {
-			_ = dict.SetSingle(byte(i), fmt.Sprintf("¿s%d", i))
+		if _, ok := d.Single(byte(i)); !ok {
+			_ = d.SetSingle(byte(i), fmt.Sprintf("¿s%d", i))
 		}
 	}
 	for dIndex := 0; dIndex < 4; dIndex++ {
 		for i := 0; i < 256; i++ {
-			if _, ok := dict.Double(byte(dIndex), byte(i)); !ok {
-				_ = dict.SetDouble(byte(dIndex), byte(i), fmt.Sprintf("¿d%d[%d]", dIndex, i))
+			if _, ok := d.Double(byte(dIndex), byte(i)); !ok {
+				_ = d.SetDouble(byte(dIndex), byte(i), fmt.Sprintf("¿d%d[%d]", dIndex, i))
 			}
 		}
 	}
-	return dict
+	return d
 }

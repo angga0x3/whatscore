@@ -529,6 +529,8 @@ func TestSignalSendWiring(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// ParseEncryptedText reads the inbound shape, which stamps "from".
+		node.Attrs["from"] = peer
 		encrypted, err := stanza.ParseEncryptedText(node)
 		if err != nil {
 			t.Fatal(err)
@@ -593,6 +595,10 @@ func TestInboundEncryptedEvent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The receiver decrypts with the sender's session: stamp "from" and drop
+	// "to", matching the live inbound shape (PF-087 queue replay).
+	node.Attrs["from"] = peer
+	delete(node.Attrs, "to")
 	frame, err := binary.NewCodec(nil).Encode(node)
 	if err != nil {
 		t.Fatal(err)

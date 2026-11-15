@@ -51,7 +51,10 @@ func (r *Receiver) handleEnc(ctx context.Context, node *binary.Node) {
 
 // decryptWithSession decrypts with an existing session.
 func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, envelope *stanza.EncryptedText) {
-	peer := envelope.To
+	// The session belongs to whoever encrypted to us: the sender (see
+	// handlePreKey). The live service omits "to" on inbound stanzas, so the
+	// old lookup keyed on it could never have matched a real message.
+	peer := envelope.From
 	session := r.peers[peer.String()]
 	if session == nil {
 		r.logger.WarnContext(ctx, "dropping encrypted message without session", "peer", peer)

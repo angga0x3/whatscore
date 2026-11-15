@@ -29,6 +29,10 @@ func TestEncryptedTextRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The parse side reads the inbound shape: the service stamps "from" onto
+	// what it delivers. The built node carries "to" only, so the round trip
+	// adds the sender the live wire would have.
+	decoded.Attrs["from"] = "628999@s.whatsapp.net"
 	got, err := ParseEncryptedText(decoded)
 	if err != nil {
 		t.Fatal(err)
@@ -36,6 +40,51 @@ func TestEncryptedTextRoundTrip(t *testing.T) {
 	if got.ID != want.ID || got.To != want.To || got.Version != want.Version ||
 		got.Carrier != want.Carrier || !bytes.Equal(got.Ciphertext, want.Ciphertext) {
 		t.Fatalf("parsed = %#v", got)
+	}
+	if got.From.User != "628999" || got.From.Server != UserServer {
+		t.Fatalf("from = %s", got.From)
+	}
+}
+
+// TestParseEncryptedTextWithoutTo pins the live inbound shape: the offline
+// queue replay arrives with "from" alone, and refusing it for a missing "to"
+// is what kept every queued message from being decrypted (PF-087).
+func TestParseEncryptedTextWithoutTo(t *testing.T) {
+	node := &binary.Node{
+		Tag: tagMessage,
+		Attrs: binary.Attrs{
+			"id": "LIVE1", "from": "266988689592415:35@lid", "type": MessageTypeText,
+		},
+		Children: []binary.Node{{
+			Tag: tagEnc, Attrs: binary.Attrs{attrVersion: EncVersion2, attrCarrier: CarrierPKMsg},
+			Bytes: []byte{0x07},
+		}},
+	}
+	got, err := ParseEncryptedText(node)
+	if err != nil {
+		t.Fatalf("live shape rejected: %v", err)
+	}
+	if !got.To.IsEmpty() {
+		t.Fatalf("to = %s, want empty", got.To)
+	}
+	if got.From.String() != "266988689592415:35@lid" {
+		t.Fatalf("from = %s", got.From)
+	}
+}
+
+// TestParseEncryptedTextRequiresFrom keeps the sender mandatory: without it
+// the session lookup has no peer to name.
+func TestParseEncryptedTextRequiresFrom(t *testing.T) {
+	node := &binary.Node{
+		Tag:   tagMessage,
+		Attrs: binary.Attrs{"id": "LIVE2", "type": MessageTypeText},
+		Children: []binary.Node{{
+			Tag: tagEnc, Attrs: binary.Attrs{attrVersion: EncVersion2, attrCarrier: CarrierMsg},
+			Bytes: []byte{0x07},
+		}},
+	}
+	if _, err := ParseEncryptedText(node); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("err = %v, want ErrInvalidMessage", err)
 	}
 }
 

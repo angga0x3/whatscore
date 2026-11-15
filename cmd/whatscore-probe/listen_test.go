@@ -464,12 +464,13 @@ func TestHoleFilledNonIbIsDropped(t *testing.T) {
 }
 
 // preKeyNode builds the raw frame a peer's prekey message arrives in, matching
-// the live shape: <message id to type="text"><enc v="2" type="pkmsg">wire</enc>.
+// the live shape: the service addresses inbound stanzas with "from" alone and
+// omits "to" entirely (the queue replay carried none).
 func preKeyNode(wire []byte) []byte {
 	node := &wabinary.Node{
 		Tag: "message",
 		Attrs: wabinary.Attrs{
-			"id": "TEST1", "to": "100000000000000:1@s.whatsapp.net", "type": "text",
+			"id": "TEST1", "from": "100000000000000:1@s.whatsapp.net", "type": "text",
 		},
 		Children: []wabinary.Node{{
 			Tag:   "enc",
