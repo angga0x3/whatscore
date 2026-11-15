@@ -380,8 +380,10 @@ func runListen(cfg sendConfig) error {
 	// "window ended", which is a false negative an operator cannot see through.
 	// The offline drain gets its own grace beyond the window: the drain marker
 	// is the moment live fan-out should start, so that is when watching is
-	// worth extending for.
-	offlineGrace := 5 * time.Minute
+	// worth extending for. Provisioning (key shares answering the app state
+	// key request) lands in this window too, and the phone answers on its own
+	// schedule — hence the generous ceiling.
+	offlineGrace := 30 * time.Minute
 	select {
 	case <-ctx.Done():
 		d.shutdown()
