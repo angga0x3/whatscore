@@ -94,3 +94,47 @@ func (s *Sender) SetIdentityPair(pair signal.KeyPair) {
 	s.idPair = pair
 	s.identity = pair.Public
 }
+
+// SendEncryptedPayload sends an arbitrary protobuf Message payload over an
+// established session, padded and encrypted like a text send. It exists for
+// the server-driven protocol messages — the app state key request is one —
+// that ride the same session as text but carry no conversation field.
+func (s *Sender) SendEncryptedPayload(ctx context.Context, to string, payload []byte) (string, *PeerSession, error) {
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
+	jid, err := stanza.ParseJID(strings.TrimSpace(to))
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
+	}
+	if jid.User == "" {
+		return "", nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
+	}
+	session := s.peers[jid.String()]
+	if session == nil {
+		return "", nil, ErrNoSession
+	}
+
+	id, err := s.newID()
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+	}
+	ciphertext, err := session.State.Encrypt(stanza.PadMessage(payload), s.identity, session.PeerIdentity)
+	if err != nil {
+		return "", nil, fmt.Errorf("core/messaging: encrypt: %w", err)
+	}
+	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
+		ID: id, To: jid, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
+	}
+	frame, err := s.codec.Encode(node)
+	if err != nil {
+		return "", nil, fmt.Errorf("core/messaging: encode: %w", err)
+	}
+	if err := s.write.WriteFrame(ctx, frame); err != nil {
+		return "", nil, fmt.Errorf("core/messaging: write: %w", err)
+	}
+	return id, session, nil
+}

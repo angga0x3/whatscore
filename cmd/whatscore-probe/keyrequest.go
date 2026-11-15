@@ -10,46 +10,22 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	wabinary "github.com/angga0x3/whatscore/protocol/binary"
-	stanza "github.com/angga0x3/whatscore/protocol/messaging"
-	"github.com/angga0x3/whatscore/protocol/noise"
+	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/protocol/protobuf"
-	"github.com/angga0x3/whatscore/protocol/signal"
 	waproto "google.golang.org/protobuf/proto"
 )
 
 // sendAppStateKeyRequest asks the phone for the missing app state keys. The
-// message rides the same first-contact path as any first text: fetch the
-// account's own bundle, initiate, encrypt the protocol payload, and send it
-// as a pkmsg to the user JID (never device-qualified — the phone routes it).
-func sendAppStateKeyRequest(ctx context.Context, d *dispatcher, sc noise.SecureConn, codec wabinary.Codec, record *credentialRecord, source *preKeyStore, keyIDs [][]byte) error {
+// request rides the existing ratchet with the phone's device (bootstrapped
+// from its messages, persisted across runs) — no bundle fetch needed, and
+// none is served for the own account anyway. The phone answers with an
+// APP_STATE_SYNC_KEY_SHARE, whose storage triggers the patch re-request.
+func sendAppStateKeyRequest(ctx context.Context, sender *coremessaging.Sender, phonePeer string, keyIDs [][]byte) error {
 	if len(keyIDs) == 0 {
 		return nil
 	}
-	ownJID := userPartOf(record.JID)
-	if ownJID == "" {
-		return fmt.Errorf("key request: account JID %q has no user part", record.JID)
-	}
-
-	bundle, err := fetchPreKeyBundle(ctx, d, ownJID)
-	if err != nil {
-		return fmt.Errorf("prekey bundle for %s: %w", ownJID, err)
-	}
-	if err := signal.ParsePreKeyBundle(*bundle); err != nil {
-		return fmt.Errorf("own bundle for %s does not verify: %w", ownJID, err)
-	}
-
-	identityPair := signal.KeyPair{Private: record.IdentityPriv, Public: record.IdentityPub}
-	initiator, err := signal.Initiate(identityPair, *bundle)
-	if err != nil {
-		return fmt.Errorf("initiate: %w", err)
-	}
-	state, err := signal.NewInitiator(initiator.Keys.RootKey, bundle.SignedPreKey, initiator.Keys.ChainKey)
-	if err != nil {
-		return fmt.Errorf("initiator state: %w", err)
-	}
-
 	ids := make([]*protobuf.AppStateSyncKeyId, 0, len(keyIDs))
 	for _, id := range keyIDs {
 		kid := append([]byte(nil), id...)
@@ -66,60 +42,36 @@ func sendAppStateKeyRequest(ctx context.Context, d *dispatcher, sc noise.SecureC
 	if err != nil {
 		return fmt.Errorf("marshal key request: %w", err)
 	}
-
-	ciphertext, err := state.Encrypt(stanza.PadMessage(payload), identityPair.Public, bundle.IdentityKey)
-	if err != nil {
-		return fmt.Errorf("encrypt: %w", err)
-	}
-	wire, err := initiator.BuildPreKeyMessage(identityPair.Public, record.RegistrationID, ciphertext)
-	if err != nil {
-		return fmt.Errorf("prekey message: %w", err)
-	}
-
-	messageID, err := randomID()
+	id, _, err := sender.SendEncryptedPayload(ctx, phonePeer, payload)
 	if err != nil {
 		return err
 	}
-	toJID, err := stanza.ParseJID(ownJID)
-	if err != nil {
-		return fmt.Errorf("parse own jid: %w", err)
-	}
-	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
-		ID:         messageID,
-		To:         toJID,
-		Carrier:    stanza.CarrierPKMsg,
-		Ciphertext: wire,
-	})
-	if err != nil {
-		return fmt.Errorf("build envelope: %w", err)
-	}
-	frame, err := codec.Encode(node)
-	if err != nil {
-		return fmt.Errorf("encode envelope: %w", err)
-	}
-	if err := sc.WriteFrame(ctx, frame); err != nil {
-		return fmt.Errorf("send: %w", err)
-	}
-	fmt.Printf("app state key request sent (%d ids) to %s\n", len(keyIDs), ownJID)
+	fmt.Printf("app state key request sent (%d ids) via %s as %s\n", len(keyIDs), phonePeer, id)
 	return nil
 }
 
-// userPartOf strips the device suffix and server from a JID, leaving the
-// bare account number ("628123:37@s.whatsapp.net" → "628123").
-func userPartOf(jid string) string {
-	local, _, ok := cut(jid, "@")
-	if !ok {
-		return ""
+// phonePeerFor finds the stored peer session that belongs to the phone (the
+// primary device): its JID user matches the account's LID user, because the
+// LID is account-scoped while the device suffix differs per device.
+func phonePeerFor(lid string, sessions map[string]storedSession) string {
+	lidUser := lid
+	if at := strings.Index(lid, "@"); at >= 0 {
+		lidUser = lid[:at]
 	}
-	user, _, _ := cut(local, ":")
-	return user
-}
-
-func cut(s, sep string) (string, string, bool) {
-	for i := 0; i < len(s); i++ {
-		if string(s[i]) == sep {
-			return s[:i], s[i+len(sep):], true
+	if colon := strings.Index(lidUser, ":"); colon >= 0 {
+		lidUser = lidUser[:colon]
+	}
+	for peer := range sessions {
+		user := peer
+		if at := strings.Index(peer, "@"); at >= 0 {
+			user = peer[:at]
+		}
+		if colon := strings.Index(user, ":"); colon >= 0 {
+			user = user[:colon]
+		}
+		if user == lidUser {
+			return peer
 		}
 	}
-	return s, "", false
+	return ""
 }

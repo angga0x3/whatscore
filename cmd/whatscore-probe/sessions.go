@@ -97,10 +97,11 @@ func (s *sessionsFile) record(peer string, session *coremessaging.PeerSession) e
 	return nil
 }
 
-// install registers every stored session with the receiver, so a msg-carrier
-// message from a peer this device has already bootstrapped decrypts in this
-// run instead of dying with "no peer session".
-func (s *sessionsFile) install(r *coremessaging.Receiver) error {
+// install registers every stored session with the receiver and the sender,
+// so a msg-carrier message from a peer this device has already bootstrapped
+// decrypts in this run instead of dying with "no peer session" — and an
+// outbound send (the app state key request) rides the same chain.
+func (s *sessionsFile) install(r *coremessaging.Receiver, sender *coremessaging.Sender) error {
 	for peer, rec := range s.Sessions {
 		raw, err := base64.StdEncoding.DecodeString(rec.State)
 		if err != nil {
@@ -114,11 +115,14 @@ func (s *sessionsFile) install(r *coremessaging.Receiver) error {
 		if len(rec.PeerIdentity) == len(identity) {
 			copy(identity[:], rec.PeerIdentity)
 		}
-		if err := r.SetReceiverPeer(peer, &coremessaging.PeerSession{
-			PeerIdentity: identity,
-			State:        state,
-		}); err != nil {
+		ps := &coremessaging.PeerSession{PeerIdentity: identity, State: state}
+		if err := r.SetReceiverPeer(peer, ps); err != nil {
 			return fmt.Errorf("install session for %s: %w", peer, err)
+		}
+		if sender != nil {
+			if err := sender.SetPeer(peer, ps); err != nil {
+				return fmt.Errorf("install sender session for %s: %w", peer, err)
+			}
 		}
 	}
 	return nil

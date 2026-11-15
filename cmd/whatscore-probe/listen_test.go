@@ -655,7 +655,7 @@ func TestSessionsPersistAcrossRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	receiver.SetReceiverIdentity(identity.Public)
-	if err := restored.install(receiver); err != nil {
+	if err := restored.install(receiver, nil); err != nil {
 		t.Fatalf("install: %v", err)
 	}
 	if err := receiver.HandleFrame(context.Background(), msgNode(secondCipher)); err != nil {
