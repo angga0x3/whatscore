@@ -149,11 +149,11 @@ PF-050…PF-059.
 
 ## Current blockers
 
-| Blocker | Owner | Impact | Unblock |
-|---------|-------|--------|---------|
-| Token table licence (spec §10.2) | maintainer | binary encoding cannot match real traffic | decide clean-room vs derived, then `cmd/tokendict -check` |
-| XEdDSA signer (ADR 0001) | maintainer | pairing cannot complete (`ErrSignerRequired`) | approve a vetted dependency, or review a first-party signer |
-| Auth acceptance unverified | engineering | cannot claim login works live | interpret the server's success/failure stanzas (`WaitAuth`) |
+| Blocker | State | What changed |
+|---------|-------|--------------|
+| Token table (spec §10.2) | **Decided** — ADR 0002: operator data | `WHATSAPP_TOKEN_DICTIONARY` + startup validation; nothing table-shaped ships in the repo |
+| XEdDSA signing (ADR 0001) | **Decided** — deferred, seam stays | pairing returns `ErrSignerRequired`; no unsigned credential can be persisted |
+| Auth acceptance unverified live | Open — engineering | `WaitAuth`/`AuthConnector` now surface the verdict; a live run with a real payload is the remaining step |
 
 Nothing else in the stack is blocked: transport, Noise, Signal, media, sync,
 REST, and the SDK all have green tests and only need the three items above to

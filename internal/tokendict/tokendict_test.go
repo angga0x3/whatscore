@@ -405,3 +405,27 @@ func TestProvenanceIsAttributionOnly(t *testing.T) {
 		t.Fatalf("provenance must not carry token values: %s", encoded)
 	}
 }
+
+// TestValidateCrossTableDuplicate pins the fix for a real gap: a token present
+// in both the single-byte table and a double-byte dictionary would be
+// addressable two ways, so the encoder could choose either.
+func TestValidateCrossTableDuplicate(t *testing.T) {
+	table := Table{
+		Source:       "synthetic",
+		ObservedDate: "2026-11-15",
+		License:      "Apache-2.0",
+		Single:       []string{"", "shared-token"},
+		Double:       [][]string{{"shared-token"}},
+	}
+	err := Validate(table)
+	if err == nil {
+		t.Fatal("expected a cross-table duplicate to be rejected")
+	}
+	var typed *Error
+	if !errors.As(err, &typed) {
+		t.Fatalf("want a typed error, got %T", err)
+	}
+	if typed.Kind != KindDuplicateToken {
+		t.Fatalf("kind = %s", typed.Kind)
+	}
+}

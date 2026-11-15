@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -228,6 +229,12 @@ func validateEntries(t Table) error {
 				return failure(KindDuplicateToken, "double", index, dict,
 					"duplicate of dictionary %d index %d", first.dict, first.index)
 			}
+			// A token must be addressable unambiguously, so it cannot appear in
+			// both the single-byte table and a double-byte dictionary.
+			if first, ok := singleSeen[token]; ok {
+				return failure(KindDuplicateToken, "double", index, dict,
+					"duplicate of single index %d", first)
+			}
 			doubleSeen[token] = struct{ dict, index int }{dict: dict, index: index}
 			total++
 		}
@@ -335,4 +342,15 @@ func Build(t Table) (*binary.Dictionary, error) {
 		return nil, fmt.Errorf("tokendict: build dictionary: %w", err)
 	}
 	return dict, nil
+}
+
+// LoadFile reads and validates a candidate table from path. It is the file
+// entry point for the server and the CLI (ADR 0002: the table is operator data).
+func LoadFile(path string) (Table, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return Table{}, fmt.Errorf("tokendict: open %s: %w", path, err)
+	}
+	defer func() { _ = file.Close() }()
+	return LoadAndValidate(file)
 }

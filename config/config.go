@@ -49,6 +49,10 @@ type DatabaseConfig struct {
 // EngineConfig holds settings for the built-in protocol engine.
 type EngineConfig struct {
 	SessionLimit int
+	// TokenDictionaryPath points at an operator-supplied token table (ADR
+	// 0002). Empty means the codec runs with an empty dictionary, which is
+	// correct for every path that does not need WhatsApp string tokens.
+	TokenDictionaryPath string
 }
 
 // MediaConfig holds media storage settings.
@@ -100,6 +104,10 @@ func Load() (*Config, error) {
 	}
 
 	if cfg.Engine.SessionLimit, err = envInt("WHATSAPP_SESSION_LIMIT", 10, 1, 1_000_000); err != nil {
+		return nil, err
+	}
+
+	if cfg.Engine.TokenDictionaryPath, err = envString("WHATSAPP_TOKEN_DICTIONARY", ""); err != nil {
 		return nil, err
 	}
 

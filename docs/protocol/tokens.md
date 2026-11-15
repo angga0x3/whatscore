@@ -157,14 +157,31 @@ Producing a `binary.Dictionary` from a table is a code decision, made through
 `tokendict.Build` where a reviewer can see it, not a shell side effect.
 Candidate tables are inputs for local checking only; they are never committed.
 
-## No table ships until §10.2 is decided
+## Decision (2026-11-15): operator data
 
-This is the operative sentence of the page: **no token table ships in this
-repository until the maintainer decides §10.2.** Neither a green validator run
-nor a plausible provenance line changes that. Once the decision lands, the
-policy — not the codec — is what has to be updated first: this page states the
-accepted derivation method and licence terms, and a finding records the table as
-an observation with a proving test.
+§10.2 is now decided, in
+[ADR 0002](../architecture/decisions/0002-token-table.md). The table is
+**operator-supplied input**:
 
-Until then, the validator exists so that the first real candidate is easy to
-check and impossible to check in by accident.
+- loaded from `WHATSAPP_TOKEN_DICTIONARY`;
+- validated at startup by the same rules below (source, ISO date, licence,
+  structure, hygiene);
+- never committed to this repository, in whole or in part.
+
+A deployment with no table runs with an empty dictionary, which is correct for
+every code path that does not encode WhatsApp string tokens. A configured table
+that fails validation stops startup with a typed error, so a bad table cannot
+produce garbled stanzas later.
+
+### What this does and does not solve
+
+It removes the licensing question from the repository: nothing here is derived
+from a table of unclear provenance. It does not make a fresh clone able to talk
+to WhatsApp — an operator must supply a table they have the right to use, and
+that choice is recorded in their deployment, not in a commit.
+
+### If the maintainer later publishes a table
+
+Nothing in the codec changes. A published table becomes another input: the
+validator still runs, and the finding that records it must carry its derivation
+method, licence, and a proving test.

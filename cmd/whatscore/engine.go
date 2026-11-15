@@ -32,7 +32,7 @@ import (
 	"crypto/rand"
 	"crypto/sha512"
 	"crypto/subtle"
-	"encoding/binary"
+	binenc "encoding/binary"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -48,6 +48,7 @@ import (
 	"github.com/angga0x3/whatscore/core/prekeys"
 	"github.com/angga0x3/whatscore/core/session"
 	"github.com/angga0x3/whatscore/internal/waref"
+	"github.com/angga0x3/whatscore/protocol/binary"
 	"github.com/angga0x3/whatscore/protocol/noise"
 	"github.com/angga0x3/whatscore/protocol/signal"
 	"github.com/angga0x3/whatscore/protocol/transport"
@@ -179,6 +180,10 @@ type sessionFactoryOptions struct {
 	// handler consumes inbound frames after the handshake. Nil discards them;
 	// core/session still reads, so a dropped connection is detected.
 	handler session.FrameHandler
+
+	// codec encodes and decodes nodes. Unset means binary.NewCodec(nil), i.e.
+	// an empty token table (ADR 0002).
+	codec binary.Codec
 }
 
 // sessionFactory builds one core/session per API session. It holds no
@@ -192,6 +197,7 @@ type sessionFactory struct {
 	endpoint    transport.Endpoint
 	rootPub     []byte
 	handler     session.FrameHandler
+	codec       binary.Codec
 }
 
 // newSessionFactory validates its dependencies once, so a misconfigured
@@ -210,6 +216,9 @@ func newSessionFactory(opts sessionFactoryOptions) (*sessionFactory, error) {
 	dialer := opts.dialer
 	if dialer == nil {
 		dialer = &transport.WebSocketDialer{}
+	}
+	if opts.codec == nil {
+		opts.codec = binary.NewCodec(nil)
 	}
 	endpoint := opts.endpoint
 	if endpoint.URL == "" {
@@ -237,6 +246,7 @@ func newSessionFactory(opts sessionFactoryOptions) (*sessionFactory, error) {
 		endpoint:    endpoint,
 		rootPub:     append([]byte(nil), rootPub...),
 		handler:     opts.handler,
+		codec:       opts.codec,
 	}, nil
 }
 
@@ -295,6 +305,7 @@ func (f *sessionFactory) engineConnector(ctx context.Context, id string) (sessio
 		Identity:       keys.identity,
 		RegistrationID: keys.registrationID,
 		PreKeys:        keys.preKeys,
+		Codec:          f.codec,
 		// Signer stays nil on purpose: it gates device-identity signing for
 		// pairing (PF-017), which needs an XEdDSA signer that does not exist
 		// yet (ADR 0001). Pairing therefore ends with ErrSignerRequired
@@ -507,7 +518,7 @@ func newRegistrationID() (uint32, error) {
 	if _, err := rand.Read(raw[:]); err != nil {
 		return 0, err
 	}
-	return uint32(binary.BigEndian.Uint16(raw[:])%16383) + 1, nil
+	return uint32(binenc.BigEndian.Uint16(raw[:])%16383) + 1, nil
 }
 
 // validateSessionID keeps credential record keys unambiguous. It mirrors the

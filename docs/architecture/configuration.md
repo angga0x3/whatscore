@@ -16,6 +16,7 @@ binary works unchanged in Docker, bare metal, and CI. Copy
 | `DB_MIGRATE_ON_STARTUP` | `true` | Apply embedded schema migrations at startup. Set `false` when you apply migrations out-of-band. |
 | `API_KEY_REQUIRED` | `true` | Enforce Bearer authentication on `/api/v1` endpoints. |
 | `WHATSAPP_SESSION_LIMIT` | `10` | Maximum concurrent sessions. |
+| `WHATSAPP_TOKEN_DICTIONARY` | — | Path to an operator-supplied token table (ADR 0002). Validated at startup; empty means the codec uses an empty table. The table is never committed to the repo. |
 | `MEDIA_STORAGE` | `local` | Media backend (`local` for MVP). |
 | `MEDIA_PATH` | `./storage/media` | Filesystem path for media binaries. |
 | `MEDIA_MAX_SIZE_MB` | `50` | Upload size limit. |

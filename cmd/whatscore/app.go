@@ -18,6 +18,7 @@ import (
 	"github.com/angga0x3/whatscore/config"
 	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/observability"
+	"github.com/angga0x3/whatscore/protocol/binary"
 	"github.com/angga0x3/whatscore/server/api"
 	httpapi "github.com/angga0x3/whatscore/server/http"
 	"github.com/angga0x3/whatscore/server/http/handlers"
@@ -84,10 +85,17 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 	}
 
 	bus := events.NewBus()
+	dictionary, err := loadTokenDictionary(cfg, logger)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("load token dictionary: %w", err)
+	}
+
 	factory, err := newSessionFactory(sessionFactoryOptions{
 		vault:  vault,
 		bus:    bus,
 		logger: logger,
+		codec:  binary.NewCodec(dictionary),
 	})
 	if err != nil {
 		pool.Close()
