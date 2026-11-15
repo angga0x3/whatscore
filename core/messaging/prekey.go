@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
 	"github.com/angga0x3/whatscore/protocol/signal"
@@ -132,26 +131,14 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 		return
 	}
 
-	// The decrypted payload is a protobuf Message, same as the msg carrier.
-	text, err := stanza.DecodeTextMessage(plaintext)
+	// The decrypted payload is a protobuf Message, same as the msg carrier:
+	// text or a media attachment, decided by DecodePayload.
+	payload, err := stanza.DecodePayload(plaintext)
 	if err != nil {
-		r.logger.InfoContext(ctx, "decrypted a prekey message with no text payload", "peer", peer, "error", err)
+		r.logger.InfoContext(ctx, "decrypted a prekey message with no usable payload", "peer", peer, "error", err)
 		return
 	}
 
 	timestamp := timestampOf(node)
-	r.bus.Publish(events.Event{
-		Type:      events.TypeMessage,
-		SessionID: r.sessionID,
-		Timestamp: timestamp,
-		Message: &events.Message{
-			ID:        envelope.ID,
-			Chat:      peer.String(),
-			Sender:    peer.String(),
-			Timestamp: timestamp,
-			Direction: events.DirectionIncoming,
-			Text:      text,
-			IsGroup:   peer.Server == stanza.GroupServer,
-		},
-	})
+	r.publishIncoming(ctx, envelope.ID, peer, timestamp, payload)
 }

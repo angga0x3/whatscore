@@ -152,6 +152,28 @@ type Message struct {
 	Direction Direction
 	Text      string
 	IsGroup   bool
+	// Media is set when the message carries an attachment (image, sticker,
+	// video, audio, document). Text is then its caption, if any.
+	Media *MediaAttachment
+}
+
+// MediaAttachment carries everything a downloader needs to fetch and open one
+// media item: the HKDF key type the mediaKey expands under, the digests the
+// blob is verified against, and the direct path the CDN serves it from.
+type MediaAttachment struct {
+	Kind              string // "image", "sticker", "video", "audio", "document"
+	MimeType          string
+	Caption           string
+	FileName          string
+	FileLength        uint64
+	MediaKey          []byte
+	FileSHA256        []byte
+	FileEncSHA256     []byte
+	DirectPath        string
+	MediaKeyTimestamp int64
+	// KeysType is the HKDF info string for the media key ("WhatsApp Image
+	// Keys" and friends); stickers expand under the image keys.
+	KeysType string
 }
 
 // Receipt is a normalized receipt for a previously observed message.

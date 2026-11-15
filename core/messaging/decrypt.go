@@ -3,6 +3,7 @@ package messaging
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/protocol/binary"
@@ -108,5 +109,47 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 			Text:      text,
 			IsGroup:   peer.Server == stanza.GroupServer,
 		},
+	})
+}
+
+// publishIncoming turns one decoded payload into the event the rest of the
+// stack sees: a text message, or a message carrying a media attachment.
+func (r *Receiver) publishIncoming(ctx context.Context, id string, peer stanza.JID, timestamp time.Time, payload *stanza.Payload) {
+	msg := &events.Message{
+		ID:        id,
+		Chat:      peer.String(),
+		Sender:    peer.String(),
+		Timestamp: timestamp,
+		Direction: events.DirectionIncoming,
+		IsGroup:   peer.Server == stanza.GroupServer,
+	}
+	switch payload.Kind {
+	case stanza.PayloadText:
+		msg.Text = payload.Text
+	case stanza.PayloadImage, stanza.PayloadSticker, stanza.PayloadVideo, stanza.PayloadAudio, stanza.PayloadDocument:
+		m := payload.Media
+		msg.Text = m.Caption
+		msg.Media = &events.MediaAttachment{
+			Kind:              string(payload.Kind),
+			MimeType:          m.MimeType,
+			Caption:           m.Caption,
+			FileName:          m.FileName,
+			FileLength:        m.FileLength,
+			MediaKey:          m.MediaKey,
+			FileSHA256:        m.FileSHA256,
+			FileEncSHA256:     m.FileEncSHA256,
+			DirectPath:        m.DirectPath,
+			MediaKeyTimestamp: m.MediaKeyTimestamp,
+			KeysType:          m.KeysType,
+		}
+	default:
+		r.logger.DebugContext(ctx, "payload has no renderable content", "kind", payload.Kind)
+		return
+	}
+	r.bus.Publish(events.Event{
+		Type:      events.TypeMessage,
+		SessionID: r.sessionID,
+		Timestamp: timestamp,
+		Message:   msg,
 	})
 }

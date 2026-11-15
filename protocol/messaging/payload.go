@@ -7,6 +7,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/angga0x3/whatscore/protocol/media"
 	"github.com/angga0x3/whatscore/protocol/protobuf"
 )
 
@@ -88,4 +89,103 @@ func UnpadMessage(plaintext []byte, version string) ([]byte, error) {
 		return nil, fmt.Errorf("%w: plaintext does not carry valid padding", ErrInvalidMessagePayload)
 	}
 	return plaintext[:len(plaintext)-int(last)], nil
+}
+
+// PayloadKind names the content a decrypted Message carries.
+type PayloadKind string
+
+const (
+	PayloadText     PayloadKind = "text"
+	PayloadImage    PayloadKind = "image"
+	PayloadSticker  PayloadKind = "sticker"
+	PayloadVideo    PayloadKind = "video"
+	PayloadAudio    PayloadKind = "audio"
+	PayloadDocument PayloadKind = "document"
+	PayloadUnknown  PayloadKind = "unknown"
+)
+
+// MediaAttachment is the download metadata one media payload carries. KeysType
+// is the HKDF info string the media key expands under; stickers expand under
+// the image keys (whatsmeow classToMediaType), everything else under its own.
+type MediaAttachment struct {
+	Kind              PayloadKind
+	MimeType          string
+	Caption           string
+	FileName          string
+	FileLength        uint64
+	MediaKey          []byte
+	FileSHA256        []byte
+	FileEncSHA256     []byte
+	DirectPath        string
+	MediaKeyTimestamp int64
+	KeysType          string
+}
+
+// Payload is the decoded content of one decrypted Message: either text or one
+// media attachment. A payload with neither — protocol messages, reactions,
+// ephemeral settings — decodes to PayloadUnknown without error, because
+// "unsupported but valid" is a normal thing to receive.
+type Payload struct {
+	Kind  PayloadKind
+	Text  string
+	Media *MediaAttachment
+}
+
+// DecodePayload reads a decrypted application payload and classifies it: text
+// in either carrier, or one of the five media kinds. Unknown payloads return
+// PayloadUnknown, not an error — the earlier "carries no text (unsupported
+// message type)" error conflated a full inbox of legitimate non-text content
+// with a failure.
+func DecodePayload(raw []byte) (*Payload, error) {
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("%w: empty payload", ErrInvalidMessagePayload)
+	}
+	var message protobuf.Message
+	if err := proto.Unmarshal(raw, &message); err != nil {
+		return nil, fmt.Errorf("%w: unmarshaling: %w", ErrInvalidMessagePayload, err)
+	}
+	switch {
+	case message.GetConversation() != "":
+		return &Payload{Kind: PayloadText, Text: message.GetConversation()}, nil
+	case message.GetExtendedTextMessage() != nil:
+		return &Payload{Kind: PayloadText, Text: message.GetExtendedTextMessage().GetText()}, nil
+	case message.GetImageMessage() != nil:
+		m := message.GetImageMessage()
+		return &Payload{Kind: PayloadImage, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), m.GetCaption(), "",
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeImage)}, nil
+	case message.GetStickerMessage() != nil:
+		m := message.GetStickerMessage()
+		return &Payload{Kind: PayloadSticker, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), "", "",
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeImage)}, nil
+	case message.GetVideoMessage() != nil:
+		m := message.GetVideoMessage()
+		return &Payload{Kind: PayloadVideo, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), m.GetCaption(), "",
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeVideo)}, nil
+	case message.GetAudioMessage() != nil:
+		m := message.GetAudioMessage()
+		return &Payload{Kind: PayloadAudio, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), "", "",
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeAudio)}, nil
+	case message.GetDocumentMessage() != nil:
+		m := message.GetDocumentMessage()
+		return &Payload{Kind: PayloadDocument, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), "", m.GetFileName(),
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeDocument)}, nil
+	default:
+		return &Payload{Kind: PayloadUnknown}, nil
+	}
+}
+
+func mediaFrom(directPath, mimetype, caption, fileName string, fileLength uint64,
+	mediaKey, fileSHA256, fileEncSHA256 []byte, mediaKeyTimestamp int64, keysType string) *MediaAttachment {
+	return &MediaAttachment{
+		MimeType:          mimetype,
+		Caption:           caption,
+		FileName:          fileName,
+		FileLength:        fileLength,
+		MediaKey:          append([]byte(nil), mediaKey...),
+		FileSHA256:        append([]byte(nil), fileSHA256...),
+		FileEncSHA256:     append([]byte(nil), fileEncSHA256...),
+		DirectPath:        directPath,
+		MediaKeyTimestamp: mediaKeyTimestamp,
+		KeysType:          keysType,
+	}
 }

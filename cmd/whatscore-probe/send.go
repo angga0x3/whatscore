@@ -28,6 +28,7 @@ type sendConfig struct {
 	Text     string
 	Timeout  time.Duration
 	KeyPath  string
+	MediaDir string
 }
 
 // runSend logs in with stored credentials and sends one text message.

@@ -239,6 +239,16 @@ func runListen(cfg sendConfig) error {
 				}
 				fmt.Printf("\nMESSAGE from=%s id=%s at=%s\n  text: %s\n",
 					ev.Message.Sender, ev.Message.ID, ev.Message.Timestamp.Format(time.RFC3339), ev.Message.Text)
+				if m := ev.Message.Media; m != nil {
+					path, err := DownloadMedia(context.Background(), d, m, cfg.MediaDir)
+					if err != nil {
+						fmt.Printf("  media: kind=%s mime=%s bytes=%d download failed: %v\n",
+							m.Kind, m.MimeType, m.FileLength, err)
+					} else {
+						fmt.Printf("  media: kind=%s mime=%s bytes=%d saved to %s\n",
+							m.Kind, m.MimeType, m.FileLength, path)
+					}
+				}
 			}
 		}
 	}()

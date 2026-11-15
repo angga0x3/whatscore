@@ -3,10 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/angga0x3/whatscore/protocol/media"
 
 	"github.com/angga0x3/whatscore/core/events"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
@@ -712,4 +720,186 @@ func TestRetryReceiptShape(t *testing.T) {
 	default:
 		t.Fatal("a decryption failure earned no retry receipt on the wire")
 	}
+}
+
+// mediaConnStub answers the media_conn iq with one hostname, letting the
+// download test point the CDN at a local httptest server.
+type mediaConnStub struct {
+	codec    wabinary.Codec
+	inbox    chan []byte
+	hostname string
+}
+
+func (c *mediaConnStub) ReadFrame(ctx context.Context) ([]byte, error) {
+	select {
+	case f := <-c.inbox:
+		return f, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// WriteFrame captures the media_conn request, reuses its id, and queues the
+// reply so the read loop resolves the waiting iq.
+func (c *mediaConnStub) WriteFrame(ctx context.Context, frame []byte) error {
+	req, err := c.codec.Decode(bytes.NewReader(frame))
+	if err != nil {
+		return err
+	}
+	if child(req, "media_conn") == nil {
+		return fmt.Errorf("unexpected write: %s", attrSummary(req))
+	}
+	reply := &wabinary.Node{
+		Tag: "iq", Attrs: wabinary.Attrs{"type": "result", "id": req.Attrs["id"]},
+		Children: []wabinary.Node{{
+			Tag: "media_conn", Attrs: wabinary.Attrs{"auth": "x", "ttl": "12345"},
+			Children: []wabinary.Node{{Tag: "host", Attrs: wabinary.Attrs{"hostname": c.hostname}}},
+		}},
+	}
+	out, err := c.codec.Encode(reply)
+	if err != nil {
+		return err
+	}
+	c.inbox <- out
+	return nil
+}
+
+func (c *mediaConnStub) Close() error            { return nil }
+func (c *mediaConnStub) CipherSuiteName() string { return "test" }
+
+// TestDownloadMediaEndToEnd runs the media download path against a fake CDN:
+// a blob encrypted with protocol/media (the exact shape the real CDN serves)
+// served over HTTP, fetched, decrypted, hash-verified and written to disk.
+func TestDownloadMediaEndToEnd(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	plaintext := []byte("PNGDATA-fake-image-bytes-for-the-test")
+	mediaKeyBytes := []byte("0123456789abcdef0123456789abcdef")
+	var mediaKey [32]byte
+	copy(mediaKey[:], mediaKeyBytes)
+	keys, err := media.DeriveKeys(mediaKey, media.TypeImage, 0)
+	if err != nil {
+		t.Fatalf("derive: %v", err)
+	}
+	blob, err := media.Encrypt(plaintext, keys)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	encSHA := sha256.Sum256(blob)
+	fileSHA := sha256.Sum256(plaintext)
+
+	var sawOrigin bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawOrigin = r.Header.Get("Origin") == mediaOrigin
+		if !strings.HasPrefix(r.URL.Path, "/v/t62.7118-24/") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if got := r.URL.Query().Get("hash"); got != base64.URLEncoding.EncodeToString(encSHA[:]) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if got := r.URL.Query().Get("mms-type"); got != "image" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write(blob)
+	}))
+	defer srv.Close()
+
+	info := &events.MediaAttachment{
+		Kind:          "image",
+		MimeType:      "image/jpeg",
+		FileLength:    uint64(len(plaintext)),
+		MediaKey:      mediaKeyBytes,
+		FileSHA256:    fileSHA[:],
+		FileEncSHA256: encSHA[:],
+		DirectPath:    "/v/t62.7118-24/13124275_1.jpg?ccb=test",
+		KeysType:      media.TypeImage,
+	}
+
+	codec := wabinary.NewCodec(nil)
+	conn := &mediaConnStub{codec: codec, inbox: make(chan []byte, 4), hostname: strings.TrimPrefix(srv.URL, "http://")}
+	d := newDispatcher(conn, codec)
+	runDone := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		defer close(runDone)
+		d.run(ctx)
+	}()
+
+	mediaURLScheme = "http"
+	t.Cleanup(func() { mediaURLScheme = "https" })
+
+	path, err := DownloadMedia(ctx, d, info, "media")
+	if err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if !sawOrigin {
+		t.Fatal("the CDN request carried no Origin header")
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved file: %v", err)
+	}
+	if !bytes.Equal(got, plaintext) {
+		t.Fatalf("saved %d bytes, want the original %d", len(got), len(plaintext))
+	}
+	if !strings.HasSuffix(path, ".jpg") {
+		t.Fatalf("extension missing: %s", path)
+	}
+	cancel()
+	<-runDone
+}
+
+// TestDownloadMediaRejectsDigestMismatch keeps the verification honest: a
+// blob whose plaintext does not hash to fileSHA256 must not land on disk.
+func TestDownloadMediaRejectsDigestMismatch(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	plaintext := []byte("the real payload")
+	tampered := []byte("the tampered payl0ad")
+	var mediaKey [32]byte
+	copy(mediaKey[:], []byte("0123456789abcdef0123456789abcdef"))
+	keys, err := media.DeriveKeys(mediaKey, media.TypeImage, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := media.Encrypt(tampered, keys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encSHA := sha256.Sum256(blob)
+	fileSHA := sha256.Sum256(plaintext) // claims the original, serves the tampered one
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(blob)
+	}))
+	defer srv.Close()
+
+	codec := wabinary.NewCodec(nil)
+	conn := &mediaConnStub{codec: codec, inbox: make(chan []byte, 4), hostname: strings.TrimPrefix(srv.URL, "http://")}
+	d := newDispatcher(conn, codec)
+	runDone := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		defer close(runDone)
+		d.run(ctx)
+	}()
+
+	mediaURLScheme = "http"
+	t.Cleanup(func() { mediaURLScheme = "https" })
+
+	info := &events.MediaAttachment{
+		Kind: "image", MimeType: "image/jpeg",
+		MediaKey: mediaKey[:], FileSHA256: fileSHA[:], FileEncSHA256: encSHA[:],
+		DirectPath: "/v/t62.7118-24/x.jpg?ccb=t", KeysType: media.TypeImage,
+	}
+	if _, err := DownloadMedia(ctx, d, info, "media"); err == nil {
+		t.Fatal("a tampered media blob was accepted")
+	}
+	cancel()
+	<-runDone
 }

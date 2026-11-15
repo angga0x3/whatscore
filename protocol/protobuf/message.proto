@@ -5,6 +5,13 @@
 // 2026-11-15. Only the subset this project sends and reads is declared; the
 // reference message has over a hundred fields and declaring them unverified
 // would be a claim this project cannot support.
+//
+// The media messages (2026-11-15) carry the fields a download needs: url,
+// mimetype, file digests, mediaKey and the direct path. Their field numbers
+// are copied from the same reference proto (imageMessage = Message field 3,
+// documentMessage = 7, audioMessage = 8, videoMessage = 9, stickerMessage =
+// 26); anything the downloader does not use is left undeclared rather than
+// guessed.
 syntax = "proto2";
 
 package whatscore.protocol.protobuf;
@@ -14,10 +21,90 @@ option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
 message Message {
   // Plain text, used when no richer form is needed.
   optional string conversation = 1;
+  // Image (photos, screenshots).
+  optional ImageMessage imageMessage = 3;
+  // Document (PDF, archive, ...).
+  optional DocumentMessage documentMessage = 7;
+  // Voice notes and audio clips.
+  optional AudioMessage audioMessage = 8;
+  // Video clips and GIFs.
+  optional VideoMessage videoMessage = 9;
+  // Stickers, animated and static.
+  optional StickerMessage stickerMessage = 26;
   // Text with metadata; the plain text is in `text`.
   optional ExtendedTextMessage extendedTextMessage = 6;
 }
 
 message ExtendedTextMessage {
   optional string text = 1;
+}
+
+message ImageMessage {
+  optional string url = 1;
+  optional string mimetype = 2;
+  optional string caption = 3;
+  optional bytes fileSHA256 = 4;
+  optional uint64 fileLength = 5;
+  optional uint32 height = 6;
+  optional uint32 width = 7;
+  optional bytes mediaKey = 8;
+  optional bytes fileEncSHA256 = 9;
+  optional string directPath = 11;
+  optional int64 mediaKeyTimestamp = 12;
+}
+
+message StickerMessage {
+  optional string url = 1;
+  optional bytes fileSHA256 = 2;
+  optional bytes fileEncSHA256 = 3;
+  optional bytes mediaKey = 4;
+  optional string mimetype = 5;
+  optional uint32 height = 6;
+  optional uint32 width = 7;
+  optional string directPath = 8;
+  optional uint64 fileLength = 9;
+  optional int64 mediaKeyTimestamp = 10;
+  optional bool isAnimated = 13;
+}
+
+message VideoMessage {
+  optional string url = 1;
+  optional string mimetype = 2;
+  optional bytes fileSHA256 = 3;
+  optional uint64 fileLength = 4;
+  optional uint32 seconds = 5;
+  optional bytes mediaKey = 6;
+  optional string caption = 7;
+  optional uint32 height = 9;
+  optional uint32 width = 10;
+  optional bytes fileEncSHA256 = 11;
+  optional string directPath = 13;
+  optional int64 mediaKeyTimestamp = 14;
+}
+
+message AudioMessage {
+  optional string url = 1;
+  optional string mimetype = 2;
+  optional bytes fileSHA256 = 3;
+  optional uint64 fileLength = 4;
+  optional uint32 seconds = 5;
+  // Push-to-talk flag: a voice note.
+  optional bool ptt = 6;
+  optional bytes mediaKey = 7;
+  optional bytes fileEncSHA256 = 8;
+  optional string directPath = 9;
+  optional int64 mediaKeyTimestamp = 10;
+}
+
+message DocumentMessage {
+  optional string url = 1;
+  optional string mimetype = 2;
+  optional string title = 3;
+  optional bytes fileSHA256 = 4;
+  optional uint64 fileLength = 5;
+  optional bytes mediaKey = 7;
+  optional string fileName = 8;
+  optional bytes fileEncSHA256 = 9;
+  optional string directPath = 10;
+  optional int64 mediaKeyTimestamp = 11;
 }
