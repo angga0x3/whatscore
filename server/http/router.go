@@ -28,6 +28,8 @@ type Deps struct {
 	// IsShuttingDown must return true once the process started draining;
 	// nil is treated as "never".
 	IsShuttingDown func() bool
+	// API optionally mounts the versioned REST routes.
+	API interface{}
 }
 
 // NewRouter builds the full HTTP handler.
@@ -54,9 +56,13 @@ func NewRouter(deps Deps) http.Handler {
 	r.Get("/ready", handlers.NewReadinessHandler(deps.Readiness, deps.IsShuttingDown).ServeHTTP)
 	r.Get("/version", handlers.NewVersionHandler(deps.AppName, deps.Build).ServeHTTP)
 
-	// The versioned REST API (/api/v1) lands in upcoming milestones:
-	// sessions, messaging, and webhooks. Until then every path under it
-	// answers 501 so clients get a distinct signal from "wrong URL".
+	// Versioned REST API. Routes that are not mounted yet keep answering 501
+	// so clients can tell "not shipped yet" apart from "wrong URL".
+	if deps.API != nil {
+		if mounter, ok := deps.API.(interface{ Mount(chi.Router) }); ok {
+			mounter.Mount(r)
+		}
+	}
 	r.Route("/api/v1", func(v1 chi.Router) {
 		v1.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			handlers.WriteError(w, http.StatusNotImplemented, "not_implemented",

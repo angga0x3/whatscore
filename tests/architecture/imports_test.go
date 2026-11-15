@@ -77,6 +77,18 @@ func TestLayerImportRules(t *testing.T) {
 				return ""
 			},
 		},
+		{
+			name: "storage does not import protocol or application layers",
+			dir:  "storage",
+			isViolation: func(importPath string) string {
+				for _, layer := range []string{"protocol", "core", "server"} {
+					if isWithin(importPath, modulePath+"/"+layer) {
+						return "storage must stay below " + layer
+					}
+				}
+				return ""
+			},
+		},
 	}
 
 	for _, rule := range rules {

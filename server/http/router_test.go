@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/angga0x3/whatscore/buildinfo"
 )
 
@@ -94,5 +96,35 @@ func TestRouterAPIV1NotImplemented(t *testing.T) {
 				t.Errorf("error.code = %q, want not_implemented", body.Error.Code)
 			}
 		})
+	}
+}
+
+type staticMounter struct{ mounted *bool }
+
+func (s staticMounter) Mount(r chi.Router) {
+	r.Get("/api/v1/sessions", func(w http.ResponseWriter, _ *http.Request) {
+		*s.mounted = true
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func TestRouterMountsAPI(t *testing.T) {
+	mounted := false
+	router := NewRouter(Deps{
+		Logger: slog.New(slog.DiscardHandler),
+		Build:  buildinfo.Info{},
+		API:    staticMounter{mounted: &mounted},
+	})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/sessions", nil))
+	if rec.Code != http.StatusOK || !mounted {
+		t.Fatalf("status = %d, mounted = %v", rec.Code, mounted)
+	}
+
+	// Unmounted paths keep the 501 contract.
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/webhooks", nil))
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("unmounted status = %d", rec.Code)
 	}
 }
