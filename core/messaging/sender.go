@@ -25,9 +25,11 @@ type FrameWriter interface {
 
 // Sender builds and writes text stanzas.
 type Sender struct {
-	write FrameWriter
-	codec binary.Codec
-	newID func() (string, error)
+	write    FrameWriter
+	codec    binary.Codec
+	newID    func() (string, error)
+	identity [32]byte
+	peers    map[string]*PeerSession
 }
 
 // Option configures a Sender.
