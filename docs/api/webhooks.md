@@ -66,14 +66,14 @@ accepted the event — anything else is retried.
 - **Per-attempt timeout is 10 s.**
 - **Backoff is deterministic exponential**: 1 s, 2 s, 4 s, … capped at
   60 s, applied between attempts. There is no jitter.
-- Retries stop early when the worker's context is cancelled (shutdown) or
-  when the per-attempt timeout expires — a timeout counts as a failed
-  attempt, not an aborted delivery.
+- Retries stop early only when the worker's context is cancelled (shutdown).
+  A per-attempt timeout (10 s) is an ordinary failed attempt: the next
+  attempt is scheduled with backoff.
 
-One delivery record is written per attempt with status code, error,
-duration, and—only for the successful attempt—`delivered_at`. The final
-record moves the delivery to `DELIVERED` (2xx) or `EXHAUSTED` after the last
-failed attempt; history is available at
+Each attempt yields a delivery record with status code, error, and duration;
+only the successful attempt sets `delivered_at`. The worker persists those
+records and moves the delivery to `DELIVERED` (2xx) or `EXHAUSTED` after the
+last failed attempt. History is available at
 `GET /api/v1/webhooks/{webhookId}/deliveries`.
 
 ## Redirects and size limits
@@ -91,19 +91,19 @@ failed attempt; history is available at
 
 ## Example
 
-Register an endpoint, then watch a local receiver print the verified body:
+Register an endpoint (the signing secret is returned once, at creation):
 
 ```bash
-# 1. Receive: log the signature and accept everything.
-python3 -m http.server 9000 &
-
-# 2. Register (the secret is returned once).
 curl -s -X POST http://localhost:8080/api/v1/webhooks \
   -H "Authorization: Bearer $WHATSCORE_API_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"url":"http://localhost:9000/hook","events":["message.received"]}'
+  -d '{"url":"https://example.com/hooks/whatscore","events":["message.received"]}'
+```
 
-# 3. Simulate the same signed request a worker sends.
+Then replay the same signed request a worker sends against your receiver
+(`localhost:9000` here):
+
+```bash
 SECRET='whsec_returned_once'
 BODY='{"id":"evt_01JQ8Z6K3W4T9V0B2C5D7E9F1G","event":"message.received","timestamp":"2026-11-15T00:00:00Z","session_id":"e8b8c2c0-0f6b-4a88-a4b1-1f1a12345678","data":{"text":"Halo WhatsCore!"}}'
 SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "$SECRET" -r | cut -d' ' -f1)
@@ -114,4 +114,11 @@ curl -s -X POST http://localhost:9000/hook \
   -H 'X-Whatscore-Event: message.received' \
   -H 'X-Whatscore-Delivery: 3f0b1c62-9a4d-4a2e-9f3b-1c2d3e4f5a6b' \
   --data-binary "$BODY"
+```
+
+A receiving stub only has to answer `2xx` and compare the signature; for
+example with `socat`:
+
+```bash
+socat TCP-LISTEN:9000,fork,reuseaddr SYSTEM:'printf "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n"; cat >/dev/null'
 ```
