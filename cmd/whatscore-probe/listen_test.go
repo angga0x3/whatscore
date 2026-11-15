@@ -484,3 +484,176 @@ func preKeyNode(wire []byte) []byte {
 	}
 	return frame
 }
+
+// msgNode builds the raw frame a session's follow-up arrives in: the
+// msg-carrier <enc> a sender uses after its first prekey message.
+func msgNode(ciphertext []byte) []byte {
+	node := &wabinary.Node{
+		Tag: "message",
+		Attrs: wabinary.Attrs{
+			"id": "TEST2", "from": "100000000000000:1@s.whatsapp.net", "type": "text",
+		},
+		Children: []wabinary.Node{{
+			Tag:   "enc",
+			Attrs: wabinary.Attrs{"v": "2", "type": "msg"},
+			Bytes: ciphertext,
+		}},
+	}
+	frame, err := wabinary.NewCodec(nil).Encode(node)
+	if err != nil {
+		panic(err)
+	}
+	return frame
+}
+
+// waitForMessage reads one message event off the bus or fails.
+func waitForMessage(t *testing.T, sub *events.Subscription) events.Event {
+	t.Helper()
+	select {
+	case ev := <-sub.C:
+		if ev.Message == nil {
+			t.Fatalf("event = %#v", ev)
+		}
+		return ev
+	case <-time.After(2 * time.Second):
+		t.Fatal("no message event")
+		return events.Event{}
+	}
+}
+
+// TestSessionsPersistAcrossRuns pins the PF-087 redelivery fix: a session
+// installed by a bootstrap in one run decrypts the msg-carrier follow-up in
+// the next run, because the receiver's session observer wrote the ratchet
+// state to disk and the next run restored it before reading.
+func TestSessionsPersistAcrossRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	storePath := sessionsPathFor("paired.keys.json")
+
+	identity, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	signed, err := signal.GenerateSignedPreKey(3, signal.XEdDSASigner{Private: identity.Private})
+	if err != nil {
+		t.Fatalf("signed prekey: %v", err)
+	}
+	oneTime, err := signal.GeneratePreKey(7)
+	if err != nil {
+		t.Fatalf("one-time prekey: %v", err)
+	}
+	source := &preKeyStore{
+		identity: identity,
+		signed:   signed,
+		oneTime:  map[uint32]signal.PreKey{oneTime.ID: oneTime},
+	}
+
+	// The peer side, exactly what the phone does: fetch the bundle, start a
+	// session with a prekey message, then continue it with msg carriers.
+	peer, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("peer: %v", err)
+	}
+	bundle := signal.PreKeyBundle{
+		IdentityKey:           identity.Public,
+		SignedPreKeyID:        signed.ID,
+		SignedPreKey:          signed.Pair.Public,
+		SignedPreKeySignature: signed.Signature,
+		OneTimePreKeyID:       oneTime.ID,
+		OneTimePreKey:         &oneTime.Pair.Public,
+	}
+	initiator, err := signal.Initiate(peer, bundle)
+	if err != nil {
+		t.Fatalf("initiate: %v", err)
+	}
+	state, err := signal.NewInitiator(initiator.Keys.RootKey, bundle.SignedPreKey, initiator.Keys.ChainKey)
+	if err != nil {
+		t.Fatalf("initiator state: %v", err)
+	}
+	first, err := encodeText("pertama dari phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstCipher, err := state.Encrypt(stanza.PadMessage(first), peer.Public, identity.Public)
+	if err != nil {
+		t.Fatalf("peer encrypt: %v", err)
+	}
+	firstWire, err := initiator.BuildPreKeyMessage(peer.Public, 4242, firstCipher)
+	if err != nil {
+		t.Fatalf("prekey message: %v", err)
+	}
+
+	// Run one: bootstrap, and the observer persists the installed session.
+	sessions := &sessionsFile{Sessions: map[string]storedSession{}}
+	runOne := func(frame []byte) events.Event {
+		bus := events.NewBus()
+		defer bus.Close()
+		sub := bus.Subscribe()
+		defer sub.Close()
+		receiver, err := coremessaging.NewReceiver(bus, "run-one")
+		if err != nil {
+			t.Fatal(err)
+		}
+		receiver.SetReceiverIdentity(identity.Public)
+		receiver.SetPreKeySource(source)
+		receiver.SetSessionObserver(func(peer string, session *coremessaging.PeerSession) {
+			if err := sessions.record(peer, session); err != nil {
+				t.Errorf("record: %v", err)
+			}
+			if err := sessions.save(storePath); err != nil {
+				t.Errorf("save: %v", err)
+			}
+		})
+		if err := receiver.HandleFrame(context.Background(), frame); err != nil {
+			t.Fatalf("handle frame: %v", err)
+		}
+		return waitForMessage(t, sub)
+	}
+
+	ev := runOne(preKeyNode(firstWire))
+	if ev.Message.Text != "pertama dari phone" {
+		t.Fatalf("first text = %q", ev.Message.Text)
+	}
+
+	// The state is on disk, or the next run proves nothing.
+	if len(sessions.Sessions) == 0 {
+		t.Fatal("observer recorded nothing")
+	}
+	if _, err := os.Stat(storePath); err != nil {
+		t.Fatalf("sessions file not written: %v", err)
+	}
+
+	// Run two: restore from disk, then the phone continues the ratchet with a
+	// msg carrier — the shape every message after the first takes.
+	restored, err := loadSessionsFile(storePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := encodeText("kedua dari phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondCipher, err := state.Encrypt(stanza.PadMessage(second), peer.Public, identity.Public)
+	if err != nil {
+		t.Fatalf("peer encrypt: %v", err)
+	}
+
+	bus := events.NewBus()
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+	receiver, err := coremessaging.NewReceiver(bus, "run-two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver.SetReceiverIdentity(identity.Public)
+	if err := restored.install(receiver); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if err := receiver.HandleFrame(context.Background(), msgNode(secondCipher)); err != nil {
+		t.Fatalf("handle follow-up: %v", err)
+	}
+	ev = waitForMessage(t, sub)
+	if ev.Message.Text != "kedua dari phone" {
+		t.Fatalf("follow-up text = %q", ev.Message.Text)
+	}
+}

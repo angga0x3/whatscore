@@ -27,6 +27,11 @@ type Receiver struct {
 	// consumePreKey is called once a one-time prekey has been used, so a
 	// persistent store can delete the private half.
 	consumePreKey func(id uint32)
+
+	// observeSession is called whenever a peer session is installed or its
+	// ratchet advances, so a persistent store can keep the state a later run
+	// needs to decrypt the msg-carrier follow-ups (PF-087 redelivery).
+	observeSession func(peer string, session *PeerSession)
 }
 
 // ReceiverOption configures a Receiver.

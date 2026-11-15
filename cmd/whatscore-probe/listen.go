@@ -123,6 +123,32 @@ func runListen(cfg sendConfig) error {
 		}
 	})
 
+	// Sessions must outlive the process like the keys do: the phone continues
+	// a bootstrapped ratchet with msg-carrier messages, and a run that cannot
+	// restore the state loses every one of them. Restored sessions are also
+	// why a redelivered queue is not a second chance — the keys those
+	// messages were encrypted to are already spent.
+	sessionsPath := sessionsPathFor(cfg.KeyPath)
+	sessions, err := loadSessionsFile(sessionsPath)
+	if err != nil {
+		return err
+	}
+	if err := sessions.install(receiver); err != nil {
+		return err
+	}
+	if n := len(sessions.Sessions); n > 0 {
+		fmt.Printf("sessions: %d restored from %s\n", n, sessionsPath)
+	}
+	receiver.SetSessionObserver(func(peer string, session *coremessaging.PeerSession) {
+		if err := sessions.record(peer, session); err != nil {
+			fmt.Printf("could not record session for %s: %v\n", peer, err)
+			return
+		}
+		if err := sessions.save(sessionsPath); err != nil {
+			fmt.Printf("could not save sessions: %v\n", err)
+		}
+	})
+
 	d := newDispatcher(sc, codec)
 	// Second chance for stanzas the table almost covers: without it the
 	// offline announcement fails whole on unknown attribute tokens and the

@@ -54,6 +54,7 @@ func (r *Receiver) bootstrapPeer(ctx context.Context, envelope *stanza.Encrypted
 	if err := r.SetReceiverPeer(peer.String(), session); err != nil {
 		return nil, nil, err
 	}
+	r.observe(peer.String(), session)
 	// Only after the session is usable, so a failed bootstrap does not burn the
 	// key it could not open.
 	if oneTime != nil && r.consumePreKey != nil {
@@ -71,6 +72,21 @@ func (r *Receiver) SetPreKeySource(source PreKeySource) { r.prekeys = source }
 // is that a message key is never available twice. Callers that persist keys use
 // this to delete the private half.
 func (r *Receiver) SetPreKeyConsumer(consume func(id uint32)) { r.consumePreKey = consume }
+
+// SetSessionObserver installs a callback invoked whenever a peer session is
+// installed by a bootstrap or advanced by a decrypt. A caller that does not
+// persist it loses the ratchet with the process, and every later msg-carrier
+// message from that peer becomes unreadable.
+func (r *Receiver) SetSessionObserver(observe func(peer string, session *PeerSession)) {
+	r.observeSession = observe
+}
+
+// observe is the nil-safe notify.
+func (r *Receiver) observe(peer string, session *PeerSession) {
+	if r.observeSession != nil && session != nil {
+		r.observeSession(peer, session)
+	}
+}
 
 // handlePreKey decrypts a pkmsg carrier, bootstrapping the session when
 // needed, and publishes the carried text.

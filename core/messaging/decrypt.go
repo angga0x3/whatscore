@@ -72,6 +72,7 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 		return
 	}
 	session.State = attempt
+	r.observe(peer.String(), session)
 
 	// Strip the service's padding before parsing (see handlePreKey).
 	if plaintext, err = stanza.UnpadMessage(plaintext, envelope.Version); err != nil {
