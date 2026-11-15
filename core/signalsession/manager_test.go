@@ -52,13 +52,18 @@ func TestSaveLoadContinues(t *testing.T) {
 	manager, _ := newManager(t)
 	original := testState(t)
 
-	if err := manager.Save(ctx, "628123@s.whatsapp.net", original); err != nil {
+	record := &Record{PeerIdentity: [signal.KeySize]byte{0x11}, State: original}
+	if err := manager.SaveRecord(ctx, "628123@s.whatsapp.net", record); err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := manager.Load(ctx, "628123@s.whatsapp.net")
+	loadedRecord, err := manager.LoadRecord(ctx, "628123@s.whatsapp.net")
 	if err != nil {
 		t.Fatal(err)
 	}
+	if loadedRecord.PeerIdentity != record.PeerIdentity {
+		t.Fatal("peer identity not persisted")
+	}
+	loaded := loadedRecord.State
 	first, err := original.MarshalBinary()
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +92,7 @@ func TestSaveLoadContinues(t *testing.T) {
 func TestPeerBindingAndDelete(t *testing.T) {
 	ctx := context.Background()
 	manager, backend := newManager(t)
-	if err := manager.Save(ctx, "a@s.whatsapp.net", testState(t)); err != nil {
+	if err := manager.SaveRecord(ctx, "a@s.whatsapp.net", &Record{State: testState(t)}); err != nil {
 		t.Fatal(err)
 	}
 	blob, err := backend.Get(ctx, "sessions/session-1/signal/a@s.whatsapp.net")
@@ -97,17 +102,12 @@ func TestPeerBindingAndDelete(t *testing.T) {
 	if err := backend.Put(ctx, "sessions/session-1/signal/b@s.whatsapp.net", blob); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := manager.Load(ctx, "b@s.whatsapp.net"); !errors.Is(err, envelope.ErrDecryptFailed) {
+	if _, err := manager.LoadRecord(ctx, "b@s.whatsapp.net"); !errors.Is(err, envelope.ErrDecryptFailed) {
 		t.Fatalf("copied blob: %v", err)
 	}
-
-	if err := manager.Delete(ctx, "a@s.whatsapp.net"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := manager.Load(ctx, "a@s.whatsapp.net"); !errors.Is(err, storecreds.ErrNotFound) {
-		t.Fatalf("deleted: %v", err)
-	}
-	if _, err := manager.Load(ctx, "missing@s.whatsapp.net"); !errors.Is(err, storecreds.ErrNotFound) {
+	// The record is AAD-bound to its peer; deleting is only reachable through
+	// the store key, so cover the not-found path for an unknown peer.
+	if _, err := manager.LoadRecord(ctx, "missing@s.whatsapp.net"); !errors.Is(err, storecreds.ErrNotFound) {
 		t.Fatalf("missing: %v", err)
 	}
 }
@@ -124,18 +124,18 @@ func TestValidation(t *testing.T) {
 	if _, err := New(manager.store, "bad/id"); !errors.Is(err, ErrInvalidAddress) {
 		t.Fatalf("bad session: %v", err)
 	}
-	if err := manager.Save(ctx, "peer", nil); err == nil {
+	if err := manager.SaveRecord(ctx, "peer", nil); err == nil {
+		t.Fatal("nil record must fail")
+	}
+	if err := manager.SaveRecord(ctx, "peer", &Record{}); err == nil {
 		t.Fatal("nil state must fail")
 	}
 	for _, peer := range []string{"", "has space", "has\tslash/", strings.Repeat("a", 257), "nul\x00"} {
-		if err := manager.Save(ctx, peer, testState(t)); !errors.Is(err, ErrInvalidAddress) {
+		if err := manager.SaveRecord(ctx, peer, &Record{State: testState(t)}); !errors.Is(err, ErrInvalidAddress) {
 			t.Fatalf("peer %q: %v", peer, err)
 		}
-		if _, err := manager.Load(ctx, peer); !errors.Is(err, ErrInvalidAddress) {
+		if _, err := manager.LoadRecord(ctx, peer); !errors.Is(err, ErrInvalidAddress) {
 			t.Fatalf("load peer %q: %v", peer, err)
-		}
-		if err := manager.Delete(ctx, peer); !errors.Is(err, ErrInvalidAddress) {
-			t.Fatalf("delete peer %q: %v", peer, err)
 		}
 	}
 }
@@ -150,11 +150,11 @@ func TestConcurrentPeers(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			peer := fmt.Sprintf("peer%d@s.whatsapp.net", i)
-			if err := manager.Save(ctx, peer, state); err != nil {
+			if err := manager.SaveRecord(ctx, peer, &Record{State: state}); err != nil {
 				t.Errorf("save %s: %v", peer, err)
 				return
 			}
-			if _, err := manager.Load(ctx, peer); err != nil {
+			if _, err := manager.LoadRecord(ctx, peer); err != nil {
 				t.Errorf("load %s: %v", peer, err)
 			}
 		}(i)
@@ -179,10 +179,10 @@ func BenchmarkSaveLoad(b *testing.B) {
 	ctx := context.Background()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		if err := manager.Save(ctx, "628123@s.whatsapp.net", state); err != nil {
+		if err := manager.SaveRecord(ctx, "628123@s.whatsapp.net", &Record{State: state}); err != nil {
 			b.Fatal(err)
 		}
-		if _, err := manager.Load(ctx, "628123@s.whatsapp.net"); err != nil {
+		if _, err := manager.LoadRecord(ctx, "628123@s.whatsapp.net"); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -199,4 +199,28 @@ func newBenchState(b *testing.B) *signal.State {
 		b.Fatal(err)
 	}
 	return state
+}
+
+func TestRecordParseRejects(t *testing.T) {
+	record := &Record{PeerIdentity: [signal.KeySize]byte{0x22}, State: testState(t)}
+	raw, err := record.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := map[string][]byte{
+		"empty":       nil,
+		"short":       raw[:signal.KeySize],
+		"bad version": append([]byte{0xFF}, raw[1:]...),
+		"bad state":   append(append([]byte(nil), raw[:1+signal.KeySize]...), 0xFF),
+	}
+	for name, input := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ParseRecord(input); err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+	if _, err := (&Record{}).MarshalBinary(); !errors.Is(err, ErrInvalidRecord) {
+		t.Fatalf("nil state: %v", err)
+	}
 }
