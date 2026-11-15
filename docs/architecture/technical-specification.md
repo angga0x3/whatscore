@@ -263,8 +263,9 @@ action ordering, blob decryption boundaries (primitives from stdlib only). **All
 `protocol/binary`, `protocol/protobuf`, `protocol/signal` (key derivation inputs only). **Tests.**
 Synthetic app-state fixtures; truncated/corrupt patch tables; deterministic decode.
 **Status.** `protocol/sync` parses the app-state stanza and mutation protobuf with a strict,
-limits-bounded wire reader and verifies value MACs (PF-070…PF-074). Key expansion, CBC decryption,
-index MACs, LTHash, and snapshot/patch MAC verification stay with the caller.
+limits-bounded wire reader, verifies value MACs, expands the five app-state keys, and decodes
+mutations end to end (value MAC → CBC → action envelope → index MAC) per PF-070…PF-076. LTHash and
+snapshot/patch MAC verification stay with the caller.
 
 ### 4.10 `protocol/media`
 

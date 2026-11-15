@@ -48,6 +48,7 @@ as workstreams land.
 | 2026-11-15 | Media orchestration | `core/media` with descriptor hashes and 64 MiB cap |
 | 2026-11-15 | Contacts + groups | `core/contacts`, `core/groups` caches |
 | 2026-11-15 | App-state sync | `protocol/sync` patch parse + value MAC, PF-070…PF-074 |
+| 2026-11-15 | Sync decode | key expansion + mutation decode, PF-075…PF-076 |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 

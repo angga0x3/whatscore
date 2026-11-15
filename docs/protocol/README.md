@@ -58,7 +58,7 @@ Confidence and Status are deliberately separate axes:
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
   PF-020…PF-025, PF-030…PF-036, PF-040…PF-045, PF-057…PF-059,
-  PF-064, PF-065, PF-066, PF-070…PF-072, PF-074).** Framing, binary encoding,
+  PF-064, PF-065, PF-066, PF-070…PF-072, PF-074, PF-076).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
   while **Probable** because our own codec, synthetic vectors, independent
@@ -142,6 +142,8 @@ Confidence and Status are deliberately separate axes:
 | PF-072 | sync | Value blob framing | Probable | Verified-by-test | `protocol/sync` (blob table) |
 | PF-073 | sync | Value MAC | Confirmed | Verified-by-test | `protocol/sync` (independent vectors) |
 | PF-074 | sync | Snapshot/patch ordering and envelope MACs | Probable | Verified-by-test | `protocol/sync` (ordering) |
+| PF-075 | sync | App-state key expansion | Confirmed | Verified-by-test | `protocol/sync` (key expansion) |
+| PF-076 | sync | Mutation decode and index MAC | Probable | Verified-by-test | `protocol/sync` (decode round-trip) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -200,7 +202,7 @@ PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
 `tests/integration` runs the fake-server path end to end (WebSocket dial →
 handshake → encrypted frames), which is what the Proving test column cites.
 Signal findings PF-050…PF-056 and PF-060…PF-063, and the app-state value MAC
-(PF-073), are Confirmed by independent vectors.
+(PF-073) plus key expansion (PF-075), are Confirmed by independent vectors.
 The binary token table itself is not reproduced (spec §10.2); the codec takes
 an injected dictionary. PF-034 records that the plaintext `<body>` carrier is
 a scoped deviation from the references' encrypted `<enc>` payload.

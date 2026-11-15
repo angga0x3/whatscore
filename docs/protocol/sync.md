@@ -100,3 +100,39 @@ index MACs, and the LTHash + snapshotMAC/patchMAC checks remain out of scope
 and stay Probable until they land with a caller. `docs/protocol/README.md` is
 owned by the integrating session: index rows for PF-070…PF-074 and the
 Probable wire/payload exception for them still need to be added there.
+
+## PF-075: App-state key expansion
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-075 |
+| **Title** | `HKDF-SHA256(ikm=keyData, salt=nil, info="WhatsApp Mutation Keys", L=160)` yields index, value-encryption, value-MAC, snapshot-MAC and patch-MAC keys in that order (32 bytes each) |
+| **Layer** | sync |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/sync` (key expansion determinism and distinctness) |
+| **Related findings** | PF-072, PF-073, PF-074, PF-076 |
+| **Notes** | whatsmeow `appstate/keys.go` `expandAppStateKeys`: `hkdfutil.SHA256(keyData, nil, []byte("WhatsApp Mutation Keys"), 160)`, sliced `[0:32]`, `[32:64]`, `[64:96]`, `[96:128]`, `[128:160]` into index, value-encryption, value-MAC, snapshot-MAC, patch-MAC. Baileys derives the same set from `appStateSyncKeyData` with the same info string and order. |
+
+## PF-076: Mutation decode and index MAC
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-076 |
+| **Title** | A SET mutation decodes as: verify value MAC, split `iv(16) ‖ ciphertext`, AES-256-CBC decrypt, unmarshal `SyncActionData{index=1, value=2, padding=3, version=4}`, then verify `indexMAC = HMAC-SHA256(indexKey, indexJSON)` |
+| **Layer** | sync |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/sync` (round-trip through encrypted mutation, tamper table) |
+| **Related findings** | PF-072, PF-073, PF-075 |
+| **Notes** | whatsmeow `appstate/decode.go` `decodeMutation`: strips the trailing 32-byte MAC, verifies it, then `iv, content = content[:16], content[16:]` and `cbcutil.Decrypt(keys.ValueEncryption, iv, content)`, unmarshals `waSyncAction.SyncActionData`, and checks `concatAndHMAC(sha256.New, keys.Index, syncAction.Index)` against `record.index.blob`. The index MAC input is the raw JSON bytes, not a re-serialized form. WhatsCore keeps `SyncActionValue` opaque (`raw`) because the real union has dozens of action types; interpreting an action is the caller's job, and a REMOVE without a value is returned with only its index MAC. |
+
+---
+
+Status update: key expansion and full mutation decode (value MAC, CBC, action
+envelope, index MAC) are implemented. LTHash, snapshot/patch MAC verification,
+and external-mutation downloads remain with the caller.
