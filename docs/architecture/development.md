@@ -11,13 +11,15 @@
 ```
 whatscore/
 ├── cmd/whatscore/          # entrypoint: main.go, app.go, shutdown.go
+├── cmd/whatscore-probe/    # read-only live transport probe
+├── cmd/tokendict/          # token-table policy CLI
 ├── buildinfo/
 ├── config/
 ├── observability/
 ├── protocol/               # transport, noise, binary, protobuf, auth, pairing, messaging, media, signal, sync
 ├── server/                 # http/{router,handlers}, api (v1 sessions), webhook, middleware, auth
 ├── storage/                # interface.go, credentials/, envelope/, sqlite/, postgres/{...}
-├── core/                   # events, session, credentials, signalsession, messaging, media, contacts, groups, client
+├── core/                   # events, session, engine, credentials, prekeys, signalsession, messaging, media, contacts, groups, client
 ├── docs/                   # architecture/, api/, protocol/, reverse-engineering/
 ├── examples/               # rest-api/ (curl scripts)
 ├── tests/                  # integration/, architecture/, protocol/, fixtures/

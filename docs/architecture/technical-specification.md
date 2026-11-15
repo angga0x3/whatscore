@@ -280,6 +280,17 @@ streaming encrypt/decrypt with verify-before-write that requires `io.ReaderAt`, 
 digest, and range decryption. Range decryption requires the caller to have authenticated the full
 blob first (`verified`), because a per-range MAC does not exist.
 
+### 4.10b `core/engine`
+
+**Responsibility.** The connection sequence: build the auth payload (registration or login), dial,
+run the Noise handshake, expose node I/O over the encrypted channel, and drive pairing
+(`pair-device` → QR payloads → `pair-success` → device-identity verification).
+
+**Status.** Implemented: `Connect`, `WriteNode`/`ReadNode`, `Pump`/`StartPump`, `StartPairing`,
+`WaitPairing`. Device-identity **signing** is the one gap: the flow verifies the server container and
+then returns `ErrSignerRequired`, leaving `CredentialResult.DeviceSignature` empty rather than
+persisting an unsigned record. Challenge handling (`<success>`/`<failure>`) is not modelled.
+
 ### 4.11 `core/client`
 
 **Responsibility.** The public SDK facade — the only `core` package third-party code needs.

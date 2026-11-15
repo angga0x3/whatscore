@@ -61,6 +61,10 @@ as workstreams land.
 | 2026-11-15 | Media routes | multipart image/document upload + media read, bounded store |
 | 2026-11-15 | Media streaming | stream encrypt/decrypt + sidecar hash, PF-046…PF-047 |
 | 2026-11-15 | Media range | windowed range decryption + auth contract, PF-048 |
+| 2026-11-15 | Live probe | transport + Noise confirmed against the real endpoint (4/4) |
+| 2026-11-15 | Token policy | candidate-table validator + CLI, no table shipped |
+| 2026-11-15 | Engine | connect/auth/pairing orchestration; signing gap explicit |
+| 2026-11-15 | SDK media | SendMedia/ReceiveMedia over the existing Signal path |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
