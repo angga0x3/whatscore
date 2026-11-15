@@ -317,8 +317,9 @@ the connection and feeds the reconnect policy.
 messages into `core/events` values. **Allowed deps.** `protocol/*` via interfaces, `core/events`,
 storage interfaces, stdlib. **Tests.** Fake-server conversation scripts; retry/backoff and dedup
 tables.
-**Status.** `core/messaging.Sender` builds and writes plaintext text stanzas over a `FrameWriter`;
-inbound parsing, receipts, retries/dedup, and Signal wrapping remain.
+**Status.** `core/messaging.Sender` builds and writes plaintext text stanzas over a `FrameWriter`, and
+`core/messaging.Receiver` decodes inbound frames into `events.Message` values (malformed frames are
+logged and dropped). Receipts, retries/dedup, and Signal wrapping remain.
 
 ### 4.14 `core/events`
 
@@ -327,7 +328,8 @@ Receipt, GroupUpdate, …), subscription handles, in-process bus. Guarantees: or
 non-blocking fan-out, protocol types never appear in event values. **Allowed deps.** stdlib only.
 **Tests.** Ordering and backpressure tables; slow-subscriber behavior.
 **Status.** Taxonomy and bus implemented: bounded per-subscriber buffers, drop counters, ordered
-non-blocking fan-out, subscription lifecycle.
+non-blocking fan-out, subscription lifecycle. `core/messaging.Receiver` publishes inbound text
+messages; other events follow with their layers.
 
 ### 4.15 `core/contacts`
 

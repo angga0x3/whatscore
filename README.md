@@ -25,10 +25,10 @@ implemented from first principles, documented in the open.
 > **Phases 3–5 — in progress.** Phase 3 has QR payloads, stanza parsers,
 > device-identity authentication, the credential vault, registration
 > payloads, and the credential manager; device-signature generation (ADR
-> 0001) remains. Phase 4 has the messaging stanza layer, plaintext text send,
-> and the media envelope; Signal, sync, and inbound events remain. Phase 5 has
-> the event bus, session actor, credentials, and SDK facade; orchestration
-> remains. The real token table and live interop are still open.
+> 0001) remains. Phase 4 has the messaging stanza layer, plaintext text send
+> and inbound text events, and the media envelope; Signal and sync remain.
+> Phase 5 has the event bus, session actor, credentials, and SDK facade;
+> orchestration remains. The real token table and live interop are still open.
 
 | Layer | Status |
 |-------|--------|
@@ -112,10 +112,10 @@ before manual interop is recorded as a protocol finding.
 ## SDK
 
 A first SDK facade exists in `core/client` (`github.com/angga0x3/whatscore/core/client`):
-connect, disconnect, state, events, credential access, and plaintext text
-sending at the stanza level. **End-to-end encryption is not wired yet** — the
-text frame is only protected by transport encryption when a Noise connector is
-installed; Signal lands next.
+connect, disconnect, state, events, credential access, plaintext text
+sending, and inbound text events. **End-to-end encryption is not wired yet** —
+the text frame is only protected by transport encryption when a Noise connector
+is installed; Signal lands next.
 
 **Current API:**
 
@@ -130,6 +130,7 @@ defer c.Close(ctx)
 
 sub := c.Subscribe()
 defer sub.Close()
+// ev.Type == events.TypeMessage carries inbound text (Direction=Incoming).
 
 _ = c.Connect(ctx)
 state, _ := c.State(ctx)               // CONNECTED
