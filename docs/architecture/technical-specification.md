@@ -382,8 +382,8 @@ events. **Allowed deps.** `core/*`, `go-chi/chi/v5`, stdlib; never `protocol/*`.
 in-memory manager; the router mounts it when `Deps.API` is set, and unmounted `/api/v1` paths still
 answer 501. `server/webhook` implements signed delivery with retries and delivery records, and
 `server/api` also serves webhook CRUD with a write-once secret, messaging routes with idempotency,
-and the `/events` + `/qr` SSE streams over `core/events`. Image/document endpoints, rate limiting,
-and real delivery remain contract-only.
+the `/events` + `/qr` SSE streams over `core/events`, and multipart image/document uploads with a
+bounded attachment store. Rate limiting and real delivery remain contract-only.
 
 ### 4.19 `storage` (Store aggregate)
 

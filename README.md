@@ -40,7 +40,7 @@ implemented from first principles, documented in the open.
 | Application core | `core/events`, `core/session`, `core/credentials`, `core/signalsession`, `core/messaging`, `core/media`, `core/contacts`, `core/groups`, `core/client` |
 | Storage | Interfaces + migrations; envelope, credential vault, PostgreSQL + SQLite (pure Go) backends |
 | Application core | Designed — implementation starts in Phase 5 |
-| REST server | Foundation + `/api/v1/sessions`, `/webhooks`, `/messages`, SSE `/events` + `/qr`, signed delivery |
+| REST server | Foundation + `/api/v1/sessions`, `/webhooks`, text/image/document messages, media read, SSE `/events` + `/qr`, signed delivery |
 
 This project holds itself to one principle: **no fake feature claims —
 demo > promises.** Anything labeled as a target below is design, not a shipped
