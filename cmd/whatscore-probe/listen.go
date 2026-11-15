@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -16,6 +18,7 @@ import (
 	wabinary "github.com/angga0x3/whatscore/protocol/binary"
 	"github.com/angga0x3/whatscore/protocol/noise"
 	"github.com/angga0x3/whatscore/protocol/signal"
+	syncpkg "github.com/angga0x3/whatscore/protocol/sync"
 )
 
 // preKeyStore holds the key material this device published, so an inbound
@@ -227,6 +230,13 @@ func runListen(cfg sendConfig) error {
 		}
 	}
 
+	// App state sync keys the phone shares (APP_STATE_SYNC_KEY_SHARE). Patch
+	// MACs reference these ids; without them the app state patches cannot be
+	// verified, and the phone holds the "keep both apps open" banner until
+	// provisioning completes.
+	var mu sync.Mutex
+	appStateKeys := make(map[string][]byte)
+
 	go func() {
 		for {
 			select {
@@ -237,6 +247,29 @@ func runListen(cfg sendConfig) error {
 					return
 				}
 				if ev.Message == nil {
+					continue
+				}
+				if ev.Message.Protocol != nil {
+					if len(ev.Message.Protocol.AppKeys) > 0 {
+						mu.Lock()
+						for keyID, data := range ev.Message.Protocol.AppKeys {
+							appStateKeys[keyID] = append([]byte(nil), data...)
+						}
+						count := len(appStateKeys)
+						mu.Unlock()
+						fmt.Printf("app state keys stored (total %d)\n", count)
+						// Baileys: "app state sync key arrived, re-syncing
+						// blocked collections" — the keys were missing when
+						// the first request went out; with them the patches
+						// verify. The re-request must not block the read loop.
+						go requestAppStateSync(ctx, d, &mu, appStateKeys)
+					}
+					if ev.Message.Protocol.HistorySync {
+						// The ack the phone's "keep both apps open" phase waits
+						// for: history messages take type=hist_sync, not the
+						// delivery receipt (Baileys getHistoryMsg).
+						sendHistSyncReceipt(ctx, sc, codec, ev.Message.ID, ev.Message.Sender)
+					}
 					continue
 				}
 				fmt.Printf("\nMESSAGE from=%s id=%s at=%s\n  text: %s\n",
@@ -304,6 +337,12 @@ func runListen(cfg sendConfig) error {
 		return fmt.Errorf("mark device active: %w", err)
 	}
 	fmt.Println("session: active")
+
+	// App state sync starts provisioning: the server answers with patches and
+	// pushes key shares as protocol messages. WhatsApp Web and Baileys request
+	// these right after login; skipping it leaves the phone in the "keep both
+	// apps open" phase indefinitely.
+	requestAppStateSync(ctx, d, &mu, appStateKeys)
 
 	// whatsmeow marks the client available with a presence stanza right after
 	// login; without it the server keeps the device passive and every stanza
@@ -698,6 +737,120 @@ func truncate(s string, max int) string {
 		return s
 	}
 	return s[:max] + "…"
+}
+
+// appStateCollections is the full patch list WhatsApp Web syncs
+// (Baileys ALL_WA_PATCH_NAMES).
+var appStateCollections = []string{
+	"critical_block",
+	"critical_unblock_low",
+	"regular_high",
+	"regular_low",
+	"regular",
+}
+
+// sendHistSyncReceipt acknowledges one history chunk. Without it the phone
+// holds the "keep both apps open" banner indefinitely: the device never tells
+// the server the chunk arrived.
+func sendHistSyncReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, id, from string) {
+	if id == "" || from == "" {
+		return
+	}
+	receipt := &wabinary.Node{
+		Tag:   "receipt",
+		Attrs: wabinary.Attrs{"id": id, "to": from, "type": "hist_sync"},
+	}
+	frame, err := codec.Encode(receipt)
+	if err != nil {
+		return
+	}
+	if err := sc.WriteFrame(ctx, frame); err != nil {
+		fmt.Printf("hist_sync receipt: %v\n", err)
+		return
+	}
+	fmt.Printf("hist_sync receipt sent for %s\n", id)
+}
+
+// requestAppStateSync fetches the app state patches for every collection.
+// A fresh device has no stored versions, so every collection asks for a
+// snapshot; mutations verify against the keys the phone shared.
+func requestAppStateSync(ctx context.Context, d *dispatcher, mu *sync.Mutex, appStateKeys map[string][]byte) {
+	mu.Lock()
+	keyCount := len(appStateKeys)
+	mu.Unlock()
+	if keyCount == 0 {
+		fmt.Println("app state sync: no keys yet; requesting anyway")
+	}
+
+	collections := make([]wabinary.Node, 0, len(appStateCollections))
+	for _, name := range appStateCollections {
+		collections = append(collections, wabinary.Node{
+			Tag: "collection",
+			Attrs: wabinary.Attrs{
+				"name":            name,
+				"return_snapshot": "true",
+			},
+		})
+	}
+	reply, err := d.request(ctx, &wabinary.Node{
+		Tag: "iq",
+		Attrs: wabinary.Attrs{
+			"to": serverJID, "type": "set", "xmlns": "w:sync:app:state", "id": mustRequestID(ctx),
+		},
+		Children: []wabinary.Node{{Tag: "sync", Children: collections}},
+	}, 30*time.Second)
+	if err != nil {
+		fmt.Printf("app state sync request failed: %v\n", err)
+		return
+	}
+	var syncNode *wabinary.Node
+	for i := range reply.Children {
+		if reply.Children[i].Tag == "sync" {
+			syncNode = &reply.Children[i]
+			break
+		}
+	}
+	if syncNode == nil {
+		fmt.Printf("app state reply has no <sync> (%d children)\n", len(reply.Children))
+		return
+	}
+	patches, err := syncpkg.ParsePatches(syncNode)
+	if err != nil {
+		fmt.Printf("app state patches unreadable: %v\n", err)
+		return
+	}
+	decoded, skipped := 0, 0
+	for _, patch := range patches {
+		for _, mutation := range patch.Mutations {
+			mu.Lock()
+			key, ok := appStateKeys[hex.EncodeToString(mutation.KeyID)]
+			mu.Unlock()
+			if !ok {
+				skipped++
+				continue
+			}
+			expanded, err := syncpkg.ExpandKeys(key)
+			if err != nil {
+				continue
+			}
+			if _, err := syncpkg.DecodeMutation(mutation, expanded); err != nil {
+				fmt.Printf("mutation decode failed: %v\n", err)
+				continue
+			}
+			decoded++
+		}
+	}
+	fmt.Printf("app state sync: %d patches, %d decoded, %d skipped (no key)\n", len(patches), decoded, skipped)
+}
+
+// mustRequestID builds a request id; on randomness failure it falls back to
+// the clock, which is unique enough for one process.
+func mustRequestID(ctx context.Context) string {
+	var buf [4]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 10)
+	}
+	return strconv.FormatUint(uint64(buf[0])<<24|uint64(buf[1])<<16|uint64(buf[2])<<8|uint64(buf[3]), 10)
 }
 
 // diagPreKeyCount asks the server how many one-time prekeys it actually holds
