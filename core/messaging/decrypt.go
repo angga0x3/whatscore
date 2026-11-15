@@ -126,6 +126,10 @@ func (r *Receiver) publishIncoming(ctx context.Context, id string, peer stanza.J
 	switch payload.Kind {
 	case stanza.PayloadText:
 		msg.Text = payload.Text
+	case stanza.PayloadProtocol:
+		if payload.Protocol != nil {
+			msg.Protocol = &events.ProtocolInfo{Type: payload.Protocol.Type}
+		}
 	case stanza.PayloadImage, stanza.PayloadSticker, stanza.PayloadVideo, stanza.PayloadAudio, stanza.PayloadDocument:
 		m := payload.Media
 		msg.Text = m.Caption
@@ -145,6 +149,9 @@ func (r *Receiver) publishIncoming(ctx context.Context, id string, peer stanza.J
 	default:
 		r.logger.DebugContext(ctx, "payload has no renderable content", "kind", payload.Kind)
 		return
+	}
+	if payload.Kind == stanza.PayloadProtocol && payload.Protocol != nil && payload.Protocol.HistorySync != nil {
+		msg.Protocol.HistorySync = true
 	}
 	r.bus.Publish(events.Event{
 		Type:      events.TypeMessage,

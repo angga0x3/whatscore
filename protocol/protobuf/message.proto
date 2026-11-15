@@ -31,8 +31,45 @@ message Message {
   optional VideoMessage videoMessage = 9;
   // Stickers, animated and static.
   optional StickerMessage stickerMessage = 26;
+  // Protocol messages: history sync notifications, ephemeral settings,
+  // revocations. Field 12 per the reference proto.
+  optional ProtocolMessage protocolMessage = 12;
   // Text with metadata; the plain text is in `text`.
   optional ExtendedTextMessage extendedTextMessage = 6;
+}
+
+// ProtocolMessage wraps the server-driven control messages. Only the
+// history-sync path is declared: it is what the "keep both apps open"
+// phase waits for, and the client must answer it with a hist_sync receipt
+// (Baileys messages-recv.ts / getHistoryMsg).
+message ProtocolMessage {
+  // The reference enum, reduced to the values this project observes.
+  enum Type {
+    REVOKE = 0;
+    EPHEMERAL_SETTING = 3;
+    HISTORY_SYNC_NOTIFICATION = 5;
+    APP_STATE_SYNC_KEY_SHARE = 6;
+    APP_STATE_SYNC_KEY_REQUEST = 7;
+  }
+  optional Type type = 1;
+  // Field 6 per the reference proto.
+  optional HistorySyncNotification historySyncNotification = 6;
+}
+
+// HistorySyncNotification points at one chunk of the account's chat
+// history on the CDN. Field numbers copied from the reference proto.
+message HistorySyncNotification {
+  optional bytes fileSHA256 = 1;
+  optional uint64 fileLength = 2;
+  optional bytes mediaKey = 3;
+  optional bytes fileEncSHA256 = 4;
+  optional string directPath = 5;
+  // HistorySyncType: INITIAL_BOOT = 0, ON_DEMAND = 1, RECENT = 2, FULL = 3.
+  optional uint32 syncType = 6;
+  optional uint32 chunkOrder = 7;
+  optional string originalMessageID = 8;
+  // Progress in percent, for the phone's banner.
+  optional uint32 progress = 9;
 }
 
 message ExtendedTextMessage {

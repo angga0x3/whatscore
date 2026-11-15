@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"fmt"
+	"strconv"
 
 	"google.golang.org/protobuf/proto"
 
@@ -101,8 +102,18 @@ const (
 	PayloadVideo    PayloadKind = "video"
 	PayloadAudio    PayloadKind = "audio"
 	PayloadDocument PayloadKind = "document"
+	PayloadProtocol PayloadKind = "protocol"
 	PayloadUnknown  PayloadKind = "unknown"
 )
+
+// ProtocolInfo describes a decrypted protocol message. History sync
+// notifications are the ones a client must acknowledge with a hist_sync
+// receipt — that ack is what the phone's "keep both apps open" phase waits
+// for — and carry the CDN metadata to download the chunk later.
+type ProtocolInfo struct {
+	Type        string
+	HistorySync *MediaAttachment
+}
 
 // MediaAttachment is the download metadata one media payload carries. KeysType
 // is the HKDF info string the media key expands under; stickers expand under
@@ -126,9 +137,10 @@ type MediaAttachment struct {
 // ephemeral settings — decodes to PayloadUnknown without error, because
 // "unsupported but valid" is a normal thing to receive.
 type Payload struct {
-	Kind  PayloadKind
-	Text  string
-	Media *MediaAttachment
+	Kind     PayloadKind
+	Text     string
+	Media    *MediaAttachment
+	Protocol *ProtocolInfo
 }
 
 // DecodePayload reads a decrypted application payload and classifies it: text
@@ -145,6 +157,14 @@ func DecodePayload(raw []byte) (*Payload, error) {
 		return nil, fmt.Errorf("%w: unmarshaling: %w", ErrInvalidMessagePayload, err)
 	}
 	switch {
+	case message.GetProtocolMessage() != nil:
+		pm := message.GetProtocolMessage()
+		info := &ProtocolInfo{Type: pm.GetType().String()}
+		if hs := pm.GetHistorySyncNotification(); hs != nil {
+			info.HistorySync = mediaFrom(hs.GetDirectPath(), "", "", "history-chunk-"+strconv.FormatUint(uint64(hs.GetChunkOrder()), 10),
+				hs.GetFileLength(), hs.GetMediaKey(), hs.GetFileSHA256(), hs.GetFileEncSHA256(), 0, media.TypeHistory)
+		}
+		return &Payload{Kind: PayloadProtocol, Protocol: info}, nil
 	case message.GetConversation() != "":
 		return &Payload{Kind: PayloadText, Text: message.GetConversation()}, nil
 	case message.GetExtendedTextMessage() != nil:

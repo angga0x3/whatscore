@@ -155,6 +155,18 @@ type Message struct {
 	// Media is set when the message carries an attachment (image, sticker,
 	// video, audio, document). Text is then its caption, if any.
 	Media *MediaAttachment
+	// Protocol is set on server-driven control messages (history sync
+	// notifications, ephemeral settings). History sync ones must be
+	// acknowledged with a hist_sync receipt.
+	Protocol *ProtocolInfo
+}
+
+// ProtocolInfo mirrors a decrypted protocol message. HistorySync carries the
+// CDN metadata of one history chunk; the ack for it is what the phone's
+// "keep both apps open" phase waits for.
+type ProtocolInfo struct {
+	Type        string
+	HistorySync bool
 }
 
 // MediaAttachment carries everything a downloader needs to fetch and open one

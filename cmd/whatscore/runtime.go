@@ -193,7 +193,14 @@ func (r *sessionRuntime) receiptLoop(sub *events.Subscription) {
 			if ev.Type != events.TypeMessage || ev.Message == nil {
 				continue
 			}
-			r.sendDeliveryReceipt(ev.Message.ID, ev.Message.Sender)
+			if ev.Message.Protocol != nil && ev.Message.Protocol.HistorySync {
+				// The ack the phone's "keep both apps open" phase waits for:
+				// history messages are acknowledged with type=hist_sync
+				// (Baileys messages-recv.ts), not the delivery receipt.
+				r.sendHistSyncReceipt(ev.Message.ID, ev.Message.Sender)
+			} else if ev.Message.Media == nil {
+				r.sendDeliveryReceipt(ev.Message.ID, ev.Message.Sender)
+			}
 			if m := ev.Message.Media; m != nil {
 				// The download must never block the event loop: one goroutine
 				// per attachment, deduped by message id.
@@ -528,6 +535,24 @@ func (r *sessionRuntime) sendRetryReceipt(node *binary.Node) {
 // Baileys sends them both ways).
 func (r *sessionRuntime) deviceIdentityBlob() []byte {
 	return r.deviceIdentity
+}
+
+// sendHistSyncReceipt acknowledges one history chunk. Without it the phone
+// holds the "keep both apps open" banner indefinitely: the device never
+// tells the server the chunk arrived.
+func (r *sessionRuntime) sendHistSyncReceipt(id, from string) {
+	if id == "" || from == "" || r.write == nil {
+		return
+	}
+	receipt := &binary.Node{
+		Tag:   "receipt",
+		Attrs: binary.Attrs{"id": id, "to": from, "type": "hist_sync"},
+	}
+	if err := r.writeNode(context.Background(), receipt); err != nil {
+		r.logger.Warn("hist_sync receipt failed", "session", r.id, "error", err)
+	} else {
+		r.logger.Info("hist_sync receipt sent", "session", r.id, "message", id)
+	}
 }
 
 // sendDeliveryReceipt confirms one decrypted message to the sender.
