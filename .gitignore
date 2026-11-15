@@ -16,7 +16,9 @@
 /undecoded/
 # Paired credentials: private keys and the account JID. Never commit.
 paired*.json
+paired*.json.backup
 *.creds.json
+*.keys.json.backup
 # Private halves of published prekeys: losing them is unrecoverable, leaking
 # them is worse.
 *.keys.json

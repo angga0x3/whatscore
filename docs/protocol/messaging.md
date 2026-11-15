@@ -214,3 +214,27 @@ plaintext `<body>` remains for unencrypted runs until core wiring lands.
 | **Proving test** | `cmd/whatscore-probe` (`TestKeyFileRoundTripsSignedPreKey`, `TestSeedFromRecordAdoptsThePairingKey`, `TestInboundPreKeyMessageBecomesText`) |
 | **Related findings** | PF-065, PF-082, PF-083 |
 | **Notes** | The pairing run generated a signed prekey, put its public half and signature into the registration payload, and **discarded the private half**. The server handed that public key to peers, so inbound messages were encrypted to a key nobody held. A real inbound message decoded cleanly as `registrationID=1388247345 preKeyID=0 signedPreKeyID=1`, and attempting it with a different signed prekey produced `signal: bad message MAC` — not a parse error, which is why the symptom looked like corruption rather than a missing key. The probe now writes the signed prekey into the credentials file and adopts it on every later run. **The messages already queued before that fix cannot be recovered**: their key existed only in the memory of a process that has exited. |
+
+## PF-086: One connection per device, enforced with a stream conflict
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-086 |
+| **Title** | A second connection using the same device credentials makes the server send `<stream:error><conflict type="replaced"/></stream:error>` to the first and close it |
+| **Layer** | transport |
+| **Source** | direct observation of own session, reproduced |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` live runs: a `-listen` session was replaced twice, once by `-send` and once by `-login` |
+| **Related findings** | PF-077, PF-082 |
+| **Notes** | This is a hard constraint on the design, not an inconvenience. Sending and receiving cannot be tested from two processes sharing one credentials file: whichever connects second silently evicts the first, and the evicted process only sees a 13-byte `stream:error`. A client must therefore own one long-lived connection and multiplex sends and receives over it. The probe's separate `-send` and `-listen` modes are a testing affordance that works **only because** each run ends before the next begins. A production client with this shape would drop messages. |
+
+### What this changes
+
+A real client must:
+
+- hold one connection open, reconnect on its own, and route sends through it;
+- treat `conflict type="replaced"` as "another instance took over", not as a
+  protocol error to retry into;
+- never open a second socket for a send while the read loop is live.

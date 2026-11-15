@@ -284,7 +284,7 @@ func buildPreKeyUpload(record *credentialRecord, keys []signal.PreKey, signed si
 		list = append(list, wabinary.Node{
 			Tag: "key",
 			Children: []wabinary.Node{
-				{Tag: "id", Bytes: idBytes[2:]},
+				{Tag: "id", Bytes: idBytes[1:]},
 				{Tag: "value", Bytes: key.Pair.Public[:]},
 			},
 		})
@@ -311,7 +311,7 @@ func buildPreKeyUpload(record *credentialRecord, keys []signal.PreKey, signed si
 			{Tag: "identity", Bytes: record.IdentityPub[:]},
 			{Tag: "list", Children: list},
 			{Tag: "skey", Children: []wabinary.Node{
-				{Tag: "id", Bytes: signedID[2:]},
+				{Tag: "id", Bytes: signedID[1:]},
 				{Tag: "value", Bytes: signed.Pair.Public[:]},
 				{Tag: "signature", Bytes: signed.Signature},
 			}},
