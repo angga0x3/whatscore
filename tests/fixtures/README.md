@@ -24,8 +24,8 @@ Shared, deterministic test data for the protocol engine and its tests.
 | `generate_signal_vectors.py` | PF-050…PF-053 | Generator: X25519 + HKDF-SHA256 ("WhisperText") from the finding text |
 | `signal_ratchet_vectors.json` | PF-054…PF-056 | JSON records: root ratchet, three chain steps, message keys |
 | `generate_signal_ratchet_vectors.py` | PF-054…PF-056 | Generator: X25519 + HKDF ("WhisperRatchet"/"WhisperMessageKeys") + HMAC |
-| `signal_message_vectors.json` | PF-060…PF-062 | JSON record: keys, header, identities, plaintext, ciphertext, exact wire hex |
-| `generate_signal_message_vectors.py` | PF-060…PF-062 | Generator: AES-CBC, manual protobuf, truncated HMAC |
+| `signal_message_vectors.json` | PF-060…PF-063 | JSON record: keys, header, identities, ciphertext, exact SignalMessage wire, prekey wire |
+| `generate_signal_message_vectors.py` | PF-060…PF-063 | Generator: AES-CBC, manual protobuf, truncated HMAC, prekey envelope |
 
 `noise_vectors.json` is regenerated with:
 
