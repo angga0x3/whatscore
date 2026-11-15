@@ -2,6 +2,9 @@
 /bin/
 /dist/
 *.exe
+# Locally built tools (go build ./cmd/x writes next to the package otherwise)
+/whatscore
+/whatscore-probe
 
 # Local environment and secrets
 .env
