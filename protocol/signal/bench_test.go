@@ -74,3 +74,28 @@ func BenchmarkStateRoundTrip(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkStateMarshal(b *testing.B) {
+	fixture := newStateFixture(b, 100)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := fixture.bob.MarshalBinary(); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkStateUnmarshal(b *testing.B) {
+	raw, err := newStateFixture(b, 100).bob.MarshalBinary()
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := ParseState(raw); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
