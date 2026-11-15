@@ -294,8 +294,8 @@ err = c.Disconnect(ctx)
 **Allowed deps.** `core/*`, `protocol/*` via §4 interfaces, `storage` interfaces, stdlib.
 **Tests.** Behavior tests vs fake server; option composition tables; examples compiled in CI.
 **Status.** `core/client` implements connect/disconnect/state/subscribe/credentials/close with
-option validation, plus `WithConnector` and `WithFrameHandler` pass-through. `SendMessage` returns
-`ErrNotImplemented` until Signal and messaging land.
+option validation, `WithConnector`/`WithFrameHandler` pass-through, and `SendMessage` for plaintext
+text stanzas. Signal encryption and inbound message events remain.
 
 ### 4.12 `core/session`
 
@@ -317,6 +317,8 @@ the connection and feeds the reconnect policy.
 messages into `core/events` values. **Allowed deps.** `protocol/*` via interfaces, `core/events`,
 storage interfaces, stdlib. **Tests.** Fake-server conversation scripts; retry/backoff and dedup
 tables.
+**Status.** `core/messaging.Sender` builds and writes plaintext text stanzas over a `FrameWriter`;
+inbound parsing, receipts, retries/dedup, and Signal wrapping remain.
 
 ### 4.14 `core/events`
 
