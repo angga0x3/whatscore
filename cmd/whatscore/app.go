@@ -16,6 +16,7 @@ import (
 
 	"github.com/angga0x3/whatscore/buildinfo"
 	"github.com/angga0x3/whatscore/config"
+	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/observability"
 	"github.com/angga0x3/whatscore/server/api"
 	httpapi "github.com/angga0x3/whatscore/server/http"
@@ -40,6 +41,7 @@ type App struct {
 	logger   *slog.Logger
 	pool     *pgxpool.Pool
 	sessions *api.Manager
+	bus      *events.Bus
 	server   *http.Server
 	build    buildinfo.Info
 	draining atomic.Bool
@@ -49,9 +51,6 @@ type App struct {
 // migrations, HTTP server) and returns an app ready to Run.
 func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App, error) {
 	logger := observability.NewLogger(cfg)
-	if cfg.Security.EncryptionKey == "" && !cfg.IsProduction() {
-		logger.Warn("ENCRYPTION_KEY is not set; set a real secret before going to production")
-	}
 
 	initCtx, cancel := context.WithTimeout(ctx, initTimeout)
 	defer cancel()
@@ -69,7 +68,33 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 		}
 	}
 
-	sessions, err := api.NewManager()
+	// Session secrets are sealed by storage/credentials.Vault before they
+	// reach any backend. In development without ENCRYPTION_KEY, newCredentialVault
+	// falls back to an ephemeral in-memory key and warns loudly; production
+	// config already rejects that combination.
+	backend, err := postgres.NewCredentialBackend(pool)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("build credential backend: %w", err)
+	}
+	vault, err := newCredentialVault(cfg, backend, logger)
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("build credential vault: %w", err)
+	}
+
+	bus := events.NewBus()
+	factory, err := newSessionFactory(sessionFactoryOptions{
+		vault:  vault,
+		bus:    bus,
+		logger: logger,
+	})
+	if err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("build session factory: %w", err)
+	}
+
+	sessions, err := api.NewManager(api.WithSessionFactory(factory.newSession))
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("build session service: %w", err)
@@ -79,12 +104,16 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 		pool.Close()
 		return nil, fmt.Errorf("build API handler: %w", err)
 	}
+	// Sessions publish lifecycle events to the bus; mounting it lets the SSE
+	// routes stream them instead of answering 501.
+	apiHandler.SetBus(bus)
 
 	a := &App{
 		cfg:      cfg,
 		logger:   logger,
 		pool:     pool,
 		sessions: sessions,
+		bus:      bus,
 		build:    build,
 	}
 

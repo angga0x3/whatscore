@@ -334,3 +334,24 @@ imports no test helpers from other packages. Coverage:
 | `TestConnectorDrivesSession` | composition-root shape: `session` dials once, the engine connector handshakes on that same connection, and frames round-trip through the session encrypted |
 
 No network, no sleeps: only context timeouts bound the flows.
+
+## Auth-gated connector
+
+`Engine.Connector()` stops at handshake completion. The composition root uses
+`Engine.AuthConnector()` instead, which performs the handshake **and** reads the
+server's verdict before handing the connection to the session:
+
+```
+session.Connect -> dial -> AuthConnector:
+    handshake (PF-007)
+    -> ReadFrame -> <success>      : return encrypted conn (session -> CONNECTED)
+                 -> <failure>      : ErrAuthFailed   (session -> state ERROR)
+                 -> <stream:error> : ErrStreamError
+                 -> <ack>           : skip, keep reading
+                 -> anything else  : ErrUnexpectedStanza (fail closed)
+```
+
+Without this step a session reported `CONNECTED` while the server was still
+deciding, which is exactly the kind of claim this project refuses to make. The
+verdict is read before the session's own reader loop starts, so the two cannot
+race. `cmd/whatscore` wires the auth-gated connector.

@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/protocol/auth"
@@ -220,6 +221,10 @@ type Config struct {
 	// Logger receives diagnostic logs. Nil discards them.
 	Logger *slog.Logger
 
+	// AuthTimeout bounds AuthConnector's wait for the server verdict. Zero uses
+	// DefaultAuthTimeout; negative disables the internal deadline and relies on
+	// the caller's context alone.
+	AuthTimeout time.Duration
 	// Codec encodes and decodes binary nodes. Nil uses binary.NewCodec(nil):
 	// an empty dictionary, so every tag and attribute encodes raw. Inject a
 	// dictionary-backed codec to use wire tokens (PF-010..PF-014).

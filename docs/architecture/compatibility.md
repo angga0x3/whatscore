@@ -13,7 +13,7 @@ run.
 | Intro header + frame reassembly | **supported** | same runs |
 | Noise handshake (msg1→msg3) | **supported** | same runs, suite `Noise_XX_25519_AESGCM_SHA256` |
 | Server certificate chain | **supported** | same runs (pinned root verified) |
-| Auth payload accepted | **unknown** | a synthetic payload was sent; the server's response was not interpreted |
+| Auth payload accepted | **unknown** | a synthetic payload was sent; the server's response was not interpreted live. The client now *reads* that response (`WaitAuth`), so the verdict is surfaced instead of assumed |
 | Pairing (QR → success) | **untested** | blocked on signing (ADR 0001) |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
 | Message send/receive | **untested** | needs pairing |

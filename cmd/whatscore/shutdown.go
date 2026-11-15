@@ -15,7 +15,8 @@ const shutdownTimeout = 15 * time.Second
 //  1. flip readiness so load balancers stop routing to this instance,
 //  2. stop accepting new HTTP requests and let in-flight ones finish,
 //  3. stop every managed session so their actors exit,
-//  4. close the PostgreSQL pool.
+//  4. close the event bus now that no session can publish,
+//  5. close the PostgreSQL pool.
 func (a *App) shutdown() {
 	a.draining.Store(true)
 
@@ -28,6 +29,10 @@ func (a *App) shutdown() {
 
 	if err := a.stopSessions(ctx); err != nil {
 		a.logger.Error("stopping sessions failed", "error", err)
+	}
+
+	if a.bus != nil {
+		a.bus.Close()
 	}
 
 	a.pool.Close()

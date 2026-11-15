@@ -10,7 +10,7 @@
 
 ```
 whatscore/
-├── cmd/whatscore/          # entrypoint: main.go, app.go, shutdown.go
+├── cmd/whatscore/          # entrypoint: main.go, app.go, engine.go, sessions.go, shutdown.go
 ├── cmd/whatscore-probe/    # read-only live transport probe
 ├── cmd/tokendict/          # token-table policy CLI
 ├── buildinfo/
@@ -55,6 +55,69 @@ go run ./cmd/whatscore
 ```
 
 Migrations apply automatically on startup (`DB_MIGRATE_ON_STARTUP=true`).
+
+## Running with a live engine
+
+`cmd/whatscore` builds a real `core/session` for every `POST /api/v1/sessions`.
+The old behaviour — a session that only flipped an in-memory status string to
+`CONNECTED` — is gone: `POST /api/v1/sessions/{id}/connect` now dials
+`transport.DefaultEndpoint()` and runs the Noise handshake through
+`core/engine`, so `CONNECTED` means an encrypted channel exists on the wire.
+
+Two caveats on that status. The session's connector returns as soon as the
+handshake finishes, and `engine.Connector` deliberately does not call
+`Conn.WaitAuth` (see [engine.md](engine.md)), so `CONNECTED` does **not** mean
+the server accepted the device's `ClientPayload`; that verdict arrives as the
+first inbound stanza and nothing reads it yet. And the status is per-process:
+`api.Manager` is in-memory.
+
+Relevant environment variables:
+
+| Variable | Effect |
+|---|---|
+| `ENCRYPTION_KEY` | Base64 of 32 bytes (`openssl rand -base64 32`). The key that seals the per-session credential record, prekeys and signing seed (AES-256-GCM through `storage/credentials.Vault`). Required in production; `config.Load` refuses to start without it. |
+| `APP_ENV` | `production` disables the development fallback below. |
+| `DATABASE_URL` | Where the sealed records live (`credentials` table). |
+| `WHATSAPP_SESSION_LIMIT` | Parsed and validated at startup, but not enforced yet: nothing rejects a create past the limit. |
+
+Development without `ENCRYPTION_KEY` still works: the server logs a warning and
+seals records with an ephemeral in-memory key. Device identities then do not
+survive a restart, and a second replica cannot read the first one's records —
+that mode exists so `docker compose up` works with no configuration, and
+production configuration rejects it outright rather than running unencrypted.
+
+What a created session actually has:
+
+- a Noise static key pair, a Signal identity key pair, a Signal registration ID,
+  a 32-byte adv secret and a signed prekey, generated on first use and loaded
+  afterwards, so a restart resumes the same device;
+- the pinned server root key from `internal/waref` (PF-009), shared with
+  `cmd/whatscore-probe` so the two cannot pin different values;
+- a `core/engine` connector that rebuilds the `ClientPayload` on every dial, so
+  a rotated signed prekey is picked up without recreating the session.
+
+What still cannot work end to end:
+
+- **Pairing cannot complete.** `StartPairing` verifies the server's
+  `pair-success` container and then returns `engine.ErrSignerRequired`, because
+  the device-identity signature needs an XEdDSA signer that does not exist yet
+  (ADR 0001). The factory therefore leaves `engine.Config.Signer` nil instead of
+  fabricating a signature.
+- **There is no token/credential table in the REST layer.** A session created
+  through the API is registered for this process only; `api.Manager` is
+  in-memory, so the sealed device identity outlives the process but the session
+  list does not. A durable session table has to land before "create, pair,
+  restart, send" works as one flow.
+- **Inbound frames are discarded.** The factory installs no `FrameHandler`, so
+  the session reads (and therefore detects drops) but nothing decodes messages
+  or publishes message events. The lifecycle event stream
+  (`GET /api/v1/sessions/{id}/events`) is mounted, but a session only ever
+  produces connect/disconnect events; the message and media routes still answer
+  501 because no store is wired.
+
+In one sentence: the transport, handshake and device identity are real; pairing
+completion, the server's auth verdict, and the durable session/token layer are
+not.
 
 ## Testing
 
