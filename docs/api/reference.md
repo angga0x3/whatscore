@@ -141,7 +141,9 @@ endpoint. Webhook payloads carry `id`, `url`, `events`, `enabled`,
 
 `/api/v1/sessions/{id}/messages*` is live over an in-memory, per-session store
 bounded at 1000 messages: the oldest message of a session is evicted once that
-limit is reached. Restarting the process clears it.
+limit is reached. Restarting the process clears it. The routes mount when the
+host wires a message store (`Handler.SetMessages`); without one, these paths
+keep answering `501`.
 
 | Method | Path | Behavior |
 |--------|------|----------|
@@ -187,11 +189,14 @@ this route, `type` is always `text`, and `sender` is empty.
 
 `next_cursor` is opaque: pass it back as `?cursor=` to continue. It keeps
 working while new messages arrive and while old ones are evicted. `data` is
-newest first.
+newest first. The contract's `?direction=` filter is not applied yet: every
+message stored by this route is `OUTBOUND`, so filter client-side for now.
 
 ## Streaming (implemented)
 
-Two Server-Sent Events endpoints share the in-process event bus:
+Two Server-Sent Events endpoints share the in-process event bus. They mount
+when the host wires a bus (`Handler.SetBus`); without one they answer `501`, so
+a process that does not publish events does not pretend to stream them.
 
 | Method | Path | Behavior |
 |--------|------|----------|
@@ -228,7 +233,9 @@ Wire format and guarantees:
 - `event:` names follow the OpenAPI event catalog: `session.qr`,
   `session.connected`, `session.disconnected`, `message.received`,
   `message.sent`, `message.delivered`, `message.read`, `message.receipt`
-  (played), `group.update`, and `error`.
+  (played), `group.update`, and `error`. The `/qr` stream uses the short names
+  from the contract's QR example instead: `qr`, `connected`, `disconnected`,
+  `error`.
 - `/events` only forwards events for the path's session and drops a slow
   client's frames for that connection instead of buffering without bound. Gaps
   in `seq` mean frames (or bus events) were dropped; re-read state with the

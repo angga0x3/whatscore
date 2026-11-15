@@ -4,19 +4,31 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/server/http/handlers"
 )
 
-// Handler serves the /api/v1 routes over a Service plus an optional webhook
-// store.
+// Handler serves the /api/v1 routes over a Service plus optional messaging
+// and streaming dependencies.
 type Handler struct {
 	service Service
 	// webhooks is optional: when it is nil the webhook routes are not mounted
 	// and /api/v1 keeps answering 501 for them.
 	webhooks WebhookStore
+	// messages is optional: when it is nil the messaging routes are not
+	// mounted and /api/v1 keeps answering 501 for them.
+	messages MessageLister
+	// bus is optional: when it is nil the SSE routes are not mounted and
+	// /api/v1 keeps answering 501 for them.
+	bus *events.Bus
+	// heartbeat is a test seam for the SSE heartbeat interval.
+	heartbeat time.Duration
+
+	idempotency *idempotencyCache
 }
 
 // NewHandler returns a handler over service. Webhook routes stay unmounted;
@@ -25,7 +37,7 @@ func NewHandler(service Service) (*Handler, error) {
 	if service == nil {
 		return nil, errors.New("api: nil service")
 	}
-	return &Handler{service: service}, nil
+	return &Handler{service: service, idempotency: newIdempotencyCache(idempotencyCacheLimit)}, nil
 }
 
 // NewHandlerWithWebhooks returns a handler over service and webhooks. It is
@@ -48,9 +60,28 @@ func (h *Handler) SetWebhooks(webhooks WebhookStore) {
 	h.webhooks = webhooks
 }
 
+// SetMessages installs the message store after construction. Mount must be
+// called afterwards for the messaging routes to be registered.
+func (h *Handler) SetMessages(messages MessageLister) {
+	h.messages = messages
+}
+
+// SetBus installs the event bus used by the SSE routes after construction.
+// Mount must be called afterwards for the stream routes to be registered.
+func (h *Handler) SetBus(bus *events.Bus) {
+	h.bus = bus
+}
+
+// SetHeartbeatInterval overrides the SSE heartbeat interval. It exists for
+// tests; a non-positive value restores DefaultHeartbeatInterval.
+func (h *Handler) SetHeartbeatInterval(interval time.Duration) {
+	h.heartbeat = interval
+}
+
 // Mount registers the versioned routes on a router already scoped to the
 // /api/v1 prefix. The caller owns that prefix so the 501 fallback for
-// unimplemented paths can live next to these routes.
+// unimplemented paths can live next to these routes. Optional areas (webhooks,
+// messaging, SSE) register only when their dependency is configured.
 func (h *Handler) Mount(v1 chi.Router) {
 	v1.Get("/sessions", h.listSessions)
 	v1.Post("/sessions", h.createSession)
@@ -59,6 +90,15 @@ func (h *Handler) Mount(v1 chi.Router) {
 		r.Delete("/", h.deleteSession)
 		r.Post("/connect", h.connectSession)
 		r.Post("/disconnect", h.disconnectSession)
+		if h.messages != nil {
+			r.Post("/messages/text", h.sendText)
+			r.Get("/messages", h.listMessages)
+			r.Get("/messages/{messageId}", h.getMessage)
+		}
+		if h.bus != nil {
+			r.Get("/qr", h.streamQR)
+			r.Get("/events", h.streamEvents)
+		}
 	})
 	if h.webhooks != nil {
 		v1.Get("/webhooks", h.listWebhooks)
