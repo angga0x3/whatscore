@@ -37,6 +37,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -339,6 +341,13 @@ func (e *Engine) Connect(ctx context.Context) (*Conn, error) {
 		"cipher_suite", sc.CipherSuiteName(),
 		"form", e.payloadForm(),
 	)
+	return e.newConn(sc), nil
+}
+
+// newConn wraps an established SecureConn in the connection object that owns
+// the pairing machinery and the reader slot. Connect and the pairing
+// connector both reach the same shape through it.
+func (e *Engine) newConn(sc noise.SecureConn) *Conn {
 	return &Conn{
 		engine:   e,
 		sc:       sc,
@@ -346,7 +355,7 @@ func (e *Engine) Connect(ctx context.Context) (*Conn, error) {
 		handler:  e.cfg.FrameHandler,
 		logger:   e.logger,
 		closedCh: make(chan struct{}),
-	}, nil
+	}
 }
 
 // payloadForm reports which ClientPayload form Connect uses, for logs.
@@ -357,19 +366,65 @@ func (e *Engine) payloadForm() string {
 	return "registration"
 }
 
+// loginPayload builds the paired-device login form (PF-026).
+func (e *Engine) loginPayload() ([]byte, error) {
+	return auth.BuildLoginPayload(auth.LoginInput{
+		Version:       e.cfg.Version,
+		UserAgent:     e.cfg.UserAgent,
+		WebInfo:       auth.WebInfo{SubPlatform: protobuf.ClientPayload_WebInfo_WEB_BROWSER},
+		ConnectType:   e.cfg.ConnectType,
+		ConnectReason: e.cfg.ConnectReason,
+		Username:      e.cfg.Credentials.Username,
+		Device:        e.cfg.Credentials.Device,
+	})
+}
+
+// withCredentials returns a second engine over the same configuration with
+// the paired-device credentials set, so its payload takes the login form.
+// Pairing runs on the registration form; the login connection only exists
+// after pairing has completed.
+func (e *Engine) withCredentials(result CredentialResult) (*Engine, error) {
+	username, device, err := ParseAccountJID(result.JID)
+	if err != nil {
+		return nil, err
+	}
+	cfg := e.cfg
+	cfg.Credentials = &Credentials{Username: username, Device: device}
+	return New(cfg)
+}
+
+// ParseAccountJID splits a paired device JID ("628123:37@s.whatsapp.net")
+// into the login username and device number. The pairing connector's callers
+// need the same split to persist what the login payload will present.
+func ParseAccountJID(jid string) (uint64, uint32, error) {
+	local, _, ok := strings.Cut(jid, "@")
+	if !ok {
+		return 0, 0, fmt.Errorf("%w: jid %q has no @", ErrInvalidConfig, jid)
+	}
+	usernameStr, deviceStr, hasDevice := strings.Cut(local, ":")
+	if usernameStr == "" {
+		return 0, 0, fmt.Errorf("%w: jid %q has no user", ErrInvalidConfig, jid)
+	}
+	username, err := strconv.ParseUint(usernameStr, 10, 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("%w: jid %q user %q: %v", ErrInvalidConfig, jid, usernameStr, err)
+	}
+	var device uint32
+	if hasDevice {
+		d, err := strconv.ParseUint(deviceStr, 10, 32)
+		if err != nil {
+			return 0, 0, fmt.Errorf("%w: jid %q device %q: %v", ErrInvalidConfig, jid, deviceStr, err)
+		}
+		device = uint32(d)
+	}
+	return username, device, nil
+}
+
 // clientPayload selects and builds the ClientPayload form (PF-025, PF-027):
 // login when credentials are supplied, registration otherwise.
 func (e *Engine) clientPayload() ([]byte, error) {
 	if e.cfg.Credentials != nil {
-		return auth.BuildLoginPayload(auth.LoginInput{
-			Version:       e.cfg.Version,
-			UserAgent:     e.cfg.UserAgent,
-			WebInfo:       auth.WebInfo{SubPlatform: protobuf.ClientPayload_WebInfo_WEB_BROWSER},
-			ConnectType:   e.cfg.ConnectType,
-			ConnectReason: e.cfg.ConnectReason,
-			Username:      e.cfg.Credentials.Username,
-			Device:        e.cfg.Credentials.Device,
-		})
+		return e.loginPayload()
 	}
 	if e.cfg.PreKeys == nil {
 		return nil, fmt.Errorf("%w: no prekey provider", ErrInvalidConfig)
@@ -568,6 +623,9 @@ type CredentialResult struct {
 	ClientProps []byte
 	// Device is the authenticated server identity (PF-017).
 	Device *pairing.DeviceIdentity
+	// SignedIdentity is the self-signed ADVSignedDeviceIdentity blob this
+	// device sent back in <pair-device-sign>.
+	SignedIdentity []byte
 
 	// Local credentials to persist.
 	NoiseKey       noise.KeyPair
@@ -782,10 +840,32 @@ func (c *Conn) handlePairSuccess(ctx context.Context, node *binary.Node) (*Crede
 	// PF-017: sign 0x06,0x01 ‖ details ‖ identityPub ‖ accountSignatureKey.
 	// The account signature key comes from the verified server container, so
 	// the signature binds this device to the identity the server just issued.
-	deviceSignature, err := cfg.Signer.SignDeviceIdentity(
+	signedIdentity, err := cfg.Signer.SignDeviceIdentity(
 		device.Details, cfg.Identity.Public[:], device.AccountKey)
 	if err != nil {
 		return nil, fmt.Errorf("%w: signing device identity: %w", ErrPairingFailed, err)
+	}
+	// PF-073: the link is not complete until the self-signed identity goes
+	// back. Skipping it leaves the phone showing a device that never finishes
+	// linking, and the next stanza on this stream is the server giving up.
+	confirm := &binary.Node{
+		Tag: "iq",
+		Attrs: binary.Attrs{
+			"to":   ServerJID,
+			"type": "result",
+			"id":   success.RequestID,
+		},
+		Children: []binary.Node{{
+			Tag: "pair-device-sign",
+			Children: []binary.Node{{
+				Tag:   "device-identity",
+				Attrs: binary.Attrs{"key-index": strconv.FormatUint(uint64(device.KeyIndex), 10)},
+				Bytes: signedIdentity,
+			}},
+		}},
+	}
+	if err := c.WriteNode(ctx, confirm); err != nil {
+		return nil, fmt.Errorf("%w: sending pair-device-sign: %w", ErrPairingFailed, err)
 	}
 
 	c.logger.InfoContext(ctx, "pairing verified", "session", cfg.SessionID, "jid", success.ID)
@@ -800,9 +880,14 @@ func (c *Conn) handlePairSuccess(ctx context.Context, node *binary.Node) (*Crede
 		Identity:        cfg.Identity,
 		AdvSecret:       cfg.AdvSecret,
 		RegistrationID:  cfg.RegistrationID,
-		DeviceSignature: deviceSignature,
+		DeviceSignature: signedIdentity,
+		SignedIdentity:  signedIdentity,
 	}, nil
 }
+
+// ServerJID is the WhatsApp service address the client-facing stanzas
+// (pair-device-sign, keepalive answers) are addressed to.
+const ServerJID = "s.whatsapp.net"
 
 // childOf returns the first child of node with tag, or nil.
 func childOf(node *binary.Node, tag string) *binary.Node {

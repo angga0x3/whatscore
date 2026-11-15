@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	binenc "encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -354,12 +355,29 @@ func testFactory(t *testing.T, dialer *fakeDialer) (*sessionFactory, *storagecre
 	return factory, vault, backend
 }
 
+// markPaired stores an account record, simulating a session that already
+// completed pairing: its connects present the login form, not the QR flow.
+func markPaired(t *testing.T, factory *sessionFactory, id string) {
+	t.Helper()
+	blob, err := json.Marshal(accountRecord{
+		JID: "628123:37@s.whatsapp.net", LID: "987654321@lid",
+		Username: 628123, Device: 37,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := factory.vault.Put(context.Background(), accountKey(id), blob); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestSessionFactoryConnects proves the factory is not a stub: a created
 // session dials through the injected dialer, runs the Noise handshake against
 // the fake server, and reaches CONNECTED.
 func TestSessionFactoryConnects(t *testing.T) {
 	dialer := newFakeDialer(t)
 	factory, _, _ := testFactory(t, dialer)
+	markPaired(t, factory, "session-1")
 	t.Cleanup(func() { close(dialer.release) })
 
 	// Subscribe before creating the session so the publication cannot be
@@ -672,6 +690,7 @@ func TestSessionRejectsFailedAuth(t *testing.T) {
 		Attrs: binary.Attrs{"reason": "401", "message": "not authorized"},
 	}
 	factory, _, _ := testFactory(t, dialer)
+	markPaired(t, factory, "session-1")
 	t.Cleanup(func() { close(dialer.release) })
 
 	sess, err := factory.newSession("session-1")

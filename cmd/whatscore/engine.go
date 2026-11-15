@@ -33,6 +33,7 @@ import (
 	"crypto/sha512"
 	"crypto/subtle"
 	binenc "encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -296,6 +297,11 @@ func (f *sessionFactory) engineConnector(ctx context.Context, id string) (sessio
 		return nil, err
 	}
 
+	creds, err := f.loadAccountCredentials(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
 	eng, err := engine.New(engine.Config{
 		SessionID:      id,
 		Endpoint:       f.endpoint,
@@ -308,16 +314,88 @@ func (f *sessionFactory) engineConnector(ctx context.Context, id string) (sessio
 		Codec:          f.codec,
 		Signer:         keys.deviceSigner,
 		AdvSecret:      keys.advSecret,
+		Credentials:    creds,
 		Bus:            f.bus,
 		Logger:         f.logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: build engine for session %s: %w", id, err)
 	}
+	// An unpaired session pairs inside Connect: the QR codes stream onto the
+	// bus (GET /sessions/{id}/qr), the scan completes the exchange, the
+	// credentials land in the vault, and a fresh connection logs in — all
+	// before the session actor sees CONNECTED. A paired session goes straight
+	// to the login verdict.
+	if creds == nil {
+		return eng.PairingConnector(func(result engine.CredentialResult) error {
+			saveCtx, cancel := context.WithTimeout(context.Background(), credentialTimeout)
+			defer cancel()
+			return f.saveAccountCredentials(saveCtx, id, result)
+		}), nil
+	}
 	// AuthConnector finishes the post-handshake verdict, so a session only
 	// reaches CONNECTED after the server accepted the payload. Connector alone
 	// would report a healthy connection while the server was still deciding.
 	return eng.AuthConnector(), nil
+}
+
+// accountKey names the paired account record: the JID the server issued at
+// pairing, which every later login payload presents.
+func accountKey(id string) string { return "sessions/" + id + "/account" }
+
+// accountRecord is the persisted pairing outcome.
+type accountRecord struct {
+	JID      string `json:"jid"`
+	LID      string `json:"lid"`
+	Username uint64 `json:"username"`
+	Device   uint32 `json:"device"`
+}
+
+// saveAccountCredentials persists the pairing result, so the next connect
+// presents the login form instead of pairing again.
+func (f *sessionFactory) saveAccountCredentials(ctx context.Context, id string, result engine.CredentialResult) error {
+	if err := validateSessionID(id); err != nil {
+		return err
+	}
+	username, device, err := engine.ParseAccountJID(result.JID)
+	if err != nil {
+		return fmt.Errorf("cmd/whatscore: session %s: %w", id, err)
+	}
+	blob, err := json.Marshal(accountRecord{
+		JID:      result.JID,
+		LID:      result.LID,
+		Username: username,
+		Device:   device,
+	})
+	if err != nil {
+		return fmt.Errorf("cmd/whatscore: session %s: encode account record: %w", id, err)
+	}
+	if err := f.vault.Put(ctx, accountKey(id), blob); err != nil {
+		return fmt.Errorf("cmd/whatscore: session %s: store account record: %w", id, err)
+	}
+	f.logger.Info("session paired", "session", id, "jid", result.JID)
+	return nil
+}
+
+// loadAccountCredentials returns the stored login credentials, or nil when
+// the session has never paired.
+func (f *sessionFactory) loadAccountCredentials(ctx context.Context, id string) (*engine.Credentials, error) {
+	blob, err := f.vault.Get(ctx, accountKey(id))
+	switch {
+	case err == nil:
+	case errors.Is(err, storagecredentials.ErrNotFound):
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("cmd/whatscore: session %s: load account record: %w", id, err)
+	}
+	var rec accountRecord
+	if err := json.Unmarshal(blob, &rec); err != nil {
+		return nil, fmt.Errorf("cmd/whatscore: session %s: decode account record: %w", id, err)
+	}
+	if rec.Username == 0 {
+		return nil, fmt.Errorf("%w: session %s account record has no username", ErrCredentialState, id)
+	}
+	return &engine.Credentials{Username: rec.Username, Device: rec.Device}, nil
 }
 
 // sessionKeys is the engine-ready key material for one session.

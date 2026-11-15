@@ -66,11 +66,17 @@ func (c *authConnector) Connect(ctx context.Context, raw transport.FrameConn) (t
 	return encrypted, nil
 }
 
+func (c *authConnector) awaitVerdict(ctx context.Context, conn interface {
+	ReadFrame(context.Context) ([]byte, error)
+}) error {
+	return c.engine.awaitVerdict(ctx, conn)
+}
+
 // awaitVerdict decodes frames until the auth outcome arrives. It uses the
 // engine's codec so the interpretation matches WaitAuth's, and it fails closed:
 // an undecodable frame or an unexpected stanza means the stream cannot be
 // trusted before the session takes ownership of it.
-func (c *authConnector) awaitVerdict(ctx context.Context, conn interface {
+func (e *Engine) awaitVerdict(ctx context.Context, conn interface {
 	ReadFrame(context.Context) ([]byte, error)
 }) error {
 	for {
@@ -81,7 +87,7 @@ func (c *authConnector) awaitVerdict(ctx context.Context, conn interface {
 			}
 			return fmt.Errorf("%w: waiting for auth outcome: %w", ErrAuthFailed, err)
 		}
-		node, err := c.engine.cfg.Codec.Decode(bytes.NewReader(frame))
+		node, err := e.cfg.Codec.Decode(bytes.NewReader(frame))
 		if err != nil {
 			return fmt.Errorf("%w: undecodable frame before the auth outcome: %w", ErrUnexpectedStanza, err)
 		}
