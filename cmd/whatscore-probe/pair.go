@@ -515,7 +515,7 @@ func buildPairingPayload(identity noise.KeyPair, registrationID uint32) ([]byte,
 			SignedPreKeySignature: signed.Signature,
 		},
 		DeviceProps: auth.DeviceProps{
-			OS:      "whatsmeow",
+			OS:      probeOSName,
 			Version: auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
 			// The reference reports a concrete browser platform for a QR
 			// login, and its client-type field derives from it. UNKNOWN is
@@ -597,3 +597,9 @@ func writeCredentialRecord(path string, record *credentialRecord) error {
 	}
 	return nil
 }
+
+// probeOSName is what the phone shows under Linked devices. It said
+// "whatsmeow" because that literal was copied from the reference while the
+// payload was being made to work; nothing about the protocol requires it, and
+// a WhatsCore session should not identify itself as another library.
+const probeOSName = "whatscore"

@@ -235,7 +235,7 @@ func buildRegistrationPayload() ([]byte, error) {
 			SignedPreKeySignature: make([]byte, 64),
 		},
 		DeviceProps: auth.DeviceProps{
-			OS:           "whatsmeow",
+			OS:           probeOSName,
 			Version:      auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
 			PlatformType: protobuf.DeviceProps_UNKNOWN,
 		},

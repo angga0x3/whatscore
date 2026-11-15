@@ -26,6 +26,11 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 - A web QR login reports `DeviceProps.platformType = CHROME`, matching the
   client-type field `1` the QR already carried (PF-071).
+- The paired device no longer identifies itself as `whatsmeow`. `DeviceProps.os`
+  was a literal copied from the reference, and it is what the phone showed
+  inside the parentheses: **"Google Chrome (whatsmeow)"**. It now reads
+  `"Google Chrome (whatscore)"` (PF-079). Existing pairings keep the old label,
+  because `DeviceProps` is only sent at pairing time (PF-080).
 
 ### Proven live
 

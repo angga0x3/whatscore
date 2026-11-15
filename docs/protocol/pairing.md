@@ -268,3 +268,46 @@ because a future reader comparing decodes will see the difference and should not
 payload. It does **not** mean a session is usable: this probe reads and prints
 the reply, then lets the stream idle out. Sending and receiving messages is
 still untested, and needs the Signal session layer on top of a live connection.
+
+## PF-079: The device label is two independent fields
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-079 |
+| **Title** | Linked devices shows `<browser> (<os>)`: the browser comes from `DeviceProps.platformType` and the parenthesised text from `DeviceProps.os`, which is free text the protocol never constrains |
+| **Layer** | pairing |
+| **Source** | direct observation on a phone, plus reference study of `store.getRegistrationPayload` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` (`TestPairingPayloadDoesNotClaimToBeAnotherLibrary`, `TestPairingPayloadReportsAWebBrowser`) |
+| **Related findings** | PF-024, PF-071 |
+| **Notes** | A paired device was listed as **"Google Chrome (whatsmeow)"**. Neither word came from WhatsApp: `platformType = CHROME` is set because a QR login is the web companion flow and client type `1` accompanies it (PF-071), and `os` was the literal `"whatsmeow"`, copied from the reference while the payload was being made to work. Nothing in the protocol requires that string. It now reads `"whatscore"`, so the phone shows **"Google Chrome (whatscore)"**. |
+
+### How to read the label
+
+| Part | Field | Why |
+|------|-------|-----|
+| "Google Chrome" | `platformType = CHROME` | A QR pairing *is* the web companion flow; the QR's client-type field is `1`, which is Chrome's slot. Reporting `UNKNOWN` while sending `1` describes no real client. |
+| "(whatscore)" | `os = "whatscore"` | Free-text label. It is whatever the client puts there. |
+
+If the goal is a label that says something else, changing `os` is a one-line
+change. Changing the browser part means a different `platformType` **and** a
+matching QR client type, and it must be decided **before pairing**: both fields
+travel in the registration payload only (PF-080), so an already-paired device
+keeps the label it registered with.
+
+## PF-080: DeviceProps is sent once, at pairing
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-080 |
+| **Title** | `DeviceProps` travels only in the registration (pairing) payload; the login payload carries no device-props field at all |
+| **Layer** | auth |
+| **Source** | reference study of `store.getRegistrationPayload` / `getLoginPayload`, confirmed by a live login whose payload was built without them |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe -login` succeeded with a payload built from `auth.BuildLoginPayload`, which has no device-props input |
+| **Related findings** | PF-026, PF-079 |
+| **Notes** | The registration payload embeds a marshalled `DeviceProps` inside `devicePairingData`; the login payload does not contain it. Consequence: the label a phone shows is fixed at pairing time, and correcting it requires removing the device and pairing again. Reconnecting cannot rename an existing companion. |

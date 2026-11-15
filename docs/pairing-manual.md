@@ -122,6 +122,20 @@ second walk, and confirm with the server's own behaviour — never trust a mappi
 merely because it decodes without error (see `deployments/tokendict/README.md`
 for the mistake that taught this).
 
+## What the phone shows
+
+Under **Linked devices** the entry reads `<browser> (<os>)`, for example
+**"Google Chrome (whatscore)"**. Both parts come from the pairing payload
+(PF-079):
+
+- the browser from `DeviceProps.platformType`, which is `CHROME` because a QR
+  pairing is the web companion flow;
+- the parenthesised text from `DeviceProps.os`, which is free text.
+
+Those fields are sent **only at pairing time** (PF-080). Changing them has no
+effect on a device that is already linked: remove it on the phone and pair
+again.
+
 ## Cleaning up
 
 If a pairing attempt leaves an entry on the phone, remove it under

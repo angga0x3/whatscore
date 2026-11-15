@@ -166,3 +166,52 @@ func TestRotationWalksEveryCode(t *testing.T) {
 		t.Fatalf("cancelled context emitted %d codes, want 1", len(windows))
 	}
 }
+
+// TestPairingPayloadDoesNotClaimToBeAnotherLibrary pins the fix for something
+// visible on a phone: Linked devices listed this client as "Google Chrome
+// (whatsmeow)". The OS field is free text the protocol never constrains, and it
+// was a literal copied from the reference while the payload was being made to
+// work. A WhatsCore session must identify itself as WhatsCore.
+func TestPairingPayloadDoesNotClaimToBeAnotherLibrary(t *testing.T) {
+	identity, err := noise.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	raw, err := buildPairingPayload(identity, 1)
+	if err != nil {
+		t.Fatalf("build payload: %v", err)
+	}
+	parsed, err := auth.ParseClientPayload(raw)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if parsed.DeviceProps.OS != "whatscore" {
+		t.Fatalf("os is %q, want %q", parsed.DeviceProps.OS, "whatscore")
+	}
+	if strings.Contains(strings.ToLower(parsed.DeviceProps.OS), "whatsmeow") {
+		t.Fatal("payload still names another library")
+	}
+}
+
+// TestPairingPayloadReportsAWebBrowser explains the other half of the label the
+// phone shows. CHROME is not a lie about the runtime: a QR login is the web
+// companion flow, and client type 1 (Chrome) accompanies it (PF-071). What
+// lands on the screen is therefore "<browser> (<os>)", which reads as
+// "Google Chrome (whatscore)".
+func TestPairingPayloadReportsAWebBrowser(t *testing.T) {
+	identity, err := noise.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	raw, err := buildPairingPayload(identity, 1)
+	if err != nil {
+		t.Fatalf("build payload: %v", err)
+	}
+	parsed, err := auth.ParseClientPayload(raw)
+	if err != nil {
+		t.Fatalf("parse payload: %v", err)
+	}
+	if parsed.DeviceProps.PlatformType != protobuf.DeviceProps_CHROME {
+		t.Fatalf("platform type is %v, want CHROME", parsed.DeviceProps.PlatformType)
+	}
+}
