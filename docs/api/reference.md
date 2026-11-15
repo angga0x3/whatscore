@@ -70,9 +70,31 @@ curl -s http://localhost:8080/version
 }
 ```
 
+## Sessions (implemented)
+
+`/api/v1/sessions` is live over the in-process session manager:
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `GET` | `/api/v1/sessions` | list, optional `?status=` filter, `{"data": [...]}`
+| `POST` | `/api/v1/sessions` | create from `{"name":"..."}`, `201`
+| `GET` | `/api/v1/sessions/{id}` | one session
+| `DELETE` | `/api/v1/sessions/{id}` | stop and delete, `204`
+| `POST` | `/api/v1/sessions/{id}/connect` | start, `202`
+| `POST` | `/api/v1/sessions/{id}/disconnect` | stop, `202`
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/sessions \
+  -H 'Content-Type: application/json' -d '{"name":"primary"}'
+# {"id":"<uuid>","name":"primary","status":"STOPPED",...}
+```
+
+Session payloads carry `id`, `name`, `status`, `created_at`, `updated_at`;
+status values follow the OpenAPI enum.
+
 ## Not implemented yet (contract defined)
 
-Every path under `/api/v1` currently answers `501 Not Implemented` with:
+Every other path under `/api/v1` currently answers `501 Not Implemented` with:
 
 ```json
 { "error": { "code": "not_implemented", "message": "this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone" } }

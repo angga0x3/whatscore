@@ -373,6 +373,9 @@ interfaces, stdlib. **Tests.** Round-trip vs fake media endpoint; corruption tab
 `core/client`/`core/session` to REST. Sessions map to actors; handlers only send commands and read
 events. **Allowed deps.** `core/*`, `go-chi/chi/v5`, stdlib; never `protocol/*`. **Tests.**
 `httptest` router tests; handler tables; contract checks vs `docs/api/openapi.yaml`.
+**Status.** `server/api` implements the session routes behind a `Service` interface with an
+in-memory manager; the router mounts it when `Deps.API` is set, and unmounted `/api/v1` paths still
+answer 501. Messaging, QR SSE, and webhook routes remain.
 
 ### 4.19 `storage` (Store aggregate)
 
