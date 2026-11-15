@@ -376,8 +376,8 @@ events. **Allowed deps.** `core/*`, `go-chi/chi/v5`, stdlib; never `protocol/*`.
 `httptest` router tests; handler tables; contract checks vs `docs/api/openapi.yaml`.
 **Status.** `server/api` implements the session routes behind a `Service` interface with an
 in-memory manager; the router mounts it when `Deps.API` is set, and unmounted `/api/v1` paths still
-answer 501. `server/webhook` implements signed delivery with retries and delivery records. Messaging,
-QR SSE, and webhook *routes* (registration/list) remain.
+answer 501. `server/webhook` implements signed delivery with retries and delivery records, and
+`server/api` also serves webhook CRUD with a write-once secret. Messaging and QR SSE remain.
 
 ### 4.19 `storage` (Store aggregate)
 
@@ -397,7 +397,8 @@ composes:
 
 Backends: `storage/sqlite` (`modernc.org/sqlite`, SDK/development default) and `storage/postgres`
 (`pgx/v5`, server deployment) implement the same aggregate; all access is keyed lookups of `[]byte`
-— no crypto structures leak into SQL schemas.
+— no crypto structures leak into SQL schemas. SQLite is cgo-free, runs WAL with a schema-version
+guard, and is verified with `CGO_ENABLED=0` builds (docs/architecture/storage.md).
 
 **Status.** Interfaces and PostgreSQL migrations exist; `storage/envelope` provides the envelope
 cipher, `storage/credentials` the encrypting vault plus an in-memory backend,

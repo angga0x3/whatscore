@@ -52,6 +52,8 @@ as workstreams land.
 | 2026-11-15 | REST sessions | `server/api` service + handlers, router mount |
 | 2026-11-15 | Webhooks | `server/webhook` signing, retries, delivery records |
 | 2026-11-15 | Binary wiring | session API mounted in `cmd/whatscore`, sessions stopped on shutdown |
+| 2026-11-15 | SQLite backend | `storage/sqlite` (cgo-free), schema guard, WAL |
+| 2026-11-15 | Webhook routes | CRUD + deliveries, write-once secret, mount-prefix fix |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 

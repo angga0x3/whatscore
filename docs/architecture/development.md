@@ -16,7 +16,7 @@ whatscore/
 ├── observability/
 ├── protocol/               # transport, noise, binary, protobuf, auth, pairing, messaging, media, signal, sync
 ├── server/                 # http/{router,handlers}, api (v1 sessions), webhook, middleware, auth
-├── storage/                # interface.go, credentials/, envelope/, postgres/{...}
+├── storage/                # interface.go, credentials/, envelope/, sqlite/, postgres/{...}
 ├── core/                   # events, session, credentials, signalsession, messaging, media, contacts, groups, client
 ├── docs/                   # architecture/, api/, protocol/, reverse-engineering/
 ├── examples/               # rest-api/ (curl scripts)

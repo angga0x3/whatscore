@@ -96,19 +96,59 @@ The server binary mounts these routes, so `docker compose up` exposes them as
 soon as `/ready` reports the database up. Sessions are managed in memory:
 restarting the process clears them.
 
+## Webhooks (implemented)
+
+`/api/v1/webhooks` is live over an in-memory endpoint registry. Delivering
+payloads (signing, retries, delivery records) is documented in
+[`webhooks.md`](webhooks.md) and still needs a worker; registrations live
+in process memory, so restarting the server clears them.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `GET` | `/api/v1/webhooks` | list all endpoints, bare JSON array
+| `POST` | `/api/v1/webhooks` | register from `{"url":"...","events":[...]}`, `201`
+| `GET` | `/api/v1/webhooks/{id}` | one endpoint
+| `PATCH` | `/api/v1/webhooks/{id}` | partial update of `url`, `events`, `secret`, `enabled`
+| `DELETE` | `/api/v1/webhooks/{id}` | remove, `204`
+| `GET` | `/api/v1/webhooks/{id}/deliveries` | delivery history, `[]` until a worker records attempts
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/webhooks \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/hooks/whatscore","events":["message.received"]}'
+# {"id":"<uuid>","url":"https://example.com/hooks/whatscore",
+#  "events":["message.received"],"enabled":true,
+#  "created_at":"...","updated_at":"...","secret":"whsec_..."}
+```
+
+Rules enforced on create and update:
+
+- `url` must be absolute `http`/`https` with a non-empty host.
+- `events` must be a non-empty subset of the OpenAPI `EventType` enum;
+  duplicates are collapsed.
+- `secret` is optional — omit it and a 256-bit `whsec_...` value is
+  generated. A supplied secret must be at least 16 bytes.
+- `enabled` defaults to `true`.
+- `session_id` is not supported yet: a non-empty value is a `400`, because
+  every endpoint in this registry is global.
+
+The signing secret is **returned only by the `201` create response**. Reads,
+lists, and updates omit it entirely, so store it right after creating an
+endpoint. Webhook payloads carry `id`, `url`, `events`, `enabled`,
+`created_at`, and `updated_at`.
+
 ## Not implemented yet (contract defined)
 
-Every other path under `/api/v1` currently answers `501 Not Implemented` with:
+Paths under `/api/v1` that are not mounted answer `501 Not Implemented` with:
 
 ```json
 { "error": { "code": "not_implemented", "message": "this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone" } }
 ```
 
 This is intentional: clients can distinguish "endpoint not shipped yet"
-from "wrong URL" (`404`). The sessions, messaging, and webhook endpoints —
-including the QR SSE stream and the `Idempotency-Key` behavior — are fully
-specified in [`openapi.yaml`](openapi.yaml) and land with
-Milestones 2–4.
+from "wrong URL" (`404`). Messaging and the QR SSE stream — including the
+`Idempotency-Key` behavior — are fully specified in
+[`openapi.yaml`](openapi.yaml) and land with later milestones.
 
 ## Webhook payload contract (Milestone 4)
 
