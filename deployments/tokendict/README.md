@@ -63,6 +63,28 @@ What the table could not read on the first successful scan was `pair-success`
 itself. The frame was still saved, and reconstructing the tokens from it is what
 made the second decoder agree — the failure was recorded rather than lost.
 
+## The login reply
+
+After pairing, reconnecting with the login payload earns:
+
+```
+<success abprops="215" companion_enc_static="…" creation="…" lid="…" location="atn" t="…" />
+<ib><edge_routing><routing_info>…</routing_info></edge_routing></ib>
+<ib><dirty timestamp="…" type="account_sync" /></ib>
+```
+
+Those frames added eleven single-byte and four dictionary indices beyond the
+pairing set: `26=t`, `39=routing_info`, `40=edge_routing`, `60=creation`,
+`61=location`, `75=abprops`, `76=success`, `118=lid`, `130=atn`,
+`dictionary0[110]=account_sync`, `dictionary0[154]=timestamp`,
+`dictionary0[230]=companion_enc_static`, `dictionary1[1]=dirty`. They were
+recovered by instrumenting the reference decoder while it parsed those exact
+frames, so each index is one the server really sent.
+
+`location` varies per session — `cln`, `atn`, `lla`, `cco` were all observed —
+and it appears both as a token and as a literal string. Only the token was
+recorded.
+
 ## What this table is not
 
 It is **not** complete and does not try to be. Nineteen of the twenty tokens

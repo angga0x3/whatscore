@@ -49,7 +49,9 @@ checking the flow without involving a phone.
 | Phone accepts the QR | **verified live** (PF-075) |
 | `pair-success` received and its identity verified | **verified live** |
 | `pair-success` decoded by the probe | **failed once** on a missing token, since fixed (PF-075) |
-| Confirmation and credential write | **never observed** |
+| `pair-device-sign` accepted, credentials written | **verified live** |
+| Login with those credentials | **verified live** (`-login`, PF-077) |
+| Phone finishes linking | **needs the login step** — pairing alone leaves it spinning |
 
 The exchange has now been run twice, and the second run is the interesting one.
 
@@ -67,6 +69,32 @@ it needed are now in the table.
 
 Both failure modes left evidence on disk. That is why `undecoded/*.bin` exists:
 a refused pairing costs a phone scan, and the frame is the only record of it.
+
+## After pairing: log in
+
+A successful pairing writes credentials, and **that is only half the job**. The
+phone keeps showing its linking spinner until the same device connects again
+with the login payload and the server answers `<success>` (PF-077):
+
+```bash
+go run ./cmd/whatscore-probe -login \
+  -creds ./paired.json \
+  -dict deployments/tokendict/pairing-minimal.json \
+  -timeout 60s
+```
+
+Expected:
+
+```
+handshake: ok — logging in as <user> device <n>
+LOGIN OK: the server authenticated this device
+  lid=… companion_enc_static=… location=…
+ib: edge_routing map[]
+ib: dirty map[timestamp:… type:account_sync]
+```
+
+If the terminal never prints `LOGIN OK`, the login was not accepted — that is
+different from "the stream went quiet", which is normal once `success` arrived.
 
 ## Reading a failed scan
 

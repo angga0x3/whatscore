@@ -14,6 +14,9 @@
 /storage/media/
 # Raw frames captured during a pairing attempt: they carry the account JID
 /undecoded/
+# Paired credentials: private keys and the account JID. Never commit.
+paired*.json
+*.creds.json
 *.log
 coverage.out
 coverage.html

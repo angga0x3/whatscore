@@ -64,11 +64,32 @@ func main() {
 	pairDict := flag.String("dict", "", "token table for -pair (see deployments/tokendict)")
 	pairOut := flag.String("out", "", "write paired credentials to this path (mode 0600) when -pair succeeds")
 	renderOnly := flag.Bool("render-only", false, "with -pair, stop after printing the QR payloads")
+	loginFlag := flag.Bool("login", false, "log in with credentials a previous -pair run wrote")
+	credPath := flag.String("creds", "", "credentials file for -login (the -out file from -pair)")
+	loginDict := flag.String("login-dict", "", "token table for -login (defaults to -dict)")
 	printRoot := flag.Bool("root", false, "print the pinned root key and exit")
 	flag.Parse()
 
 	if *printRoot {
 		fmt.Println(hex.EncodeToString(waRootPub))
+		return
+	}
+
+	if *loginFlag {
+		dictPath := *loginDict
+		if dictPath == "" {
+			dictPath = *pairDict
+		}
+		err := runLogin(loginConfig{
+			Endpoint: *endpoint,
+			CredPath: *credPath,
+			DictPath: dictPath,
+			Timeout:  *timeout,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "login: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

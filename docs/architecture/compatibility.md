@@ -16,9 +16,10 @@ run.
 | Auth payload accepted | **supported** | live: `whatscore-probe -payload` builds a real registration payload and the server answers 679 bytes (PF-068) |
 | Pairing reply decoded | **supported** | with the partial table in `deployments/tokendict`, the live stanza decodes to 6 refs and the iq result is accepted (PF-069) |
 | Pairing stanza + keepalive | **supported** | pair-device decoded to 6 refs, ack accepted, keepalive pings decoded and answered (PF-069/PF-070) |
-| Pairing (QR → success) | **in progress** | scannable QR with rotation works live; a phone scan produced a real `pair-success` whose account identity verified (PF-075); confirmation and credential write still unobserved |
+| Pairing (QR → success) | **supported** | a phone scan produced a verified `pair-success`, `pair-device-sign` was accepted, and credentials were written (PF-075) |
+| Login with paired credentials | **supported** | reconnects with the login payload and the server answers `<success>` (PF-077, PF-078) |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
-| Message send/receive | **untested** | needs pairing |
+| Message send/receive | **untested** | needs the Signal session layer on a live connection |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |
 | App-state sync | **untested** | needs pairing |
 
@@ -42,19 +43,21 @@ go run ./cmd/whatscore-probe -timeout 25s
 # outcome:  handshake-completed
 ```
 
-The probe never pairs, never authenticates, never sends a message, and never
-persists a key. If it reports `server-rejected`, the first diverging layer is
-the one in `detail`.
+In its default mode the probe never pairs, never authenticates, never sends a
+message, and never persists a key. If it reports `server-rejected`, the first
+diverging layer is the one in `detail`.
 
-Its `-pair` mode is the exception and is manual by design: it contacts the
-server with fresh keys, renders a QR from the refs the server sends, and — if a
-phone scans one — verifies `pair-success`, completes the link, and writes
-credentials. It needs a token table and a dedicated number; see
-`docs/pairing-manual.md`.
+Its `-pair` and `-login` modes are the exceptions and are manual by design.
+`-pair` contacts the server with fresh keys, renders a QR from the refs the
+server sends, and — if a phone scans one — verifies `pair-success`, completes
+the link, and writes credentials. `-login` reconnects with those credentials and
+reports the server's verdict. Both need a token table and a dedicated number;
+see `docs/pairing-manual.md`.
 
 ## What this matrix deliberately does not say
 
-It does not say WhatsApp works. The bottom two rows of the live table are the
-ones that matter for real use, and they are `untested`. Anyone reading this
-should treat a `supported` cell as "proven for this build, on this date, by
+It does not say WhatsApp works. Messaging and media are the rows that matter for
+real use, and they are still `untested`: nothing in this project has sent or
+received a message. Anyone reading this should treat a `supported` cell as
+"proven for this build, on this date, by
 this test" — not as a compatibility promise.

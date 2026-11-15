@@ -37,14 +37,21 @@ project is pre-1.0, so breaking changes happen in minor versions.
   (`deployments/tokendict/pairing-minimal.json`).
 - An unconfirmed `pair-success` is followed by `<stream:error>` and then
   `<xmlstreamend>` — the mechanism behind the phone's generic refusal (PF-076).
+- A paired device can log in: reconnecting with the login ClientPayload earns
+  `<success>` from the server (PF-077). This is the step that stops the phone's
+  linking spinner, and it was missing entirely.
+
+### Added
+
+- `whatscore-probe -login -creds <file> [-dict <table>]` reconnects with a
+  paired device's credentials and reports the server's verdict.
 
 ### Known limits
 
-- The link still has not completed: the first readable `pair-success` arrived
-  after the probe had already been unable to decode it. No session, no message,
-  and no credential file from a live run exist yet.
-- The token table is partial by design. It now covers what the server has
-  actually sent, and nothing more.
+- No message has been sent or received. Pairing and login are proven; the Signal
+  session layer on a live connection is not.
+- The token table is partial by design: it covers only what the server has
+  actually sent to this project, and any other stanza still fails loudly.
 
 ## [v0.0.1] — 2026-11-15
 
@@ -90,6 +97,11 @@ statement in [docs/releases/v0.0.1.md](docs/releases/v0.0.1.md).
 - XEdDSA signing validated against libsignal-produced vectors (ADR 0001)
 - Pairing gate: a session is only `CONNECTED` after the server's verdict
 - Redirects refused, size caps enforced, secrets redacted from logs and JSON
+
+- A paired device can log in: reconnecting with the login ClientPayload earns
+  `<success>` from the server (PF-077). This is the step that stops the phone's
+  linking spinner, and it was missing entirely.
+
 
 ### Known limits
 

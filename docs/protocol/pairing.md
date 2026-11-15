@@ -231,3 +231,40 @@ a plain string instead — same meaning, different bytes. The acknowledgement ha
 been accepted with the current behaviour, so it stays. It is recorded here
 because a future reader comparing decodes will see the difference and should not
 "fix" it.
+
+## PF-077: Pairing is not logging in
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-077 |
+| **Title** | A paired device must reconnect with the **login** ClientPayload (username, device, passive, pull, lidDbMigrated) before the phone stops waiting; pairing alone leaves both devices spinning |
+| **Layer** | auth |
+| **Source** | direct observation of own session, plus reference study of `store.getLoginPayload` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe -login` (`TestLoadCredentialRecordRejectsIncompleteFiles`), `protocol/auth` login payload tests |
+| **Related findings** | PF-025, PF-026, PF-027, PF-075, PF-078 |
+| **Notes** | After `pair-device-sign` was accepted and credentials were written, the phone kept showing its linking spinner. The reference expects a disconnect at that point and then a fresh connection using the login form. WhatsCore had the login builder but no tool used it, so nothing ever reconnected. Running `-login` against the same credentials produced `<success …>` on the first attempt. **The lesson is architectural, not just tactical**: a pairing implementation that stops at the credential file is incomplete even when every stanza it sends is accepted. |
+
+## PF-078: The login reply and its tokens
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-078 |
+| **Title** | A successful login answers `<success abprops companion_enc_static creation lid location t>`, then pushes `ib` children `<edge_routing><routing_info>`, and `<dirty type="account_sync" timestamp>` |
+| **Layer** | transport |
+| **Source** | direct observation of own session |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `deployments/tokendict` live run: `LOGIN OK` reported, both `ib` children decoded |
+| **Related findings** | PF-077 |
+| **Notes** | Tokens this reply added, all observed in the frames and recovered by instrumenting the reference decoder while it parsed them: `26=t`, `39=routing_info`, `40=edge_routing`, `60=creation`, `61=location`, `75=abprops`, `76=success`, `118=lid`, `130=atn`, `dictionary0[110]=account_sync`, `dictionary0[154]=timestamp`, `dictionary0[230]=companion_enc_static`, `dictionary1[1]=dirty`. `location` varies per session (`cln`, `atn`, `lla`, `cco` were seen), which is why it is `atn` at one index and a literal string at another — the field value changes, the token does not. `companion_enc_static` is the account's encrypted static key and is **not** the identity key: it must not be confused with one. |
+
+### What a login proves, and what it does not
+
+`<success>` means the server accepted the device identity and the login
+payload. It does **not** mean a session is usable: this probe reads and prints
+the reply, then lets the stream idle out. Sending and receiving messages is
+still untested, and needs the Signal session layer on top of a live connection.
