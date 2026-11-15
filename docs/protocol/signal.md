@@ -122,3 +122,54 @@ Status update: X3DH, the root/chain key schedule, and message-key expansion are
 implemented and proven by independent vectors. The ratchet state machine
 (header handling, skipped keys, out-of-order), message encryption, prekeys,
 and serialized session state remain.
+
+## PF-057: Session initialization
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-057 |
+| **Title** | The initiator keeps the X3DH chain as its receiver chain for the responder's signed prekey and derives its first sender chain from a fresh ratchet key; the responder starts with the X3DH chain as its sender chain keyed by its signed prekey |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (conversation, responder-first tests) |
+| **Related findings** | PF-050, PF-054, PF-058 |
+| **Notes** | libsignal `session/Session.go` `ProcessBundle`: `AddReceiverChain(theirRatchetKey = signed prekey, X3DH chain)` then a fresh `sendingRatchetKey` with `rootKey.CreateChain(theirRatchetKey, sendingRatchetKey)` becomes the sender chain and root. `processV3` (responder): `SetSenderChain(ourRatchetKey = signed prekey, X3DH chain)` and the X3DH root. |
+
+## PF-058: Receive ratchet and skipped keys
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-058 |
+| **Title** | A header with a new ratchet key triggers `receiverChain = root.CreateChain(ourCurrentRatchet, theirNew)` and a fresh sender ratchet `root' = CreateChain(theirNew, newRatchet)`; counters that jump ahead cache skipped message keys (bound 2000), older counters fail |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (multi-round conversation, out-of-order, old counter, future and cache limits) |
+| **Related findings** | PF-054, PF-057, PF-059 |
+| **Notes** | libsignal `session/SessionCipher.go` `getOrCreateChainKey` performs exactly these two DH steps and sets `previousCounter = max(senderChainIndex-1, 0)`; `getOrCreateMessageKeys` stores keys for `[chainIndex, counter)`, rejects `counter-chainIndex > 2000` (`ErrTooFarIntoFuture`), and uses saved keys when `chainIndex > counter` (`ErrOldCounter`). WhatsCore caps the skipped cache at 1000 (`MaxSkippedKeys`). |
+
+## PF-059: Header fields
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-059 |
+| **Title** | Each message carries the sender ratchet public key, the previous sending-chain length, and the message counter; the counter starts at 0 per chain |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (header values across ratchet rounds) |
+| **Related findings** | PF-058 |
+| **Notes** | libsignal `protocol/SignalMessage` serializes version, sender ratchet key, counter, previous counter, ciphertext, MAC. WhatsCore models the header fields but not the wire serialization or SignalMessage MAC yet. |
+
+---
+
+Status update: session initialization, the DH ratchet, skipped keys, and
+out-of-order delivery are implemented and tested. SignalMessage
+serialization/MAC, payload encryption, prekeys, and durable state remain.

@@ -57,7 +57,7 @@ Confidence and Status are deliberately separate axes:
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
-  PF-020…PF-025, PF-030…PF-035, PF-040…PF-045).** Framing, binary encoding,
+  PF-020…PF-025, PF-030…PF-035, PF-040…PF-045, PF-057…PF-059).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
   while **Probable** because our own codec, synthetic vectors, independent
@@ -125,6 +125,9 @@ Confidence and Status are deliberately separate axes:
 | PF-054 | signal | Root ratchet | Confirmed | Verified-by-test | `protocol/signal` (vectors, mirrored DH) |
 | PF-055 | signal | Symmetric chain ratchet | Confirmed | Verified-by-test | `protocol/signal` (chained vectors) |
 | PF-056 | signal | Message keys | Confirmed | Verified-by-test | `protocol/signal` (key vectors) |
+| PF-057 | signal | Session initialization | Probable | Verified-by-test | `protocol/signal` (conversation tests) |
+| PF-058 | signal | Receive ratchet and skipped keys | Probable | Verified-by-test | `protocol/signal` (out-of-order tests) |
+| PF-059 | signal | Header fields | Probable | Verified-by-test | `protocol/signal` (header tests) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
