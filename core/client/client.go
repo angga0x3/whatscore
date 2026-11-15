@@ -1,0 +1,216 @@
+// Package client is the public SDK facade over a single session. It composes
+// the session actor, the event bus, and the credential manager behind a small
+// API; protocol types never leak through it.
+//
+// Status: connect/disconnect/subscribe/close are implemented. Sending is not:
+// it needs the Signal and messaging layers, so SendMessage returns
+// ErrNotImplemented instead of pretending.
+package client
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	corecredentials "github.com/angga0x3/whatscore/core/credentials"
+	"github.com/angga0x3/whatscore/core/events"
+	"github.com/angga0x3/whatscore/core/session"
+	"github.com/angga0x3/whatscore/protocol/transport"
+)
+
+// ErrNotImplemented is returned by operations whose protocol layers are not
+// wired yet.
+var ErrNotImplemented = errors.New("client: not implemented yet")
+
+// ErrInvalidConfig is returned by New when the configuration is unusable.
+var ErrInvalidConfig = errors.New("client: invalid config")
+
+// Message is a text message to send.
+type Message struct {
+	To   string
+	Text string
+}
+
+// NewTextMessage builds a text message.
+func NewTextMessage(text string) Message { return Message{Text: text} }
+
+// Client is one WhatsApp session plus its SDK surface. It is safe for
+// concurrent use.
+type Client struct {
+	id      string
+	session *session.Session
+	bus     *events.Bus
+	ownBus  bool
+	creds   *corecredentials.Manager
+}
+
+type options struct {
+	dialer    transport.Dialer
+	endpoint  transport.Endpoint
+	reconnect transport.ReconnectPolicy
+	bus       *events.Bus
+	logger    *slog.Logger
+	creds     *corecredentials.Manager
+}
+
+// Option configures New.
+type Option func(*options) error
+
+// WithDialer overrides the default WebSocket dialer.
+func WithDialer(d transport.Dialer) Option {
+	return func(o *options) error {
+		if d == nil {
+			return fmt.Errorf("%w: nil dialer", ErrInvalidConfig)
+		}
+		o.dialer = d
+		return nil
+	}
+}
+
+// WithEndpoint overrides the default WhatsApp Web endpoint.
+func WithEndpoint(endpoint transport.Endpoint) Option {
+	return func(o *options) error {
+		if endpoint.URL == "" {
+			return fmt.Errorf("%w: empty endpoint URL", ErrInvalidConfig)
+		}
+		o.endpoint = endpoint
+		return nil
+	}
+}
+
+// WithReconnectPolicy enables reconnection with the given policy.
+func WithReconnectPolicy(policy transport.ReconnectPolicy) Option {
+	return func(o *options) error {
+		if policy == nil {
+			return fmt.Errorf("%w: nil reconnect policy", ErrInvalidConfig)
+		}
+		o.reconnect = policy
+		return nil
+	}
+}
+
+// WithBus shares an existing event bus. The client will not close it.
+func WithBus(bus *events.Bus) Option {
+	return func(o *options) error {
+		if bus == nil {
+			return fmt.Errorf("%w: nil bus", ErrInvalidConfig)
+		}
+		o.bus = bus
+		return nil
+	}
+}
+
+// WithLogger sets the structured logger.
+func WithLogger(logger *slog.Logger) Option {
+	return func(o *options) error {
+		if logger == nil {
+			return fmt.Errorf("%w: nil logger", ErrInvalidConfig)
+		}
+		o.logger = logger
+		return nil
+	}
+}
+
+// WithCredentials attaches the encrypted credential manager.
+func WithCredentials(manager *corecredentials.Manager) Option {
+	return func(o *options) error {
+		if manager == nil {
+			return fmt.Errorf("%w: nil credential manager", ErrInvalidConfig)
+		}
+		o.creds = manager
+		return nil
+	}
+}
+
+// New builds a client for one session id. Without options it uses the
+// WhatsApp Web endpoint and the WebSocket dialer; the client owns its event
+// bus unless WithBus supplies one.
+func New(id string, opts ...Option) (*Client, error) {
+	if id == "" {
+		return nil, fmt.Errorf("%w: empty session id", ErrInvalidConfig)
+	}
+	cfg := options{
+		dialer:   &transport.WebSocketDialer{},
+		endpoint: transport.DefaultEndpoint(),
+	}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		if err := opt(&cfg); err != nil {
+			return nil, err
+		}
+	}
+
+	ownBus := false
+	if cfg.bus == nil {
+		cfg.bus = events.NewBus()
+		ownBus = true
+	}
+
+	sess, err := session.New(session.Config{
+		ID:        id,
+		Endpoint:  cfg.endpoint,
+		Dialer:    cfg.dialer,
+		Reconnect: cfg.reconnect,
+		Bus:       cfg.bus,
+		Logger:    cfg.logger,
+	})
+	if err != nil {
+		if ownBus {
+			cfg.bus.Close()
+		}
+		return nil, err
+	}
+	return &Client{
+		id:      id,
+		session: sess,
+		bus:     cfg.bus,
+		ownBus:  ownBus,
+		creds:   cfg.creds,
+	}, nil
+}
+
+// ID returns the session id.
+func (c *Client) ID() string { return c.id }
+
+// Connect establishes the session connection.
+func (c *Client) Connect(ctx context.Context) error {
+	return c.session.Connect(ctx)
+}
+
+// Disconnect closes the current connection without stopping the session.
+func (c *Client) Disconnect(ctx context.Context) error {
+	return c.session.Disconnect(ctx)
+}
+
+// State returns the current session state.
+func (c *Client) State(ctx context.Context) (session.State, error) {
+	return c.session.State(ctx)
+}
+
+// Subscribe returns an event subscription. The caller must Close it.
+func (c *Client) Subscribe() *events.Subscription {
+	return c.bus.Subscribe()
+}
+
+// Credentials returns the attached credential manager, or nil.
+func (c *Client) Credentials() *corecredentials.Manager {
+	return c.creds
+}
+
+// SendMessage is not implemented until Signal and messaging are wired.
+func (c *Client) SendMessage(context.Context, Message) (string, error) {
+	return "", fmt.Errorf("%w: sending requires protocol/signal", ErrNotImplemented)
+}
+
+// Close stops the session and, when the client owns it, closes the event bus.
+// It is idempotent.
+func (c *Client) Close(ctx context.Context) error {
+	err := c.session.Stop(ctx)
+	if c.ownBus {
+		c.bus.Close()
+	}
+	return err
+}
