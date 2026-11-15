@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
@@ -19,6 +20,8 @@ type Receiver struct {
 	sessionID string
 	codec     binary.Codec
 	logger    *slog.Logger
+	identity  [32]byte
+	peers     map[string]*PeerSession
 }
 
 // ReceiverOption configures a Receiver.
@@ -81,6 +84,10 @@ func (r *Receiver) HandleFrame(ctx context.Context, frame []byte) error {
 	}
 	switch node.Tag {
 	case "message":
+		if hasChild(node, "enc") {
+			r.handleEncrypted(ctx, node)
+			return nil
+		}
 		r.handleMessage(ctx, node)
 	case "receipt":
 		r.handleReceipts(ctx, node)
@@ -150,6 +157,25 @@ func (r *Receiver) handleReceipts(ctx context.Context, node *binary.Node) {
 			},
 		})
 	}
+}
+
+func hasChild(node *binary.Node, tag string) bool {
+	for i := range node.Children {
+		if node.Children[i].Tag == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// timestampOf returns the stanza's unix-seconds "t" attribute, or now.
+func timestampOf(node *binary.Node) time.Time {
+	if raw := node.Attrs["t"]; raw != "" {
+		if seconds, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			return time.Unix(seconds, 0).UTC()
+		}
+	}
+	return time.Now()
 }
 
 func receiptStatus(receiptType string) (events.ReceiptStatus, bool) {
