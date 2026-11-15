@@ -128,6 +128,9 @@ Confidence and Status are deliberately separate axes:
 | PF-057 | signal | Session initialization | Probable | Verified-by-test | `protocol/signal` (conversation tests) |
 | PF-058 | signal | Receive ratchet and skipped keys | Probable | Verified-by-test | `protocol/signal` (out-of-order tests) |
 | PF-059 | signal | Header fields | Probable | Verified-by-test | `protocol/signal` (header tests) |
+| PF-060 | signal | SignalMessage framing | Confirmed | Verified-by-test | `protocol/signal` (wire vector), `protocol/protobuf` |
+| PF-061 | signal | SignalMessage MAC | Confirmed | Verified-by-test | `protocol/signal` (vector, negatives) |
+| PF-062 | signal | SignalMessage payload encryption | Confirmed | Verified-by-test | `protocol/signal` (vector, tamper table) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -185,8 +188,8 @@ live-server-facing findings (PF-002, PF-003, PF-010…PF-017, PF-020…PF-025,
 PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
 `tests/integration` runs the fake-server path end to end (WebSocket dial →
 handshake → encrypted frames), which is what the Proving test column cites.
-Signal X3DH and key-schedule findings (PF-050…PF-056) are Confirmed by
-independent vectors.
+Signal findings PF-050…PF-056 and PF-060…PF-062 are Confirmed by independent
+vectors.
 The binary token table itself is not reproduced (spec §10.2); the codec takes
 an injected dictionary. PF-034 records that the plaintext `<body>` carrier is
 a scoped deviation from the references' encrypted `<enc>` payload.

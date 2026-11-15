@@ -173,3 +173,55 @@ and serialized session state remain.
 Status update: session initialization, the DH ratchet, skipped keys, and
 out-of-order delivery are implemented and tested. SignalMessage
 serialization/MAC, payload encryption, prekeys, and durable state remain.
+
+## PF-060: SignalMessage framing
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-060 |
+| **Title** | A SignalMessage is `0x33 ‖ protobuf{ratchetKey=1 (0x05‖key), counter=2, previousCounter=3, ciphertext=4} ‖ MAC[8]` |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (exact wire vector), `protocol/protobuf` (field numbers) |
+| **Related findings** | PF-059, PF-061 |
+| **Notes** | libsignal `protocol/SignalMessage.go`: version byte `CurrentVersion<<4|CurrentVersion` = `0x33`, then the WhisperMessage protobuf, then the MAC. The ratchet key is serialized with the `0x05` type prefix (33 bytes). |
+
+## PF-061: SignalMessage MAC
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-061 |
+| **Title** | `MAC = HMAC-SHA256(macKey, senderIdentity.serialize() ‖ receiverIdentity.serialize() ‖ version ‖ protobuf)[:8]`, with each identity serialized as `0x05 ‖ pubkey` |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (wire vector, wrong-identity and wrong-key negatives) |
+| **Related findings** | PF-060 |
+| **Notes** | libsignal `SignalMessage.VerifyMac(version, senderIdentityKey, receiverIdentityKey, macKey)` hashes the serialized sender identity, receiver identity, and the version-prefixed protobuf, comparing the first 8 bytes. WhatsCore verifies before decrypting. |
+
+## PF-062: SignalMessage payload encryption
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-062 |
+| **Title** | The payload is AES-256-CBC with PKCS#7 under the message key's cipher key and IV; decryption happens only after the MAC verifies |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (ciphertext vector, tamper table, state conversation) |
+| **Related findings** | PF-056, PF-061 |
+| **Notes** | libsignal `session/encrypt`/`decrypt`: `EncryptCbc(iv, cipherKey, plaintext)` with PKCS#7, and `DecryptWithKey` only after `VerifyMac`. WhatsCore validates every padding byte, stricter than the reference. |
+
+---
+
+Status update: SignalMessage framing, MAC, payload encryption, and state-machine
+integration are implemented and pinned by an exact independent wire vector.
+Prekey generation/rotation, PreKeySignalMessage, session persistence, and the
+WhatsApp `<enc>` wiring remain.

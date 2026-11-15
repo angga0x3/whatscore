@@ -37,6 +37,7 @@ as workstreams land.
 | 2026-11-15 | Signal X3DH | `protocol/signal` + independent vectors, PF-050…053 |
 | 2026-11-15 | Signal key schedule | root/chain/message keys, PF-054…056 |
 | 2026-11-15 | Signal ratchet state | initialization, DH ratchet, skipped keys, PF-057…059 |
+| 2026-11-15 | Signal message crypto | framing, MAC, AES-CBC payload, PF-060…062 |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 
@@ -67,9 +68,9 @@ Independent packages; can run in parallel.
   stanzas. Depends on `protocol/binary`.
 - `protocol/media`: media key derivation (HKDF), AES-256-CBC + HMAC-SHA256
   encrypt/decrypt, integrity sidecar. Depends on stdlib only.
-- `protocol/signal`: X3DH, the key schedule, and the ratchet state machine
-  done (PF-050…059); message framing/encryption, prekeys, and sender keys
-  remain. Highest risk.
+- `protocol/signal`: X3DH, the key schedule, the ratchet state machine, and
+  SignalMessage framing/MAC/encryption done (PF-050…062); prekeys,
+  PreKeySignalMessage, persistence, and sender keys remain.
 - `protocol/sync`: app-state patch parsing; depends on signal primitives.
 
 Acceptance per package: round-trip/known-answer tests, adversarial tables,
