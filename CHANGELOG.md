@@ -16,8 +16,9 @@ statement in [docs/releases/v0.0.1.md](docs/releases/v0.0.1.md).
   (PF-004…PF-009), reproduced 4/4
 - Registration `ClientPayload` accepted by the server, which answers 679 bytes
   (PF-068)
-- `pair-device` stanza decoded to 6 refs with a nine-token partial table, and
-  the iq result accepted (PF-069)
+- `pair-device` stanza decoded to 6 refs with a twelve-token partial table, the
+  iq result accepted, and the server's keepalive decoded and answered (PF-069,
+  PF-070)
 
 ### Added
 

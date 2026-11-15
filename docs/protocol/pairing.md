@@ -56,24 +56,38 @@ parsers, and device-identity authentication are implemented and proven with
 synthetic keys and nodes. Device-signature generation, credential
 provisioning, and a live pairing run remain.
 
-## PF-069: The live pair-device stanza decodes with nine tokens
+## PF-069: The live pairing exchange decodes with twelve tokens
 
 | Field | Value |
 |-------|-------|
 | **ID** | PF-069 |
-| **Title** | The server's `pair-device` stanza uses exactly seven single-byte token indices and one dictionary-1 index; with those nine strings it decodes as `<iq type=set id from t><pair-device><ref>×6</ref></pair-device></iq>`, and the client's iq result is accepted and answered |
+| **Title** | The `pair-device` stanza and the subsequent keepalive decode exactly with ten single-byte tokens and two dictionary-1 tokens; the acknowledge is accepted and the server keeps the socket open by pinging `<iq xmlns="urn:xmpp:ping" type="get">` roughly every 30 s |
 | **Layer** | pairing |
 | **Source** | direct observation of own session |
 | **Observed date** | 2026-11-15 |
 | **Confidence** | Confirmed |
 | **Status** | Verified-by-test |
-| **Proving test** | `deployments/tokendict` live run: 6 refs decoded, ack sent, server replied; three runs used the identical index set |
-| **Related findings** | PF-016, PF-068 |
-| **Notes** | Captured from an unpaired session, so no account was involved. The index set is stable across runs, which makes a nine-token partial table sufficient for this stanza — the reason a full 1,259-entry table is not required to start pairing. The server's reply decodes structurally to `iq{from, type=<41>, id, <26>=<43>}`, but those three indices appear nowhere we can read without them, so they stay empty and documented as unknown. A differential test (resend the ack with `type="get"`, with no `type`, and with the observed value) produced identical server behaviour in all three cases and therefore proved nothing; the earlier guess that `41` meant `xmlns` was removed rather than kept. The cause of the post-ack close is also undetermined, with three candidate explanations recorded. Anything outside this stanza fails loudly with `unknown token`, which is the intended behaviour for a partial table. |
+| **Proving test** | `deployments/tokendict` live run: pair-device decoded to 6 refs, ack sent, two pings decoded and answered |
+| **Related findings** | PF-016, PF-068, PF-070 |
+| **Notes** | Full decode: `<iq from="@s.whatsapp.net" type="set" id xmlns="md"><pair-device><ref>×6</ref></pair-device></iq>`, then `<iq from type="get" t xmlns="urn:xmpp:ping">`. Answering the ping with an `iq result` carrying the same id keeps the connection alive; ignoring it produces the 1006 close that earlier runs read as "the acknowledgement was rejected". A first mapping placed `t` at index 22 and `xmlns` at 26 and left 41 unknown; the keepalive decode contradicted it, and the corrected ordering (`22=xmlns`, `26=t`, `41=get`, `43=urn:xmpp:ping`) now matches an independent byte walk. That correction is the reason this finding is worth trusting: the wrong table decoded without error. |
+
+## PF-070: Keepalive, not rejection
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-070 |
+| **Title** | An unpaired session that acknowledges `pair-device` is kept alive by `<iq xmlns="urn:xmpp:ping" type="get" t>`; a client that does not answer is disconnected about 30 s later with a 1006 close |
+| **Layer** | transport |
+| **Source** | direct observation of own session |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `deployments/tokendict` live run: two pings answered, socket stayed open across both |
+| **Related findings** | PF-069 |
+| **Notes** | Pings arrived with `t` values 31 s apart, consistent with the reference client's keepalive interval. Answering requires an `iq` with `type="result"`, `to="s.whatsapp.net"`, and the ping's `id`; the amount of the reply did not matter to the server within the window observed. This also means a client that stops reading looks like a rejected pair to any observer who only watches for closes. |
 
 ---
 
-Status: the pairing stanza is decoded against the live server with a
-nine-token table, and the acknowledgement round-trips. Completing the flow needs
-the remaining reply tokens plus the device-identity signature, which is
-implemented but has not been exercised live.
+Status: the pairing stanza, the acknowledge, and the keepalive round-trip
+against the live server. `pair-success` has not been observed, because it only
+arrives after a phone scans a QR composed from these refs.

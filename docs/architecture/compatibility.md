@@ -15,7 +15,8 @@ run.
 | Server certificate chain | **supported** | same runs (pinned root verified) |
 | Auth payload accepted | **supported** | live: `whatscore-probe -payload` builds a real registration payload and the server answers 679 bytes (PF-068) |
 | Pairing reply decoded | **supported** | with the nine-token partial table in `deployments/tokendict`, the live stanza decodes to 6 refs and the iq result is accepted (PF-069) |
-| Pairing (QR → success) | **blocked on unread tokens** | payload accepted, stanza decoded to 6 refs, ack bytes accepted (PF-068/PF-069). Three indices that appear only on the server's reply are unobserved, so the post-ack stanza cannot be read; a differential test failed to distinguish them |
+| Pairing stanza + keepalive | **supported** | pair-device decoded to 6 refs, ack accepted, keepalive pings decoded and answered (PF-069/PF-070) |
+| Pairing (QR → success) | **in progress** | everything up to rendering a QR works against the live server; `pair-success` needs a phone to scan it |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
 | Message send/receive | **untested** | needs pairing |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |

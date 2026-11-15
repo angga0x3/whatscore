@@ -144,7 +144,8 @@ Confidence and Status are deliberately separate axes:
 | PF-066 | signal | Outbound prekey message | Probable | Verified-by-test | `core/messaging` (pkmsg send, responder accept) |
 | PF-067 | signal | XEdDSA signing is not Ed25519 signing | Confirmed | Verified-by-test | ADR 0001 investigation (cross-checked against an independent reference) |
 | PF-068 | auth | Server answers a complete registration payload | Confirmed | Verified-by-test | `cmd/whatscore-probe -payload` live run |
-| PF-069 | pairing | Live pair-device stanza decodes with nine tokens | Confirmed | Verified-by-test | `deployments/tokendict` live run |
+| PF-069 | pairing | Live pairing exchange decodes with twelve tokens | Confirmed | Verified-by-test | `deployments/tokendict` live run |
+| PF-070 | transport | Keepalive, not rejection | Confirmed | Verified-by-test | `deployments/tokendict` live run (pings answered) |
 | PF-070 | sync | App-state stanza shape | Probable | Verified-by-test | `protocol/sync` (parse table) |
 | PF-071 | sync | SyncdPatch/SyncdMutation schema | Probable | Verified-by-test | `protocol/sync` (wire table) |
 | PF-072 | sync | Value blob framing | Probable | Verified-by-test | `protocol/sync` (blob table) |
