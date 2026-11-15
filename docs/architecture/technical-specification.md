@@ -345,12 +345,17 @@ messages; other events follow with their layers.
 **Responsibility.** Contact/profile caching and lookups; pushes changes as events. **Allowed
 deps.** `protocol/*` via interfaces, `core/events`, storage interfaces, stdlib. **Tests.** Cache
 invalidation tables vs fake server responses.
+**Status.** `core/contacts.Cache` implements the cache: JID-keyed, change detection that ignores
+duplicate pushes, sorted snapshots, copy semantics, stdlib only. Fetch orchestration and event
+publication stay with the caller.
 
 ### 4.16 `core/groups`
 
 **Responsibility.** Group metadata and participant management; delegates group message crypto to
 `protocol/signal` sender keys. **Allowed deps.** `protocol/*` via interfaces, `core/events`,
 storage interfaces, stdlib. **Tests.** Participant change tables; fake-server group flows.
+**Status.** `core/groups.Cache` implements metadata caching with normalized participants and
+participant change detection. Sender keys remain.
 
 ### 4.17 `core/media`
 
