@@ -16,8 +16,36 @@ project is pre-1.0, so breaking changes happen in minor versions.
   was rejected" are no longer the same observation, and "published" now has a
   server-side answer instead of a key-file assertion.
 
+### Added
+
+- A message this device cannot open is not a dead end. The receiver exposes
+  `SetDecryptFailureHandler`, and the probe answers every failure with the
+  retry receipt whatsmeow sends (receipt `type="retry"` + `<retry count id t
+  v=1>` + `<registration>`, capped at three per message id) — carrying the
+  inline `<keys>` block (a fresh one-time prekey persisted before the wire,
+  the signed prekey, the identity key, the paired device identity). The live
+  response was immediate: the phone re-encrypted within seconds of the first
+  receipts. The inline keys matter because the sender re-encrypts with its
+  cached bundle — the very bundle that produced the unreadable message — and
+  its re-encryption arrives under a new message id, so waiting for a second
+  attempt never fires.
+- The probe persists Signal sessions (`<creds>.sessions.json`, 0600). A
+  bootstrapped ratchet is a one-way door: the phone continues it with
+  msg-carrier messages, and a run that does not restore the state loses every
+  one of them. The receiver's `SetSessionObserver` writes installs and ratchet
+  advances; startup restores before reading.
+- `-listen` marks the device available (`<presence type="available"/>`) after
+  login, like whatsmeow. Without it every stanza the probe ever saw was
+  offline-queue replay; live fan-out never started.
+
 ### Fixed
 
+- The empty one-time prekey store is why senders drift to the signed prekey
+  and why every queued message came to name one spent key (108). `-listen`
+  now tops the server up with a fresh id batch when the count hits zero,
+  private halves written to disk before the upload, and re-tests the "repeat
+  upload is refused" reading in PF-082 with the server's own count as the
+  verdict — the repeat upload was answered with silence again.
 - `-listen` now answers the server's `<ib><offline_preview/>` announcement with
   `<ib><offline_batch count="100"/>` and treats `<ib><offline/>` as the drain
   marker. The queue stays frozen until the client names a batch size, so a
