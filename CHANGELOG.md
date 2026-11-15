@@ -5,6 +5,33 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ## [Unreleased]
 
+### Added
+
+- `whatscore-probe -dump <frame.bin> -dict <table>` decodes one saved
+  `undecoded/*.bin` frame. Holes in the table are filled with placeholders that
+  name their slot (`¿s153`, `¿d0[56]`), so a frame the table almost covers still
+  shows its shape and names the exact entries to record.
+- `-listen` traces every stanza before interpretation and asks the server how
+  many one-time prekeys it holds. "Nothing arrived" and "something arrived and
+  was rejected" are no longer the same observation, and "published" now has a
+  server-side answer instead of a key-file assertion.
+
+### Fixed
+
+- The token table now covers the `<ib><offline_preview/>` announcement:
+  `single[153]` (the `message`/`notification` counts) and `dictionary0[56]`
+  (`count`). The stanza that announces the PF-087 queue was itself landing in
+  `undecoded/` and being dropped silently.
+
+### Proven live
+
+- The PF-087 queue announcement decodes: `count=107 message=26 receipt=37
+  notification=26` in the 2026-11-15 run. The server announces its queue in a
+  stanza this project could not read when PF-087 was first recorded.
+- The server reports holding 11 one-time prekeys for this device. The prekey
+  upload was accepted, so "the server cannot encrypt to us" is eliminated as a
+  PF-087 cause.
+
 ### Fixed
 
 - The pairing payload now carries a real XEdDSA signed-prekey signature. It

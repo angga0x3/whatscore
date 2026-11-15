@@ -85,6 +85,27 @@ frames, so each index is one the server really sent.
 and it appears both as a token and as a literal string. Only the token was
 recorded.
 
+## The offline preview
+
+A `-listen` run produced one stanza the table could not read, kept at
+`undecoded/`. Dumping it with the hole-filled decoder (`-dump`) showed its shape
+and the three unknown slots at once:
+
+```
+<ib from="@s.whatsapp.net">
+  <offline_preview count="…" message="…" notification="26" receipt="37"
+                   appdata="0" call="0" status="17"/>
+</ib>
+```
+
+The count of undelivered messages PF-087 reports is this stanza's `message`
+attribute — and its value rode on `single[153]`, which the table lacked. The
+other two slots resolved the same way: `dictionary0[56]` is the `count` value
+and the `notification` value shares `single[153]`. All three were present in
+that one frame; none was inferred from elsewhere. The stanza is the queue
+announcement PF-087 describes: the server said what it held, in a frame this
+table could not yet read, and the receive path discarded it silently.
+
 ## What this table is not
 
 It is **not** complete and does not try to be. Nineteen of the twenty tokens

@@ -249,10 +249,10 @@ A real client must:
 | **Source** | direct observation of own session, repeated |
 | **Observed date** | 2026-11-15 |
 | **Confidence** | Confirmed that the queue is announced and not delivered |
-| **Status** | Open — cause not established |
-| **Proving test** | `cmd/whatscore-probe -listen` live runs: `offline_preview` reported `message=24`, the socket stayed established for three minutes, and zero `message` stanzas arrived |
+| **Status** | Open — the announcement stanza is now decoded; two candidate causes eliminated |
+| **Proving test** | `cmd/whatscore-probe -listen` live runs: `offline_preview` reported `message=24`, the socket stayed established for three minutes, and zero `message` stanzas arrived. A 2026-11-15 rerun with stanza tracing showed the same shape — `count=107 message=26 receipt=37` — plus a server-side one-time prekey count of 11, and the trace again recorded zero `message` stanzas in the window |
 | **Related findings** | PF-086, PF-088 |
-| **Notes** | Earlier in the same account's history, `message` stanzas *were* delivered (during pairing, before any `-listen` run), so the transport and the shape are known good. What changed between then and now is not established. Candidate causes, none confirmed: the server considers the device's session with the phone stale and will not encrypt to it; the queue is addressed to a signed prekey this device no longer holds (PF-085); or the queue needs a stanza we do not send. **This is deliberately not written as a conclusion.** What is proven is the failure mode: a client that treats "connected and quiet" as healthy will silently lose every queued message. |
+| **Notes** | The queue announcement itself was the first casualty of the partial token table: the `<ib><offline_preview/>` frame landed in `undecoded/` and was discarded by the receive path, so "announced" and "delivered" were indistinguishable in the logs. It now decodes (see deployments/tokendict/README.md). Two candidate causes are eliminated by the 2026-11-15 run: the prekey theory is dead — the server reports holding 11 one-time prekeys, so the upload was accepted and the server *can* encrypt to this device — and a malformed announcement is dead, because the stanza decodes cleanly. What remains open is why a device that is active (PF-084 answered), with keys on the server, and with a queue it has itself announced receives nothing. **This is deliberately not written as a conclusion.** What is proven is the failure mode: a client that treats "connected and quiet" as healthy will silently lose every queued message. |
 
 ## PF-088: Silent logging hides a broken receive path
 

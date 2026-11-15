@@ -74,11 +74,20 @@ func main() {
 	sendText := flag.String("text", "", "message body for -send")
 	listenFlag := flag.Bool("listen", false, "log in, publish prekeys, and decrypt inbound messages")
 	keyPath := flag.String("keys", "", "key file for -listen (default: <creds>.keys.json)")
+	dumpPath := flag.String("dump", "", "decode one saved undecoded/*.bin frame with -dict and print its tree")
 	printRoot := flag.Bool("root", false, "print the pinned root key and exit")
 	flag.Parse()
 
 	if *printRoot {
 		fmt.Println(hex.EncodeToString(waRootPub))
+		return
+	}
+
+	if *dumpPath != "" {
+		if err := dumpUndecoded(*pairDict, *dumpPath); err != nil {
+			fmt.Fprintf(os.Stderr, "dump: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 

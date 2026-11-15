@@ -124,6 +124,10 @@ func runListen(cfg sendConfig) error {
 
 	d := newDispatcher(sc, codec)
 	d.onNode = func(ctx context.Context, node *wabinary.Node) {
+		// Trace every stanza before any interpretation. A receive path that only
+		// prints what it successfully decrypted cannot distinguish "nothing
+		// arrived" from "something arrived and was rejected".
+		fmt.Printf("TRACE %s%s\n", node.Tag, attrSummary(node))
 		switch node.Tag {
 		case "message":
 			// A receipt goes back before decryption: a sender that never sees
@@ -172,6 +176,14 @@ func runListen(cfg sendConfig) error {
 
 	// A freshly logged-in companion starts passive; the server only pushes
 	// inbound traffic once it is told the device is active (PF-084).
+	// Ask the server what it actually holds. Our key file saying "published"
+	// only proves we sent the node.
+	if n, err := diagPreKeyCount(ctx, d); err != nil {
+		fmt.Printf("DIAG prekey count: %v\n", err)
+	} else {
+		fmt.Printf("DIAG server holds %d one-time prekeys\n", n)
+	}
+
 	if err := setActiveDispatcher(ctx, d); err != nil {
 		d.shutdown()
 		<-loopDone
@@ -322,4 +334,70 @@ func sendDeliveryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinar
 		return
 	}
 	fmt.Printf("delivery receipt sent for %s\n", id)
+}
+
+// attrSummary renders the attributes that matter for routing, truncated so a
+// long stanza cannot flood the terminal.
+func attrSummary(node *wabinary.Node) string {
+	keys := []string{"id", "from", "to", "type", "t", "notify", "xmlns", "class"}
+	out := ""
+	for _, k := range keys {
+		if v := node.Attrs[k]; v != "" {
+			out += " " + k + "=" + truncate(v, 40)
+		}
+	}
+	if children := len(node.Children); children > 0 {
+		out += fmt.Sprintf(" children=%d", children)
+		for i := range node.Children {
+			out += " <" + node.Children[i].Tag + ">"
+		}
+	}
+	return out
+}
+
+func truncate(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+// diagPreKeyCount asks the server how many one-time prekeys it actually holds
+// for this device.
+//
+// This is the question that decides whether an upload worked. Marking a key
+// file "published" because we sent a node proves only that we sent it; the
+// server's own count is the only authority, and without it "the server will not
+// encrypt to us" and "we never published" look identical from the client side.
+func diagPreKeyCount(ctx context.Context, d *dispatcher) (int, error) {
+	id, err := randomID()
+	if err != nil {
+		return 0, err
+	}
+	reply, err := d.request(ctx, &wabinary.Node{
+		Tag: "iq",
+		Attrs: wabinary.Attrs{
+			"to": serverJID, "type": "get", "xmlns": "encrypt", "id": id,
+		},
+		Children: []wabinary.Node{{Tag: "count"}},
+	}, 20*time.Second)
+	if err != nil {
+		return -1, err
+	}
+	count := child(reply, "count")
+	if count == nil {
+		return -1, fmt.Errorf("reply has no <count>: %s", attrSummary(reply))
+	}
+	value := count.Attrs["value"]
+	if value == "" {
+		return -1, fmt.Errorf("<count> has no value attribute: %s", attrSummary(count))
+	}
+	n := 0
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return -1, fmt.Errorf("count value %q is not a number", value)
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n, nil
 }
