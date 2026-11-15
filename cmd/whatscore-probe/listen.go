@@ -169,7 +169,19 @@ func runListen(cfg sendConfig) error {
 		if count > 3 {
 			return
 		}
-		if err := sendRetryReceipt(ctx, sc, codec, node, record.RegistrationID, count); err != nil {
+		var keysBlock *wabinary.Node
+		if count >= 2 {
+			block, err := retryKeysBlock(record, keys, signer)
+			if err != nil {
+				fmt.Printf("retry keys: %v\n", err)
+			} else {
+				keysBlock = block
+				if err := keys.save(cfg.KeyPath); err != nil {
+					fmt.Printf("could not save key file after retry keys: %v\n", err)
+				}
+			}
+		}
+		if err := sendRetryReceipt(ctx, sc, codec, node, record.RegistrationID, count, keysBlock); err != nil {
 			fmt.Printf("retry receipt: %v\n", err)
 		} else {
 			fmt.Printf("retry receipt sent for %s (attempt %d)\n", id, count)
@@ -434,14 +446,28 @@ func (o *offlineQueue) requestBatch(ctx context.Context) error {
 // sendRetryReceipt asks the sender to re-encrypt a message this device could
 // not open, shaped like whatsmeow's retry receipt (retry.go): the original
 // receipt attrs with type="retry", a <retry count id t v=1> child naming the
-// message, and the device's 4-byte registration id. The sender answers by
-// fetching a fresh bundle and sending a new prekey message.
-func sendRetryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, registrationID uint32, count int) error {
+// message, and the device's 4-byte registration id. On the second attempt and
+// later the receipt carries a <keys> block, because the sender's cached bundle
+// is exactly what produced the unreadable message — it needs the current key
+// material inline, or it re-encrypts to the same spent key.
+func sendRetryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, registrationID uint32, count int, keysBlock *wabinary.Node) error {
 	var reg [4]byte
 	reg[0] = byte(registrationID >> 24)
 	reg[1] = byte(registrationID >> 16)
 	reg[2] = byte(registrationID >> 8)
 	reg[3] = byte(registrationID)
+	children := []wabinary.Node{
+		{Tag: "retry", Attrs: wabinary.Attrs{
+			"count": strconv.Itoa(count),
+			"id":    node.Attrs["id"],
+			"t":     node.Attrs["t"],
+			"v":     "1",
+		}},
+		{Tag: "registration", Bytes: reg[:]},
+	}
+	if keysBlock != nil {
+		children = append(children, *keysBlock)
+	}
 	receipt := &wabinary.Node{
 		Tag: "receipt",
 		Attrs: wabinary.Attrs{
@@ -449,21 +475,49 @@ func sendRetryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.C
 			"to":   node.Attrs["from"],
 			"type": "retry",
 		},
-		Children: []wabinary.Node{
-			{Tag: "retry", Attrs: wabinary.Attrs{
-				"count": strconv.Itoa(count),
-				"id":    node.Attrs["id"],
-				"t":     node.Attrs["t"],
-				"v":     "1",
-			}},
-			{Tag: "registration", Bytes: reg[:]},
-		},
+		Children: children,
 	}
 	frame, err := codec.Encode(receipt)
 	if err != nil {
 		return err
 	}
 	return sc.WriteFrame(ctx, frame)
+}
+
+// retryKeysBlock builds the inline key material of whatsmeow's retry receipt:
+// a fresh one-time prekey (persisted before it goes on the wire), the signed
+// prekey, the identity key, and the device identity this device registered
+// with at pairing.
+func retryKeysBlock(record *credentialRecord, keys *keyFile, signer signal.XEdDSASigner) (*wabinary.Node, error) {
+	fresh, err := keys.generateFresh(1, signer)
+	if err != nil {
+		return nil, err
+	}
+	signed, err := keys.signedPreKey()
+	if err != nil {
+		return nil, err
+	}
+	deviceIdentity, err := deviceIdentityBytes(record)
+	if err != nil {
+		return nil, err
+	}
+	return &wabinary.Node{
+		Tag: "keys",
+		Children: []wabinary.Node{
+			{Tag: "type", Bytes: []byte{5}},
+			{Tag: "identity", Bytes: append([]byte(nil), record.IdentityPub[:]...)},
+			{Tag: "key", Children: []wabinary.Node{
+				{Tag: "id", Bytes: []byte{byte(fresh[0].ID >> 24), byte(fresh[0].ID >> 16), byte(fresh[0].ID >> 8), byte(fresh[0].ID)}},
+				{Tag: "value", Bytes: append([]byte(nil), fresh[0].Pair.Public[:]...)},
+			}},
+			{Tag: "skey", Children: []wabinary.Node{
+				{Tag: "id", Bytes: []byte{byte(signed.ID >> 24), byte(signed.ID >> 16), byte(signed.ID >> 8), byte(signed.ID)}},
+				{Tag: "value", Bytes: append([]byte(nil), signed.Pair.Public[:]...)},
+				{Tag: "signature", Bytes: append([]byte(nil), signed.Signature...)},
+			}},
+			{Tag: "device-identity", Bytes: deviceIdentity},
+		},
+	}, nil
 }
 
 // sendAvailablePresence marks the device available, the way whatsmeow's

@@ -26,6 +26,7 @@ import (
 	"github.com/angga0x3/whatscore/protocol/protobuf"
 	wasignal "github.com/angga0x3/whatscore/protocol/signal"
 	"github.com/angga0x3/whatscore/protocol/transport"
+	"google.golang.org/protobuf/proto"
 )
 
 // pairingClientType is the web client type the reference sends for a browser
@@ -471,6 +472,21 @@ func qrStringForTest(payload string) (string, error) {
 		return "", err
 	}
 	return payload, nil
+}
+
+// deviceIdentityBytes re-marshals the ADVSignedDeviceIdentity this device sent
+// back in <pair-device-sign>, for the retry receipt's inline <keys> block —
+// the same blob the sender carries as <device-identity> on its messages.
+func deviceIdentityBytes(record *credentialRecord) ([]byte, error) {
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(&protobuf.ADVSignedDeviceIdentity{
+		Details:          append([]byte(nil), record.Device.Details...),
+		AccountSignature: append([]byte(nil), record.Device.AccountSignature...),
+		DeviceSignature:  append([]byte(nil), record.Device.DeviceSignature...),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal device identity: %w", err)
+	}
+	return raw, nil
 }
 
 // loadDictionary requires a table: pairing cannot decode anything without one.

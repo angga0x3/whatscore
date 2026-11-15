@@ -672,7 +672,7 @@ func TestRetryReceiptShape(t *testing.T) {
 		},
 	}
 	const registrationID = uint32(884371735)
-	if err := sendRetryReceipt(context.Background(), conn, wabinary.NewCodec(nil), orig, registrationID, 1); err != nil {
+	if err := sendRetryReceipt(context.Background(), conn, wabinary.NewCodec(nil), orig, registrationID, 1, nil); err != nil {
 		t.Fatalf("send: %v", err)
 	}
 
