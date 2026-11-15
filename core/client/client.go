@@ -171,13 +171,29 @@ func New(id string, opts ...Option) (*Client, error) {
 		ownBus = true
 	}
 
+	receiverOpts := []coremessaging.ReceiverOption{}
+	if cfg.logger != nil {
+		receiverOpts = append(receiverOpts, coremessaging.WithReceiverLogger(cfg.logger))
+	}
+	receiver, err := coremessaging.NewReceiver(cfg.bus, id, receiverOpts...)
+	if err != nil {
+		if ownBus {
+			cfg.bus.Close()
+		}
+		return nil, err
+	}
+	handler := session.FrameHandler(receiver)
+	if cfg.handler != nil {
+		handler = frameHandlers{receiver, cfg.handler}
+	}
+
 	sess, err := session.New(session.Config{
 		ID:           id,
 		Endpoint:     cfg.endpoint,
 		Dialer:       cfg.dialer,
 		Reconnect:    cfg.reconnect,
 		Connector:    cfg.connector,
-		FrameHandler: cfg.handler,
+		FrameHandler: handler,
 		Bus:          cfg.bus,
 		Logger:       cfg.logger,
 	})
@@ -203,6 +219,18 @@ func New(id string, opts ...Option) (*Client, error) {
 		ownBus:  ownBus,
 		creds:   cfg.creds,
 	}, nil
+}
+
+// frameHandlers runs each handler in order until one fails.
+type frameHandlers []session.FrameHandler
+
+func (h frameHandlers) HandleFrame(ctx context.Context, frame []byte) error {
+	for _, handler := range h {
+		if err := handler.HandleFrame(ctx, frame); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ID returns the session id.

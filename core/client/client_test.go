@@ -355,3 +355,92 @@ func TestConcurrentStateQueries(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestInboundMessageEvent(t *testing.T) {
+	conn := newFakeConn()
+	bus := events.NewBus()
+	c, err := New("session-1", WithDialer(&fakeDialer{conn: conn}), WithBus(bus))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+	sub := c.Subscribe()
+	defer sub.Close()
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, sub, events.TypeConnected)
+
+	frame, err := binary.NewCodec(nil).Encode(&binary.Node{
+		Tag: "message",
+		Attrs: binary.Attrs{
+			"id": "IN1", "type": "text", "from": "628123@s.whatsapp.net", "t": "1700000000",
+		},
+		Children: []binary.Node{{Tag: "body", Bytes: []byte("halo")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.frames <- frame
+
+	ev := waitEvent(t, sub, events.TypeMessage)
+	if ev.Message == nil {
+		t.Fatalf("event = %#v", ev)
+	}
+	if ev.Message.ID != "IN1" || ev.Message.Chat != "628123@s.whatsapp.net" ||
+		ev.Message.Text != "halo" || ev.Message.Direction != events.DirectionIncoming {
+		t.Fatalf("message = %#v", ev.Message)
+	}
+}
+
+func TestInboundRunsCustomHandlerToo(t *testing.T) {
+	conn := newFakeConn()
+	bus := events.NewBus()
+	frames := make(chan []byte, 1)
+	c, err := New("session-1",
+		WithDialer(&fakeDialer{conn: conn}),
+		WithBus(bus),
+		WithFrameHandler(session.FrameHandlerFunc(func(_ context.Context, frame []byte) error {
+			frames <- append([]byte(nil), frame...)
+			return nil
+		})),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+	sub := c.Subscribe()
+	defer sub.Close()
+	if err := c.Connect(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, sub, events.TypeConnected)
+
+	frame, err := binary.NewCodec(nil).Encode(&binary.Node{
+		Tag: "message",
+		Attrs: binary.Attrs{
+			"id": "IN2", "type": "text", "from": "1@s.whatsapp.net",
+		},
+		Children: []binary.Node{{Tag: "body", Bytes: []byte("x")}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.frames <- frame
+
+	waitEvent(t, sub, events.TypeMessage)
+	select {
+	case got := <-frames:
+		if len(got) == 0 {
+			t.Fatal("custom handler received an empty frame")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("custom handler was not called")
+	}
+}
