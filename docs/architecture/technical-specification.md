@@ -228,8 +228,9 @@ remain.
 metadata, version strings), server hello validation, challenge handling, version registry (§7).
 **Allowed deps.** stdlib, `protocol/noise`, `protocol/binary`, `protocol/protobuf`. **Tests.**
 Payload golden fixtures; registry tables; fake-server auth flow in `tests/integration`.
-**Status.** Registration subset implemented (`BuildClientPayload`/`ParseClientPayload`, PF-020…025).
-Login payloads, challenge handling, and registration crypto remain.
+**Status.** Both payload forms are implemented: registration (`BuildClientPayload`/`ParseClientPayload`,
+PF-020…025) and paired-device login (`BuildLoginPayload`/`ParseLoginPayload`, PF-026…027), with
+mutual rejection. Challenge handling and registration crypto remain.
 
 ### 4.7 `protocol/signal`
 
