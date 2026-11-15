@@ -31,22 +31,26 @@ func (r *Receiver) SetReceiverPeer(peer string, session *PeerSession) error {
 // SetReceiverIdentity sets this device's Signal identity public key.
 func (r *Receiver) SetReceiverIdentity(identity [32]byte) { r.identity = identity }
 
-// handleEncrypted decrypts an inbound <message><enc> and publishes it.
+// handleEnc dispatches an inbound <enc> by carrier.
 //
 // The live ratchet is never mutated on failure: decryption runs on a clone,
 // and the advanced state replaces the live one only after success. Callers
 // that persist sessions should save the updated state through their store.
-func (r *Receiver) handleEncrypted(ctx context.Context, node *binary.Node) {
+func (r *Receiver) handleEnc(ctx context.Context, node *binary.Node) {
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed encrypted message", "error", err)
 		return
 	}
 	if envelope.Carrier == stanza.CarrierPKMsg {
-		// Prekey messages need a session bootstrap, which is a separate flow.
-		r.logger.DebugContext(ctx, "dropping prekey message without bootstrap")
+		r.handlePreKey(ctx, node)
 		return
 	}
+	r.decryptWithSession(ctx, node, envelope)
+}
+
+// decryptWithSession decrypts with an existing session.
+func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, envelope *stanza.EncryptedText) {
 	peer := envelope.To
 	session := r.peers[peer.String()]
 	if session == nil {

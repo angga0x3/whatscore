@@ -22,6 +22,7 @@ type Receiver struct {
 	logger    *slog.Logger
 	identity  [32]byte
 	peers     map[string]*PeerSession
+	prekeys   PreKeySource
 }
 
 // ReceiverOption configures a Receiver.
@@ -85,7 +86,7 @@ func (r *Receiver) HandleFrame(ctx context.Context, frame []byte) error {
 	switch node.Tag {
 	case "message":
 		if hasChild(node, "enc") {
-			r.handleEncrypted(ctx, node)
+			r.handleEnc(ctx, node)
 			return nil
 		}
 		r.handleMessage(ctx, node)
