@@ -21,10 +21,17 @@ func Verify(pub [32]byte, msg, sig []byte) error {
 	if err != nil {
 		return err
 	}
-	if !ed25519.Verify(ed25519.PublicKey(y), msg, sig) {
-		return fmt.Errorf("xeddsa: signature verification failed")
+	if ed25519.Verify(ed25519.PublicKey(y), msg, sig) {
+		return nil
 	}
-	return nil
+	// XEdDSA signatures can use either Edwards sign; Montgomery keys do not
+	// carry it. Try the negated point before rejecting.
+	negated := append([]byte(nil), y...)
+	negated[31] |= 0x80
+	if ed25519.Verify(ed25519.PublicKey(negated), msg, sig) {
+		return nil
+	}
+	return fmt.Errorf("xeddsa: signature verification failed")
 }
 
 // EdwardsYFromMontgomeryU computes y = (u−1)/(u+1) mod p, encoded
