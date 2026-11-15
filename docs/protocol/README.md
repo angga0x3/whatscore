@@ -146,6 +146,8 @@ Confidence and Status are deliberately separate axes:
 | PF-074 | sync | Snapshot/patch ordering and envelope MACs | Probable | Verified-by-test | `protocol/sync` (ordering) |
 | PF-075 | sync | App-state key expansion | Confirmed | Verified-by-test | `protocol/sync` (key expansion) |
 | PF-076 | sync | Mutation decode and index MAC | Probable | Verified-by-test | `protocol/sync` (decode round-trip) |
+| PF-077 | sync | LTHash accumulator | Confirmed | Verified-by-test | `protocol/sync` (independent expansion vectors) |
+| PF-078 | sync | Snapshot/patch envelope MACs | Confirmed | Verified-by-test | `protocol/sync` (MAC vectors) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -204,7 +206,8 @@ PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
 `tests/integration` runs the fake-server path end to end (WebSocket dial →
 handshake → encrypted frames), which is what the Proving test column cites.
 Signal findings PF-050…PF-056 and PF-060…PF-063, and the app-state value MAC
-(PF-073) plus key expansion (PF-075), are Confirmed by independent vectors.
+(PF-073) plus key expansion (PF-075), the LTHash accumulator (PF-077), and the envelope
+MACs (PF-078), are Confirmed by independent vectors.
 The binary token table itself is not reproduced (spec §10.2); the codec takes
 an injected dictionary. PF-034 records that the plaintext `<body>` carrier is
 a scoped deviation from the references' encrypted `<enc>` payload.

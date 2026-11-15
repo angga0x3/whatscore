@@ -36,7 +36,7 @@ implemented from first principles, documented in the open.
 
 | Layer | Status |
 |-------|--------|
-| Protocol engine | Transport, Noise, binary, pairing + registration/login auth payloads, messaging stanzas, media envelope, Signal (X3DH/ratchet/messages/prekeys), app-state patch parsing + mutation decode; device signature, LTHash/envelope MAC verification, token table pending |
+| Protocol engine | Transport, Noise, binary, pairing + registration/login auth payloads, messaging stanzas, media envelope, Signal (X3DH/ratchet/messages/prekeys), app-state patch parsing, mutation decode, LTHash + envelope MACs; device signature, token table pending |
 | Application core | `core/events`, `core/session`, `core/credentials`, `core/signalsession`, `core/messaging`, `core/media`, `core/contacts`, `core/groups`, `core/client` |
 | Storage | Interfaces + migrations; envelope, credential vault, PostgreSQL + SQLite (pure Go) backends |
 | Application core | Designed — implementation starts in Phase 5 |

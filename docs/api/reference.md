@@ -137,6 +137,107 @@ lists, and updates omit it entirely, so store it right after creating an
 endpoint. Webhook payloads carry `id`, `url`, `events`, `enabled`,
 `created_at`, and `updated_at`.
 
+## Messaging (implemented)
+
+`/api/v1/sessions/{id}/messages*` is live over an in-memory, per-session store
+bounded at 1000 messages: the oldest message of a session is evicted once that
+limit is reached. Restarting the process clears it.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `POST` | `/api/v1/sessions/{id}/messages/text` | queue a text message, `202` |
+| `GET` | `/api/v1/sessions/{id}/messages` | newest-first page, `?limit=` (1–100, default 20), `?cursor=` |
+| `GET` | `/api/v1/sessions/{id}/messages/{messageId}` | one message, `200`/`404` |
+
+```bash
+curl -s -X POST http://localhost:8080/api/v1/sessions/$SESSION_ID/messages/text \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: 6b1f0c2e-...' \
+  -d '{"to":"6281234567890@s.whatsapp.net","text":"Halo WhatsCore!"}'
+# {"message_id":"<uuid>","status":"queued"}
+```
+
+```bash
+curl -s "http://localhost:8080/api/v1/sessions/$SESSION_ID/messages?limit=2"
+# {"data":[{"id":"<uuid>","session_id":"<uuid>",
+#           "chat_id":"6281234567890@s.whatsapp.net","sender":"",
+#           "direction":"OUTBOUND","type":"text","text":"Halo WhatsCore!",
+#           "created_at":"..."}],
+#  "next_cursor":"<opaque>"}
+```
+
+Rules enforced on send:
+
+- `to` is a JID: exactly one `@` with a non-empty user and server
+  (`6281234567890@s.whatsapp.net`), at most 255 bytes, no whitespace or
+  control characters.
+- `text` is required and capped at 65536 bytes.
+- Unknown sessions answer `404 not_found`.
+- A session that exists but is not `CONNECTED` answers
+  `503 session_not_connected`. Connect it first, then retry.
+- `Idempotency-Key` is scoped per session and capped at 255 bytes. The same key
+  with the same `to`/`text` replays the original `202` body (no second append);
+  the same key with a different body answers `409 idempotency_conflict`. Failed
+  requests release the key, so a retry after connecting can succeed.
+
+**Delivery is not implemented yet.** `202 {"status":"queued"}` is a queue
+acknowledgement — the message is recorded and visible on the read endpoints,
+but no WhatsApp frame leaves the process. `direction` is always `OUTBOUND` for
+this route, `type` is always `text`, and `sender` is empty.
+
+`next_cursor` is opaque: pass it back as `?cursor=` to continue. It keeps
+working while new messages arrive and while old ones are evicted. `data` is
+newest first.
+
+## Streaming (implemented)
+
+Two Server-Sent Events endpoints share the in-process event bus:
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `GET` | `/api/v1/sessions/{id}/qr` | `qr` event per pairing code, `connected` once paired, then the stream ends; `409` when already connected |
+| `GET` | `/api/v1/sessions/{id}/events` | every normalized event of that session |
+
+```bash
+curl -N http://localhost:8080/api/v1/sessions/$SESSION_ID/qr
+# event: qr
+# data: {"qr":"2@xxxxxxxx","expires_at":"..."}
+#
+# event: connected
+# data: {"status":"CONNECTED"}
+```
+
+```bash
+curl -N http://localhost:8080/api/v1/sessions/$SESSION_ID/events
+# event: message.received
+# data: {"id":"evt_42","event":"message.received","session_id":"<uuid>",
+#        "timestamp":"...","seq":42,
+#        "data":{"message_id":"ABC123","chat_id":"6281234567890@s.whatsapp.net",
+#                "sender":"6281234567890","direction":"INBOUND","type":"text",
+#                "text":"Halo WhatsCore!","is_group":false,"timestamp":"..."}}
+```
+
+Wire format and guarantees:
+
+- Headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`,
+  `Connection: keep-alive`, `X-Accel-Buffering: no`.
+- Every frame is `event: <name>\ndata: <json>\n\n` and flushed immediately.
+- A `heartbeat` frame (`data: {"timestamp":"..."}`) arrives every 15s on an
+  idle connection. Comment lines are not used, so proxies and clients that
+  only understand `event:`/`data:` still see liveness.
+- `event:` names follow the OpenAPI event catalog: `session.qr`,
+  `session.connected`, `session.disconnected`, `message.received`,
+  `message.sent`, `message.delivered`, `message.read`, `message.receipt`
+  (played), `group.update`, and `error`.
+- `/events` only forwards events for the path's session and drops a slow
+  client's frames for that connection instead of buffering without bound. Gaps
+  in `seq` mean frames (or bus events) were dropped; re-read state with the
+  REST endpoints rather than assuming a complete stream.
+- Unknown sessions answer `404 not_found`. Both streams answer
+  `501 not_implemented` when the process has no event bus wired.
+- Cancelling the request (client disconnect, shutdown) ends the stream; no
+  goroutines are left behind.
+
 ## Not implemented yet (contract defined)
 
 Paths under `/api/v1` that are not mounted answer `501 Not Implemented` with:
@@ -146,9 +247,9 @@ Paths under `/api/v1` that are not mounted answer `501 Not Implemented` with:
 ```
 
 This is intentional: clients can distinguish "endpoint not shipped yet"
-from "wrong URL" (`404`). Messaging and the QR SSE stream — including the
-`Idempotency-Key` behavior — are fully specified in
-[`openapi.yaml`](openapi.yaml) and land with later milestones.
+from "wrong URL" (`404`). Media messaging (`messages/image`,
+`messages/document`), send rate limiting, and actual WhatsApp delivery are
+still contract-only in [`openapi.yaml`](openapi.yaml).
 
 ## Webhook payload contract (Milestone 4)
 
