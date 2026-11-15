@@ -13,13 +13,13 @@ type conversation struct {
 func newConversation(tb testing.TB) conversation {
 	tb.Helper()
 	_, alice := signingKey(tb)
-	bobSigning, bob := signingKey(tb)
+	_, bob := signingKey(tb)
 	bobSigned := fixedKey(tb, 0x21)
 	bundle := PreKeyBundle{
 		IdentityKey:           bob.Public,
 		SignedPreKeyID:        7,
 		SignedPreKey:          bobSigned.Public,
-		SignedPreKeySignature: signPreKey(tb, bobSigning, bobSigned.Public),
+		SignedPreKeySignature: signPreKey(tb, bob, bobSigned.Public),
 	}
 	init, err := Initiate(alice, bundle)
 	if err != nil {

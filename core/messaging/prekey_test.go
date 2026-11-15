@@ -33,12 +33,12 @@ func newTestPreKeys(tb testing.TB, withOneTime bool) *testPreKeys {
 	}
 	identity := keyPairFromSeed(tb, signingKey.Seed())
 	signedPair := keyPairFromSeed(tb, []byte("signed-prekey-seed"))
-	signed := &signal.SignedPreKey{
-		ID:   7,
-		Pair: signedPair,
-		Signature: ed25519.Sign(signingKey, append(
-			[]byte{signal.PublicKeyType}, signedPair.Public[:]...)),
+	// Sign the way production does: XEdDSA over the identity scalar (PF-067).
+	signature, signErr := signal.XEdDSASigner{Private: identity.Private}.SignPreKey(signedPair.Public)
+	if signErr != nil {
+		tb.Fatalf("sign prekey: %v", signErr)
 	}
+	signed := &signal.SignedPreKey{ID: 7, Pair: signedPair, Signature: signature}
 	fixture := &testPreKeys{identity: identity, signed: signed, signingKey: signingKey}
 	fixture.bundle = signal.PreKeyBundle{
 		IdentityKey:           identity.Public,

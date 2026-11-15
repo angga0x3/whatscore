@@ -196,10 +196,10 @@ type Config struct {
 	// registration payload. It is required when Credentials is nil.
 	PreKeys PreKeyProvider
 
-	// Signer is the XEdDSA signer used when pairing must sign the device
-	// identity (PF-017). Signing is not implemented yet: a nil Signer makes
-	// StartPairing fail with ErrSignerRequired after verification.
-	Signer signal.Signer
+	// Signer signs the device identity during pairing (PF-017). Nil makes
+	// StartPairing fail with ErrSignerRequired after the server container has
+	// been verified, so no unsigned credential is ever returned.
+	Signer DeviceSigner
 
 	// Credentials, when non-nil, selects the login form (PF-026) instead of
 	// the registration form.
@@ -547,6 +547,13 @@ func (c *Conn) endRead() {
 	c.mu.Unlock()
 }
 
+// DeviceSigner signs the device-identity message described in PF-017.
+// signal.XEdDSASigner implements it; the interface exists so tests can inject a
+// deterministic signer and so the engine does not depend on one construction.
+type DeviceSigner interface {
+	SignDeviceIdentity(details, identityPub, accountSignatureKey []byte) ([]byte, error)
+}
+
 // CredentialResult is the verified outcome of a pairing run (PF-016,
 // PF-017). It carries the server's device identity plus the local key
 // material a caller persists as core/credentials.Record.
@@ -767,12 +774,18 @@ func (c *Conn) handlePairSuccess(ctx context.Context, node *binary.Node) (*Crede
 		return nil, fmt.Errorf("%w: verifying device identity: %w", ErrPairingFailed, err)
 	}
 
-	// PF-017 deviceSignature generation is not implemented yet, so the flow
-	// cannot produce a complete credential record. Fail loudly rather than
-	// returning an unsigned result.
 	if cfg.Signer == nil {
-		return nil, fmt.Errorf("%w: pair-success verified for %s but device-identity signing is not configured",
+		return nil, fmt.Errorf("%w: pair-success verified for %s but no device signer is configured",
 			ErrSignerRequired, success.ID)
+	}
+
+	// PF-017: sign 0x06,0x01 ‖ details ‖ identityPub ‖ accountSignatureKey.
+	// The account signature key comes from the verified server container, so
+	// the signature binds this device to the identity the server just issued.
+	deviceSignature, err := cfg.Signer.SignDeviceIdentity(
+		device.Details, cfg.Identity.Public[:], device.AccountKey)
+	if err != nil {
+		return nil, fmt.Errorf("%w: signing device identity: %w", ErrPairingFailed, err)
 	}
 
 	c.logger.InfoContext(ctx, "pairing verified", "session", cfg.SessionID, "jid", success.ID)
@@ -787,7 +800,7 @@ func (c *Conn) handlePairSuccess(ctx context.Context, node *binary.Node) (*Crede
 		Identity:        cfg.Identity,
 		AdvSecret:       cfg.AdvSecret,
 		RegistrationID:  cfg.RegistrationID,
-		DeviceSignature: nil,
+		DeviceSignature: deviceSignature,
 	}, nil
 }
 

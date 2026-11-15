@@ -3,6 +3,7 @@ module github.com/angga0x3/whatscore
 go 1.26.0
 
 require (
+	filippo.io/edwards25519 v1.2.0
 	github.com/go-chi/chi/v5 v5.5.0
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/gorilla/websocket v1.5.3

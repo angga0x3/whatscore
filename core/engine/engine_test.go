@@ -942,6 +942,22 @@ func TestPairingSuccessRequiresSigner(t *testing.T) {
 	dialer.wait(ctx, t)
 }
 
+// deterministicSigner stands in for a real XEdDSA signer: it records the
+// message it was asked to sign and returns a fixed-length signature, so the
+// test asserts the flow without depending on curve arithmetic.
+type deterministicSigner struct {
+	details, identityPub, accountKey []byte
+}
+
+func (d *deterministicSigner) SignDeviceIdentity(details, identityPub, accountKey []byte) ([]byte, error) {
+	d.details = append([]byte(nil), details...)
+	d.identityPub = append([]byte(nil), identityPub...)
+	d.accountKey = append([]byte(nil), accountKey...)
+	signature := make([]byte, signal.SignatureSize)
+	signature[0] = 0x01
+	return signature, nil
+}
+
 // TestPairingSuccessWithSigner covers the completed path: with a signer
 // injected, the verified identity is returned with the local credentials.
 func TestPairingSuccessWithSigner(t *testing.T) {
@@ -950,9 +966,8 @@ func TestPairingSuccessWithSigner(t *testing.T) {
 
 	fs := newFakeServer(t)
 	cfg := engineConfig(fs, nil, t)
-	cfg.Signer = signal.SignerFunc(func(_ [signal.KeySize]byte) ([]byte, error) {
-		return make([]byte, signal.SignatureSize), nil
-	})
+	signer := &deterministicSigner{}
+	cfg.Signer = signer
 
 	dialer := newFakeDialer(func(ctx context.Context, fr transport.FrameConn) error {
 		secure, _, err := fs.handshake(ctx, fr)
@@ -1012,9 +1027,22 @@ func TestPairingSuccessWithSigner(t *testing.T) {
 	if result.NoiseKey.Pub != cfg.NoiseKey.Pub || result.Identity.Public != cfg.Identity.Public {
 		t.Fatal("result carries the wrong local key material")
 	}
-	if result.DeviceSignature != nil {
-		t.Fatal("device signature must stay nil while signing is unimplemented")
+	if len(result.DeviceSignature) != signal.SignatureSize {
+		t.Fatalf("device signature length = %d, want %d", len(result.DeviceSignature), signal.SignatureSize)
 	}
+	if result.DeviceSignature[0] != 0x01 {
+		t.Fatalf("device signature came from another signer: %x", result.DeviceSignature[:4])
+	}
+	// PF-017: the signer must receive the server's details, our identity key,
+	// and the server-issued account signature key.
+	if len(signer.details) == 0 || len(signer.identityPub) != signal.KeySize || len(signer.accountKey) != signal.KeySize {
+		t.Fatalf("signer inputs = details:%d identity:%d account:%d",
+			len(signer.details), len(signer.identityPub), len(signer.accountKey))
+	}
+	if !bytes.Equal(signer.identityPub, cfg.Identity.Public[:]) {
+		t.Fatal("signer received the wrong identity key")
+	}
+
 	if err := conn.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}

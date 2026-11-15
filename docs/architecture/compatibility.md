@@ -14,7 +14,7 @@ run.
 | Noise handshake (msg1→msg3) | **supported** | same runs, suite `Noise_XX_25519_AESGCM_SHA256` |
 | Server certificate chain | **supported** | same runs (pinned root verified) |
 | Auth payload accepted | **unknown** | a synthetic payload was sent; the server's response was not interpreted live. The client now *reads* that response (`WaitAuth`), so the verdict is surfaced instead of assumed |
-| Pairing (QR → success) | **broken by design** | the flow cannot answer `pair-device-sign` without a vetted XEdDSA signer (ADR 0001); scanning a QR against this build will fail and may leave a dangling device entry |
+| Pairing (QR → success) | **untested** | the flow now signs `pair-device-sign` with an XEdDSA signer validated against libsignal's own vectors (ADR 0001). It has not been attempted against a real account |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
 | Message send/receive | **untested** | needs pairing |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |

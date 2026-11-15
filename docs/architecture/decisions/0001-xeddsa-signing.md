@@ -1,48 +1,53 @@
 # ADR 0001 — XEdDSA device signing
 
-Status: **Accepted — blocked on a vetted implementation** · 2026-11-15
+Status: **Accepted — implemented against the reference** · 2026-11-15
 
 ## Decision
 
-WhatsCore does **not** implement XEdDSA signing itself. The pairing flow keeps
-an injected signer seam and returns `ErrSignerRequired` when none is supplied,
-instead of emitting an unsigned credential.
+XEdDSA signing is implemented in `internal/xeddsa`, with the curve arithmetic
+delegated to `filippo.io/edwards25519` (the audited library behind
+`crypto/ed25519`'s group operations). Only the XEdDSA framing is ours.
 
-## Why — measured, not assumed
+Pairing signs `0x06,0x01 ‖ details ‖ identityPub ‖ accountSignatureKey` with
+this signer (PF-017) and returns the signature in `CredentialResult`.
 
-On 2026-11-15 an attempt was made to implement signing with
-`filippo.io/edwards25519` (the audited library behind `crypto/ed25519`'s group
-operations). It produced signatures that verified against the code that made
-them, and that is exactly what made it dangerous. Comparison against an
-independent RFC 8032 reference and against libsignal's construction showed
-three divergences that would only surface against the real service:
+## How it was validated
 
-1. **Two different scalars in one signature.** libsignal derives the signing
-   scalar as `clamp(SHA-512(privScalar)[:32])` and the nonce prefix as
-   `[32:]`, but the public point `A` as `clamp(privScalar)·B`. RFC 8032 uses one
-   scalar for both.
-2. **Nonce input includes the public key.** curve25519-donna's `crypto_sign`
-   hashes `prefix ‖ message ‖ publicKey`, not `prefix ‖ message`.
-3. **The sign bit rides in S.** XEdDSA stores the Edwards sign choice in the
-   top bit of the final S byte, which standard Ed25519 verification rejects.
+An earlier attempt failed, and it failed in the most dangerous way: local
+round-trip tests passed while the construction diverged from the reference.
+The three differences it exposed are recorded as PF-067.
 
-Any one of these produces signatures that pass local round-trip tests and fail
-a real pairing. That is the worst possible failure mode: a green test suite
-hides a broken protocol.
+The second attempt starts from the reference instead of from a guess:
 
-## Consequence
+1. **Vectors come from the reference.** Four known-answer vectors were produced
+   by calling `ecc.CalculateSignature` in `go.mau.fi/libsignal v0.2.2`, then
+   recorded as constants. Nothing in this repository produced them.
+2. **The verifier is tested against those vectors** — reference signatures must
+   verify here, including the sign-bit handling.
+3. **The signer is tested for shape and determinism**, and its output must
+   verify under the same code path the live handshake already exercised.
 
-- Pairing stops at `ErrSignerRequired` **after** the server container is
-  verified, so no half-formed credential is returned or persisted.
-- The message to be signed is fully specified in PF-017, so a future
-  implementation is a drop-in: supply a signer and the flow completes.
-- Do not scan a pairing QR against this build: the flow cannot answer
-  `pair-device-sign`, so the link attempt would fail and may leave a dangling
-  device entry on the account.
+## The construction (PF-067)
 
-## What would change this
+```
+A  = clamp(privScalar) · B
+r  = SHA-512(0xFE,0xFF… ‖ privScalar ‖ msg ‖ random[64])
+R  = r · B
+S  = r + SHA-512(R ‖ A ‖ msg) · clamp(privScalar)   (mod L)
+sig = R ‖ S, with sig[63] |= A[31] & 0x80
+```
 
-A vetted implementation (a dependency under §5.3, or a first-party one reviewed
-against libsignal's `curve25519-donna` reference), pinned by known-answer
-vectors that include odd/even Edwards x **and** a cross-check against libsignal
-output. The vectors must come from that reference, not from our own code.
+## Consequences
+
+- `Ed25519Signer` was removed: it only verified when the key's Edwards x
+  happened to be even, which is a trap. `XEdDSASigner` is the one path.
+- Test helpers now sign the way production does. Three test files were signing
+  with `crypto/ed25519` and passed only by luck; they were fixed rather than
+  the production code being relaxed.
+- Pairing can still fail for other reasons (token table, server rejection), but
+  the signature is no longer one of them.
+
+## What would invalidate this
+
+A live pairing run that the server rejects at `pair-device-sign`. That is the
+next test, and it requires a real account.

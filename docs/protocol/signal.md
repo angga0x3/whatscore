@@ -320,6 +320,7 @@ Status update: both directions of first-contact messaging are wired: outbound
 
 ---
 
-Status: signing remains unimplemented by decision (ADR 0001). Verification is
-implemented and live-confirmed: the pinned certificate root validated the real
-server's chain during the 2026-11-15 interop run.
+Status: signing is implemented in `internal/xeddsa` and validated against
+known-answer vectors produced by `go.mau.fi/libsignal v0.2.2`, not by our own
+code. Verification is implemented and live-confirmed: the pinned certificate
+root validated the real server's chain during the 2026-11-15 interop run.

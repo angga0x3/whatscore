@@ -306,13 +306,10 @@ func (f *sessionFactory) engineConnector(ctx context.Context, id string) (sessio
 		RegistrationID: keys.registrationID,
 		PreKeys:        keys.preKeys,
 		Codec:          f.codec,
-		// Signer stays nil on purpose: it gates device-identity signing for
-		// pairing (PF-017), which needs an XEdDSA signer that does not exist
-		// yet (ADR 0001). Pairing therefore ends with ErrSignerRequired
-		// instead of fabricating a signature.
-		AdvSecret: keys.advSecret,
-		Bus:       f.bus,
-		Logger:    f.logger,
+		Signer:         keys.deviceSigner,
+		AdvSecret:      keys.advSecret,
+		Bus:            f.bus,
+		Logger:         f.logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: build engine for session %s: %w", id, err)
@@ -330,6 +327,8 @@ type sessionKeys struct {
 	advSecret      [32]byte
 	registrationID uint32
 	preKeys        *prekeys.Manager
+	// deviceSigner signs the pairing device identity (PF-017) with XEdDSA.
+	deviceSigner engine.DeviceSigner
 }
 
 // loadKeys loads the session's key material, generating and persisting it on
@@ -365,6 +364,7 @@ func (f *sessionFactory) loadKeys(ctx context.Context, id string) (*sessionKeys,
 			advSecret:      record.AdvSecret,
 			registrationID: record.RegistrationID,
 		}
+		keys.deviceSigner = signal.XEdDSASigner{Private: identity.Private}
 		if err := f.attachPreKeys(ctx, id, keys, signer); err != nil {
 			return nil, err
 		}
@@ -401,6 +401,7 @@ func (f *sessionFactory) loadKeys(ctx context.Context, id string) (*sessionKeys,
 			advSecret:      record.AdvSecret,
 			registrationID: record.RegistrationID,
 		}
+		keys.deviceSigner = signal.XEdDSASigner{Private: identity.Private}
 		if err := f.attachPreKeys(ctx, id, keys, signer); err != nil {
 			return nil, err
 		}
@@ -470,8 +471,7 @@ func identityFromSeed(seed []byte) (signal.KeyPair, signal.Signer, error) {
 		return signal.KeyPair{}, nil, fmt.Errorf("%w: signing seed is %d bytes, want %d",
 			ErrCredentialState, len(seed), ed25519.SeedSize)
 	}
-	signing := ed25519.NewKeyFromSeed(seed)
-	digest := sha512.Sum512(signing.Seed())
+	digest := sha512.Sum512(seed)
 
 	var pair signal.KeyPair
 	copy(pair.Private[:], digest[:32])
@@ -483,7 +483,9 @@ func identityFromSeed(seed []byte) (signal.KeyPair, signal.Signer, error) {
 		return signal.KeyPair{}, nil, fmt.Errorf("cmd/whatscore: derive identity key: %w", err)
 	}
 	copy(pair.Public[:], pub)
-	return pair, signal.Ed25519Signer{Private: signing}, nil
+	// The prekey signer uses the same clamped scalar with XEdDSA (PF-067),
+	// which is what the reference implementation uses.
+	return pair, signal.XEdDSASigner{Private: pair.Private}, nil
 }
 
 // noiseKeyFromRecord rebuilds the Noise key pair and checks that its halves

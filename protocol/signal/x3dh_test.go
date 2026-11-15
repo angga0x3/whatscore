@@ -46,17 +46,23 @@ func signingKey(tb testing.TB) (ed25519.PrivateKey, KeyPair) {
 	return private, pair
 }
 
-func signPreKey(tb testing.TB, identity ed25519.PrivateKey, preKey [32]byte) []byte {
+// signPreKey signs a prekey the way production does: XEdDSA over the clamped
+// identity scalar (PF-067). An Ed25519 signature here would only verify when the
+// key's Edwards x happens to be even.
+func signPreKey(tb testing.TB, identity KeyPair, preKey [32]byte) []byte {
 	tb.Helper()
-	message := append([]byte{PublicKeyType}, preKey[:]...)
-	return ed25519.Sign(identity, message)
+	signature, err := XEdDSASigner{Private: identity.Private}.SignPreKey(preKey)
+	if err != nil {
+		tb.Fatalf("sign prekey: %v", err)
+	}
+	return signature
 }
 
 func TestX3DHAgreement(t *testing.T) {
 	for _, withOneTime := range []bool{false, true} {
 		t.Run(map[bool]string{false: "no one-time", true: "one-time"}[withOneTime], func(t *testing.T) {
 			_, alice := signingKey(t)
-			bobSigning, bob := signingKey(t)
+			_, bob := signingKey(t)
 			bobSigned := fixedKey(t, 0x21)
 			bobOneTime := fixedKey(t, 0x31)
 
@@ -64,7 +70,7 @@ func TestX3DHAgreement(t *testing.T) {
 				IdentityKey:           bob.Public,
 				SignedPreKeyID:        7,
 				SignedPreKey:          bobSigned.Public,
-				SignedPreKeySignature: signPreKey(t, bobSigning, bobSigned.Public),
+				SignedPreKeySignature: signPreKey(t, bob, bobSigned.Public),
 			}
 			var oneTime *KeyPair
 			if withOneTime {
@@ -96,12 +102,12 @@ func TestX3DHRejectsBadSignature(t *testing.T) {
 	_, alice := signingKey(t)
 	_, bob := signingKey(t)
 	bobSigned := fixedKey(t, 0x21)
-	otherSigning, _ := signingKey(t)
+	_, otherSigner := signingKey(t)
 
 	cases := map[string][]byte{
 		"missing":   nil,
 		"short":     {1, 2, 3},
-		"wrong key": signPreKey(t, otherSigning, bobSigned.Public),
+		"wrong key": signPreKey(t, otherSigner, bobSigned.Public),
 	}
 	for name, signature := range cases {
 		t.Run(name, func(t *testing.T) {

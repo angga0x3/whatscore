@@ -9,10 +9,10 @@ import (
 func newPrekeyFixture(t *testing.T) (KeyPair, KeyPair, KeyPair, KeyPair, []byte) {
 	t.Helper()
 	_, alice := signingKey(t)
-	bobSigning, bob := signingKey(t)
+	_, bob := signingKey(t)
 	bobSigned := fixedKey(t, 0x21)
 	oneTime := fixedKey(t, 0x31)
-	return alice, bob, bobSigned, oneTime, signPreKey(t, bobSigning, bobSigned.Public)
+	return alice, bob, bobSigned, oneTime, signPreKey(t, bob, bobSigned.Public)
 }
 
 func TestPreKeyMessageBootstrap(t *testing.T) {

@@ -66,7 +66,7 @@ func testIdentity(t *testing.T) (signal.KeyPair, signal.Signer) {
 		t.Fatal(err)
 	}
 	copy(pair.Public[:], pub)
-	return pair, signal.Ed25519Signer{Private: private}
+	return pair, signal.XEdDSASigner{Private: pair.Private}
 }
 
 func newManager(t *testing.T, store Store) *Manager {
@@ -115,7 +115,7 @@ func TestGenerateAndLoad(t *testing.T) {
 
 	// A reopened manager reads the same material back.
 	identity2 := manager.Identity()
-	reopened, err := New(context.Background(), store, "session-1", identity2, signal.Ed25519Signer{}, Config{
+	reopened, err := New(context.Background(), store, "session-1", identity2, signal.XEdDSASigner{}, Config{
 		SignedPreKeyID: 7, OneTimeCount: 4, FirstOneTimeID: 100,
 	})
 	if err != nil {
@@ -317,5 +317,5 @@ func testIdentityBench(b *testing.B) (signal.KeyPair, signal.Signer) {
 		b.Fatal(err)
 	}
 	copy(pair.Public[:], pub)
-	return pair, signal.Ed25519Signer{Private: private}
+	return pair, signal.XEdDSASigner{Private: pair.Private}
 }
