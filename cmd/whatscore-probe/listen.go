@@ -472,11 +472,14 @@ func sendRetryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.C
 	reg[2] = byte(registrationID >> 8)
 	reg[3] = byte(registrationID)
 	children := []wabinary.Node{
+		// error="0" is what Baileys carries on every retry child; the official
+		// clients expect the attribute alongside count/id/t/v.
 		{Tag: "retry", Attrs: wabinary.Attrs{
 			"count": strconv.Itoa(count),
 			"id":    node.Attrs["id"],
 			"t":     node.Attrs["t"],
 			"v":     "1",
+			"error": "0",
 		}},
 		{Tag: "registration", Bytes: reg[:]},
 	}

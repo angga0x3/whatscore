@@ -704,7 +704,7 @@ func TestRetryReceiptShape(t *testing.T) {
 			t.Fatal("no <retry> child")
 		}
 		for k, want := range map[string]string{
-			"count": "1", "id": orig.Attrs["id"], "t": orig.Attrs["t"], "v": "1",
+			"count": "1", "id": orig.Attrs["id"], "t": orig.Attrs["t"], "v": "1", "error": "0",
 		} {
 			if got := retry.Attrs[k]; got != want {
 				t.Fatalf("retry.%s = %q, want %q", k, got, want)
