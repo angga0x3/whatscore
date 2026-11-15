@@ -225,3 +225,39 @@ Status update: SignalMessage framing, MAC, payload encryption, and state-machine
 integration are implemented and pinned by an exact independent wire vector.
 Prekey generation/rotation, PreKeySignalMessage, session persistence, and the
 WhatsApp `<enc>` wiring remain.
+
+## PF-063: PreKeySignalMessage envelope
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-063 |
+| **Title** | A PreKeySignalMessage is `0x33 ‖ protobuf{registrationId=5, preKeyId=1, signedPreKeyId=6, baseKey=2, identityKey=3, message=4}`, with no MAC of its own; both keys are `0x05‖pub` and `message` is a full SignalMessage |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (exact prekey wire vector), `protocol/protobuf` (field numbers) |
+| **Related findings** | PF-060, PF-064 |
+| **Notes** | libsignal `serialize/ProtoBufferSerializer.go`: version byte `strconv.Itoa(version)` (`0x33`), protobuf `PreKeySignalMessage` with fields registrationId=5, preKeyId=1, signedPreKeyId=6, baseKey=2, identityKey=3, message=4; the embedded SignalMessage carries its own MAC. `preKeyId` is omitted when no one-time prekey was used. |
+
+## PF-064: Session bootstrap from a PreKeySignalMessage
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-064 |
+| **Title** | The responder loads the signed prekey by id (plus the one-time prekey when `preKeyId` is set), runs X3DH with the message's base/identity keys, initializes the responder ratchet, and decrypts the embedded SignalMessage |
+| **Layer** | signal |
+| **Source** | inferred — reference study |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/signal` (bootstrap with and without one-time prekey, mismatch negatives) |
+| **Related findings** | PF-050, PF-057, PF-063 |
+| **Notes** | libsignal `session/Builder.processV3` loads the signed prekey and optional one-time prekey, calls `CalculateReceiverSession`, sets the responder sender chain/root, and only then decrypts. WhatsCore does not verify the signed-prekey signature on the responder side (it is the caller's own key); prekey deletion after use and durable state remain. |
+
+---
+
+Status update: PreKeySignalMessage framing and session bootstrap are implemented
+and pinned by an exact vector plus end-to-end tests. Prekey generation/rotation,
+signing (ADR 0001), one-time prekey deletion, and durable session state remain.

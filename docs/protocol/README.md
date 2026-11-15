@@ -57,7 +57,8 @@ Confidence and Status are deliberately separate axes:
   never `protocol/*` code. A finding graduates to Confirmed exactly when a
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-002, PF-003, PF-010…PF-017,
-  PF-020…PF-025, PF-030…PF-035, PF-040…PF-045, PF-057…PF-059).** Framing, binary encoding,
+  PF-020…PF-025, PF-030…PF-035, PF-040…PF-045, PF-057…PF-059,
+  PF-064).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
   while **Probable** because our own codec, synthetic vectors, independent
@@ -131,6 +132,8 @@ Confidence and Status are deliberately separate axes:
 | PF-060 | signal | SignalMessage framing | Confirmed | Verified-by-test | `protocol/signal` (wire vector), `protocol/protobuf` |
 | PF-061 | signal | SignalMessage MAC | Confirmed | Verified-by-test | `protocol/signal` (vector, negatives) |
 | PF-062 | signal | SignalMessage payload encryption | Confirmed | Verified-by-test | `protocol/signal` (vector, tamper table) |
+| PF-063 | signal | PreKeySignalMessage envelope | Confirmed | Verified-by-test | `protocol/signal` (prekey vector), `protocol/protobuf` |
+| PF-064 | signal | Session bootstrap from a prekey message | Probable | Verified-by-test | `protocol/signal` (bootstrap tests) |
 
 > **SYNTHETIC placeholders.** The two rows above exist only so contributors
 > can see the intended usage; they describe nothing real. Real findings
@@ -188,7 +191,7 @@ live-server-facing findings (PF-002, PF-003, PF-010…PF-017, PF-020…PF-025,
 PF-030…PF-035, PF-040…PF-045) stay Probable until manual interop.
 `tests/integration` runs the fake-server path end to end (WebSocket dial →
 handshake → encrypted frames), which is what the Proving test column cites.
-Signal findings PF-050…PF-056 and PF-060…PF-062 are Confirmed by independent
+Signal findings PF-050…PF-056 and PF-060…PF-063 are Confirmed by independent
 vectors.
 The binary token table itself is not reproduced (spec §10.2); the codec takes
 an injected dictionary. PF-034 records that the plaintext `<body>` carrier is

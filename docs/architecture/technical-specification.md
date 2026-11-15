@@ -237,11 +237,12 @@ Login payloads, challenge handling, and registration crypto remain.
 prekey generation/rotation, sender-key distribution for groups; owns all ratchet state
 serialization (byte blobs handed to the stores, §4.19). **Decided:** never shares key material with
 `protocol/noise` — separate roots, HKDF domains, stores. **Allowed deps.** stdlib `crypto/*`,
-`golang.org/x/crypto`, `internal/xeddsa`, `protocol/protobuf`. **Tests.** Known-answer X3DH/Double Ratchet vectors
+`golang.org/x/crypto`, `internal/xeddsa`, `internal/cbc`, `protocol/protobuf`. **Tests.** Known-answer X3DH/Double Ratchet vectors
 (Phase 4 exit criterion); out-of-order/replay tables; state-serialization round-trip; no network I/O.
 **Status.** X3DH agreement, signed-prekey verification, the key schedule, the Double Ratchet state
-machine, SignalMessage framing/MAC, and payload encryption are implemented (PF-050…PF-062). Prekey
-generation/rotation, PreKeySignalMessage, session persistence, and WhatsApp `<enc>` wiring remain.
+machine, SignalMessage framing/MAC/payload encryption, and PreKeySignalMessage bootstrap are
+implemented (PF-050…PF-064). Prekey generation/rotation and signing (ADR 0001), one-time prekey
+deletion, durable session state, and WhatsApp `<enc>` wiring remain.
 
 ### 4.8 `protocol/messaging`
 
@@ -265,7 +266,7 @@ Synthetic app-state fixtures; truncated/corrupt patch tables; deterministic deco
 **Responsibility.** Encrypted media upload/download: media path construction, ciphertext framing,
 integrity sidecar computation via stdlib `crypto/aes`/`crypto/hmac`/`crypto/sha256`; bytes move over
 injected transport interfaces, not a hardcoded HTTP client. **Allowed deps.** stdlib,
-`protocol/binary`. **Tests.** Round-trip with synthetic keys; corruption tables; fake media endpoint.
+`internal/cbc`, `protocol/binary`. **Tests.** Round-trip with synthetic keys; corruption tables; fake media endpoint.
 **Status.** Byte envelope implemented (PF-040…045): HKDF-SHA256, AES-256-CBC/PKCS#7, truncated
 HMAC. Streaming uploads, sidecar hashes, and download range handling remain.
 
