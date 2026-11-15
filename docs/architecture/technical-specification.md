@@ -548,6 +548,23 @@ middleware as a second line of defense for unexpected fields.
 - **Key zeroing hygiene.** Private key buffers are zeroed after use; keys never appear in `String()`,
   errors, or logs; key structs do not implement `MarshalJSON`. Ratchet state is zeroed in memory
   after its serialized blob is handed to a store.
+- **Rate limiting.** `server/middleware.RateLimiter` guards `/api/v1` with a per-process,
+  in-memory token bucket. Defaults: 10 tokens/s refill, burst 30, 5-minute idle TTL, at most 4096
+  tracked identities. The identity is the API key from the `Authorization` header when present
+  (hashed before use as a map key, never logged or echoed), otherwise the client IP from
+  `RemoteAddr`; `X-Forwarded-For` is deliberately ignored, matching the router's RealIP omission
+  (GHSA-3fxj-6jh8-hvhx). Allowed requests carry `X-RateLimit-Limit` (burst) and
+  `X-RateLimit-Remaining`; denials answer `429` with `Retry-After` (whole seconds, minimum 1),
+  `X-RateLimit-Reset` (delta seconds until the next token, same value as `Retry-After`), and the
+  standard error envelope with code `rate_limited`. Idle buckets are
+  swept on access and the map is hard-capped, so a hostile key space cannot grow memory without
+  bound. System endpoints (`/health`, `/ready`, `/version`) are never limited, so probes keep
+  working while a client is throttled.
+  **Limitation (documented, accepted):** the bucket lives in the process, so with N instances
+  behind a load balancer the effective limit is N × burst and each instance counts separately.
+  Deployments needing a global budget must route `/api/v1` to a single instance or enforce the
+  quota in a fronting proxy; a shared store (Redis) was rejected for v0.0.1 because it adds a
+  dependency, a request-path failure mode, and a store holding rate-limit identities.
 - **Threat model summary.**
 
 | Asset / actor | Threat | Mitigation |

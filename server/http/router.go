@@ -30,6 +30,10 @@ type Deps struct {
 	IsShuttingDown func() bool
 	// API optionally mounts the versioned REST routes.
 	API interface{}
+	// RateLimit, when non-nil, throttles /api/v1 requests. The system
+	// probes (/health, /ready, /version) are never limited so monitoring
+	// cannot be locked out by a busy API client.
+	RateLimit *middleware.RateLimiter
 }
 
 // NewRouter builds the full HTTP handler.
@@ -60,21 +64,31 @@ func NewRouter(deps Deps) http.Handler {
 	// handler only adds routes under it. Paths that are not mounted yet keep
 	// answering 501 so clients can tell "not shipped yet" apart from "wrong
 	// URL".
-	r.Route("/api/v1", func(v1 chi.Router) {
-		if deps.API != nil {
-			if mounter, ok := deps.API.(interface{ Mount(chi.Router) }); ok {
-				mounter.Mount(v1)
-			}
+	v1 := chi.NewRouter()
+	if deps.API != nil {
+		if mounter, ok := deps.API.(interface{ Mount(chi.Router) }); ok {
+			mounter.Mount(v1)
 		}
-		v1.NotFound(func(w http.ResponseWriter, _ *http.Request) {
-			handlers.WriteError(w, http.StatusNotImplemented, "not_implemented",
-				"this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone")
-		})
-		v1.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
-			handlers.WriteError(w, http.StatusNotImplemented, "not_implemented",
-				"this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone")
-		})
+	}
+	v1.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+		handlers.WriteError(w, http.StatusNotImplemented, "not_implemented",
+			"this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone")
 	})
+	v1.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
+		handlers.WriteError(w, http.StatusNotImplemented, "not_implemented",
+			"this endpoint is defined by the v1 API contract (docs/api/openapi.yaml) and ships in an upcoming milestone")
+	})
+
+	// Rate limiting is scoped to the versioned API on purpose: probes and
+	// version checks must keep answering while a client is throttled. The
+	// limiter wraps the mounted handler rather than using v1.Use so it also
+	// covers the 501 catch-all — chi skips a subrouter's own middleware when
+	// that subrouter has no routes registered.
+	var apiHandler http.Handler = v1
+	if deps.RateLimit != nil {
+		apiHandler = deps.RateLimit.Middleware()(v1)
+	}
+	r.Mount("/api/v1", apiHandler)
 
 	return r
 }

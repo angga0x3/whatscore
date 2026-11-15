@@ -1,5 +1,15 @@
 // Package middleware provides WhatsCore-specific HTTP middleware on top of
-// the chi built-ins: request logging and panic recovery, both wired to slog.
+// the chi built-ins: request logging and panic recovery, both wired to slog,
+// plus the per-process API rate limiter.
+//
+// The rate limiter is deliberately in-memory and process-local. WhatsCore
+// ships as a single self-hosted binary, and a shared store such as Redis would
+// add a dependency, a failure mode on the request path, and a data store that
+// holds rate-limit identities — none of which v0.0.1 needs. The documented
+// consequence: with N instances behind a load balancer the effective limit is
+// N × burst, so deployments that need a global budget must route /api/v1 to a
+// single instance or enforce the quota in a fronting proxy. See RateLimiter
+// and §9 of docs/architecture/technical-specification.md.
 package middleware
 
 import (
