@@ -33,7 +33,7 @@ implemented from first principles, documented in the open.
 | Layer | Status |
 |-------|--------|
 | Protocol engine | Transport, Noise, binary, pairing + auth payloads, messaging stanzas, media envelope; device signature, Signal/sync, token table pending |
-| Application core | `core/events`, `core/session`, `core/credentials`; SDK facade and orchestration pending |
+| Application core | `core/events`, `core/session`, `core/credentials`, `core/client` (no send yet); orchestration pending |
 | Storage | Interfaces + migrations; `storage/envelope`, `storage/credentials` vault, PostgreSQL credential backend |
 | Application core | Designed — implementation starts in Phase 5 |
 | REST server | Foundation implemented — `/health`, `/ready`, `/version` |
@@ -92,7 +92,7 @@ Three layers, dependencies pointing downward only:
 | 2 | Binary protocol — node encode/decode | **Complete** — codec, vectors, fuzz, protobuf round-trip; token table external |
 | 3 | Pairing & authentication — QR / pairing code | **In progress** — QR, stanzas, identity verification, auth payloads, credential vault, credential manager done; device signature (ADR 0001) pending |
 | 4 | Messaging (Signal) — send/receive with E2E | **In progress** — messaging stanzas + media envelope done; Signal/sync pending |
-| 5 | Public SDK — idiomatic Go client | **In progress** — event bus + session actor done; SDK facade pending |
+| 5 | Public SDK — idiomatic Go client | **In progress** — events/session/credentials + client facade done; send/orchestration pending |
 | 6 | API server — sessions, messaging, webhooks over the core | Planned |
 | 7 | Release v0.1.0 | Planned |
 
@@ -111,16 +111,31 @@ before manual interop is recorded as a protocol finding.
 
 ## SDK
 
-The public Go API is being designed now and lands in Phase 5. It is shown here
-so the shape can be discussed before it freezes — **it does not exist yet**.
+A first SDK facade exists in `core/client` (`github.com/angga0x3/whatscore/core/client`):
+connect, disconnect, state, events, and credential access. **Sending is not
+implemented** — it needs the Signal and messaging layers — so `SendMessage`
+returns `ErrNotImplemented` rather than pretending.
 
-**Target API — Phase 5 (illustrative, not implemented yet):**
+**Current API:**
 
 ```go
-client, _ := whatscore.NewClient(whatscore.WithStore(store))
-_ = client.Connect(ctx)
-_ = client.SendMessage(ctx, whatscore.Message{To: "628123456789", Text: "Hello!"})
+c, _ := client.New("session-1",
+    client.WithCredentials(manager),   // optional encrypted credential manager
+    client.WithLogger(slog.Default()),
+)
+defer c.Close(ctx)
+
+sub := c.Subscribe()
+defer sub.Close()
+
+_ = c.Connect(ctx)
+state, _ := c.State(ctx)               // CONNECTED
+_, err := c.SendMessage(ctx, client.NewTextMessage("Hello!")) // ErrNotImplemented
+_ = c.Disconnect(ctx)
 ```
+
+A root-level `whatscore.NewClient` alias and the full target API land once the
+SDK shape freezes (Phase 5).
 
 ## Quickstart (works today)
 

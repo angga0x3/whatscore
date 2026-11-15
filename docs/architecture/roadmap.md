@@ -17,7 +17,7 @@ as workstreams land.
 | Messaging | JID, text `<message>`, `<receipt>` | encrypted `<enc>` carrier (PF-034) |
 | Media | HKDF + CBC/HMAC byte envelope | streaming, sidecar hashes |
 | Storage | envelope, credential vault, PostgreSQL backend, `core/credentials` manager | Signal-addressed stores |
-| Core | event bus, single-actor session runtime, credential manager | SDK facade, orchestration |
+| Core | event bus, single-actor session runtime, credential manager, SDK facade (no send) | messaging orchestration, contacts/groups/media, SQLite |
 | SDK / API | — | everything |
 
 ## Execution log
@@ -29,6 +29,7 @@ as workstreams land.
 | 2026-11-15 | Media | `protocol/media`, PF-040…045 |
 | 2026-11-15 | Core | `core/events`, `core/session` |
 | 2026-11-15 | Credential manager | `core/credentials` + ADR 0001 |
+| 2026-11-15 | SDK facade | `core/client` (connect/events; send pending) |
 
 Next: device-signature decision, credential manager, Signal/sync, SDK facade.
 

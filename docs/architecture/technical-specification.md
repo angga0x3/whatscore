@@ -293,6 +293,8 @@ err = c.Disconnect(ctx)
 
 **Allowed deps.** `core/*`, `protocol/*` via §4 interfaces, `storage` interfaces, stdlib.
 **Tests.** Behavior tests vs fake server; option composition tables; examples compiled in CI.
+**Status.** `core/client` implements connect/disconnect/state/subscribe/credentials/close with
+option validation. `SendMessage` returns `ErrNotImplemented` until Signal and messaging land.
 
 ### 4.12 `core/session`
 
