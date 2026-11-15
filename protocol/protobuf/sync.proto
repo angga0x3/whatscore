@@ -1,0 +1,22 @@
+// App-state sync action envelope. Field numbers follow
+// docs/protocol/sync.md (PF-075), extracted from reference study of
+// whatsmeow proto/waSyncAction on 2026-11-15.
+syntax = "proto2";
+
+package whatscore.protocol.protobuf;
+
+option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
+
+message SyncActionData {
+  optional bytes index = 1;
+  optional SyncActionValue value = 2;
+  optional bytes padding = 3;
+  optional int32 version = 4;
+}
+
+// SyncActionValue is intentionally opaque: an action is a union of dozens of
+// optional sub-messages that the caller interprets per index. WhatsCore keeps
+// the raw bytes so decoding never guesses at an unknown action shape.
+message SyncActionValue {
+  optional bytes raw = 1;
+}
