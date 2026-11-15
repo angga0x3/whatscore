@@ -25,12 +25,13 @@ go run ./cmd/whatscore-probe \
 The command:
 
 1. dials and completes the Noise handshake with a fresh registration payload;
-2. decodes `pair-device` and prints six `wa.me/settings/linked_devices#…`
-   payloads as scannable terminal QR codes (the raw string is printed beneath
-   each one so it can also be copied);
+2. decodes `pair-device` and shows **one** scannable terminal QR code at a
+   time, rotating every 60 s for the first and 20 s for the rest — refs expire,
+   so a screen full of six codes is a screen full of dead codes (PF-074);
 3. acknowledges the stanza and answers the server's keepalive pings;
 4. waits for `pair-success`, verifies the device identity HMAC and signature,
-   and writes the credential record to `-out` with mode `0600`.
+   replies with `pair-device-sign` to finish the link (PF-073), and writes the
+   credential record to `-out` with mode `0600`.
 
 Use `-render-only` to stop after printing the payloads, which is useful for
 checking the flow without involving a phone.
@@ -43,8 +44,28 @@ checking the flow without involving a phone.
 | `pair-device` decoded, 6 refs | verified live |
 | Acknowledgement accepted | verified live |
 | Keepalive decoded and answered | verified live |
-| QR payloads rendered from real refs | verified live (localhost only, not scanned) |
-| `pair-success` decode and credential write | **never observed** |
+| QR payloads rendered from real refs | verified live |
+| QR rotation with per-code validity window | verified live |
+| Phone accepts the QR | **refused once**, causes addressed in PF-072/PF-073/PF-074 |
+| `pair-success` decode, confirm, credential write | **never observed** |
+
+The single phone attempt was refused with a generic "couldn't link new device".
+That message never says why, so the three defects it exposed were found by
+auditing the payload and the flow against the reference, not by reading the
+phone's screen. If a scan still fails, the raw frames are the evidence:
+undecodable stanzas are written to `undecoded/*.bin` so the missing token can be
+recovered without another pairing attempt.
+
+## Reading a failed scan
+
+A refused scan is not silent. Check, in this order:
+
+1. **Did the code rotate while you were scanning?** Each code is valid only for
+   its window; if the terminal printed "code 2/6" you were scanning a dead one.
+2. **Was `pair-device-sign sent` printed?** If `pair-success` arrived and that
+   line is absent, the link was verified but never completed.
+3. **Were frames written to `undecoded/`?** Each file is a stanza the partial
+   token table could not decode. That is the next token to add.
 
 ## What will probably fail first
 

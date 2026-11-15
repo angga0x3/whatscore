@@ -327,3 +327,44 @@ func TestParseLoginMalformed(t *testing.T) {
 		})
 	}
 }
+
+// TestDevicePropsRoundTripKeepsHistorySync pins a bug the pairing payload test
+// caught: marshal emitted the capability block but parse dropped it, so a
+// builder followed by a parser lost the server's whole negotiated feature set.
+func TestDevicePropsRoundTripKeepsHistorySync(t *testing.T) {
+	in := DeviceProps{
+		OS:           "whatsmeow",
+		Version:      Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
+		PlatformType: protobuf.DeviceProps_CHROME,
+		HistorySync: &HistorySync{
+			StorageQuotaMB:                 10240,
+			InlineInitialPayload:           true,
+			SupportCallLogHistory:          true,
+			SupportGroupHistory:            true,
+			ThumbnailSyncDaysLimit:         60,
+			SupportHatchHistory:            true,
+			SupportRecentSyncChunkTuning:   true,
+			SupportBizHostedMsg:            true,
+			SupportBotUserAgentChatHistory: true,
+			SupportCagReactionsAndPolls:    true,
+			SupportHostedGroupMsg:          true,
+			SupportFbidBotChatHistory:      true,
+			SupportMessageAssociation:      true,
+			SupportManusHistory:            true,
+		},
+	}
+	raw, err := marshalDeviceProps(in)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	out, err := parseDeviceProps(raw)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if out.HistorySync == nil {
+		t.Fatal("history sync block lost in round trip")
+	}
+	if *out.HistorySync != *in.HistorySync {
+		t.Fatalf("history sync differs:\n got %+v\nwant %+v", *out.HistorySync, *in.HistorySync)
+	}
+}

@@ -12,7 +12,10 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/angga0x3/whatscore/internal/xeddsa"
+	"github.com/angga0x3/whatscore/protocol/noise"
 	"github.com/angga0x3/whatscore/protocol/protobuf"
+	"github.com/angga0x3/whatscore/protocol/signal"
 )
 
 var testP25519 = func() *big.Int {
@@ -246,5 +249,64 @@ func TestVerifyDeviceIdentityRejects(t *testing.T) {
 				t.Fatalf("want ErrInvalidDeviceIdentity, got %v", err)
 			}
 		})
+	}
+}
+
+// TestSignDeviceIdentityDropsAccountKey pins the shape the server expects back:
+// a self-signed identity that carries the device signature but not the account
+// key, which stays server-side.
+func TestSignDeviceIdentityDropsAccountKey(t *testing.T) {
+	identity, err := noise.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	verified := &DeviceIdentity{
+		KeyIndex:         3,
+		Details:          []byte("device-details"),
+		AccountKey:       bytes.Repeat([]byte{0xAA}, 32),
+		AccountSignature: bytes.Repeat([]byte{0xBB}, 64),
+	}
+	signed, err := SignDeviceIdentity(verified, identity.Pub[:], signal.XEdDSASigner{Private: identity.Priv})
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	var out protobuf.ADVSignedDeviceIdentity
+	if err := proto.Unmarshal(signed, &out); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(out.GetAccountSignatureKey()) != 0 {
+		t.Fatal("account signature key must not be echoed back")
+	}
+	if !bytes.Equal(out.GetDetails(), verified.Details) {
+		t.Fatal("details changed")
+	}
+	if len(out.GetDeviceSignature()) != 64 {
+		t.Fatalf("device signature is %d bytes, want 64", len(out.GetDeviceSignature()))
+	}
+
+	// The signature must verify as PF-017: 0x06,0x01 ‖ details ‖ identityPub ‖ accountKey.
+	message := append([]byte{6, 1}, verified.Details...)
+	message = append(message, identity.Pub[:]...)
+	message = append(message, verified.AccountKey...)
+	if err := xeddsa.Verify(identity.Pub, message, out.GetDeviceSignature()); err != nil {
+		t.Fatalf("device signature does not verify: %v", err)
+	}
+}
+
+// TestSignDeviceIdentityRejectsBadInput fails closed rather than emitting a
+// container the server would accept structurally but could not use.
+func TestSignDeviceIdentityRejectsBadInput(t *testing.T) {
+	identity, err := noise.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	signer := signal.XEdDSASigner{Private: identity.Priv}
+	if _, err := SignDeviceIdentity(nil, identity.Pub[:], signer); err == nil {
+		t.Fatal("nil identity accepted")
+	}
+	short := &DeviceIdentity{Details: []byte("d"), AccountKey: make([]byte, 31)}
+	if _, err := SignDeviceIdentity(short, identity.Pub[:], signer); err == nil {
+		t.Fatal("short account key accepted")
 	}
 }

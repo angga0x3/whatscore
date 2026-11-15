@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
+	gosignal "os/signal"
+	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -22,8 +24,16 @@ import (
 	"github.com/angga0x3/whatscore/protocol/noise"
 	"github.com/angga0x3/whatscore/protocol/pairing"
 	"github.com/angga0x3/whatscore/protocol/protobuf"
+	wasignal "github.com/angga0x3/whatscore/protocol/signal"
 	"github.com/angga0x3/whatscore/protocol/transport"
 )
+
+// pairingClientType is the web client type the reference sends for a browser
+// QR login (PairClientChrome).
+const pairingClientType = "1"
+
+// serverJID is the routing target for iq stanzas addressed to the server.
+const serverJID = "s.whatsapp.net"
 
 // pairConfig collects everything one pairing attempt needs.
 type pairConfig struct {
@@ -66,7 +76,7 @@ func runPair(cfg pairConfig) error {
 	}
 	registrationID := binary.BigEndian.Uint32(regIDBytes[:])
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := gosignal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if cfg.Timeout > 0 {
 		var cancel context.CancelFunc
@@ -96,31 +106,58 @@ func runPair(cfg pairConfig) error {
 	defer func() { _ = sc.Close() }()
 	fmt.Println("handshake: ok")
 
+	stopQR := make(chan struct{})
+	// Closing twice would panic, and both the success path and the deferred
+	// cleanup can run, so this closes at most once per channel.
+	stopRotation := func() {
+		select {
+		case <-stopQR:
+		default:
+			close(stopQR)
+		}
+	}
+	defer stopRotation()
+
 	for {
 		frame, err := sc.ReadFrame(ctx)
 		if err != nil {
+			// A deadline that fires mid-pairing is the operator's own -timeout,
+			// not a rejected link. Say which, so the next step is obvious.
+			if ctx.Err() != nil {
+				return fmt.Errorf("stopped after %s with no pairing verdict (raise -timeout to keep waiting): %w", cfg.Timeout, err)
+			}
 			return fmt.Errorf("read: %w", err)
 		}
 		node, err := codec.Decode(bytes.NewReader(frame))
 		if err != nil {
-			// The only decoding failure that is not fatal here is an unknown
-			// token on a stanza we do not need yet; report and continue so the
-			// operator can extend the table instead of losing the session.
-			fmt.Printf("undecodable stanza (%d bytes): %v\n", len(frame), err)
+			// An unknown token on a stanza we do not need yet is reportable,
+			// not fatal: the operator extends the table instead of losing the
+			// session. The raw frame is kept because it is the only evidence
+			// that names the missing token, and re-deriving it needs a phone.
+			path, werr := dumpFrame(frame)
+			if werr != nil {
+				fmt.Printf("undecodable stanza (%d bytes): %v (dump failed: %v)\n", len(frame), err, werr)
+			} else {
+				fmt.Printf("undecodable stanza (%d bytes): %v\n  raw frame kept at %s\n", len(frame), err, path)
+			}
 			continue
 		}
 
 		switch {
 		case node.Tag == "iq" && hasChild(node, "pair-device"):
-			if err := handlePairDevice(ctx, sc, codec, node, noiseKey, identity, advSecret); err != nil {
+			refs, err := acknowledgePairDevice(ctx, sc, codec, node)
+			if err != nil {
 				return err
 			}
 			if cfg.RenderOnly {
+				printAllCodes(refs, noiseKey, identity, advSecret)
 				fmt.Println("\n-render-only: stopping after the QR payloads")
 				return nil
 			}
+			startQRRotation(ctx, stopQR, refs, noiseKey, identity, advSecret)
 		case node.Tag == "iq" && hasChild(node, "pair-success"):
-			return handlePairSuccess(node, noiseKey, identity, advSecret, registrationID, cfg.OutPath)
+			stopRotation()
+			return handlePairSuccess(ctx, sc, codec, node, noiseKey, identity, advSecret, registrationID, cfg.OutPath)
 		case node.Tag == "iq" && node.Attrs["xmlns"] == "urn:xmpp:ping":
 			if err := answerPing(ctx, sc, codec, node); err != nil {
 				return fmt.Errorf("answer ping: %w", err)
@@ -131,50 +168,127 @@ func runPair(cfg pairConfig) error {
 	}
 }
 
-// handlePairDevice acknowledges the stanza and prints one QR payload per ref.
-func handlePairDevice(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, noiseKey noise.KeyPair, identity noise.KeyPair, advSecret [32]byte) error {
+// acknowledgePairDevice answers the pair-device iq and returns its refs.
+func acknowledgePairDevice(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node) ([]string, error) {
 	refs, err := pairing.ParsePairDevice(node)
 	if err != nil {
-		return fmt.Errorf("parse pair-device: %w", err)
+		return nil, fmt.Errorf("parse pair-device: %w", err)
 	}
 	ack, err := pairing.PairDeviceAck(node)
 	if err != nil {
-		return fmt.Errorf("build ack: %w", err)
+		return nil, fmt.Errorf("build ack: %w", err)
 	}
 	frame, err := codec.Encode(ack)
 	if err != nil {
-		return fmt.Errorf("encode ack: %w", err)
+		return nil, fmt.Errorf("encode ack: %w", err)
 	}
 	if err := sc.WriteFrame(ctx, frame); err != nil {
-		return fmt.Errorf("send ack: %w", err)
+		return nil, fmt.Errorf("send ack: %w", err)
 	}
+	return refs, nil
+}
 
-	fmt.Printf("\n%d pairing refs received. Scan ONE of these with the phone\n", len(refs))
-	fmt.Println("(WhatsApp > Linked devices > Link a device):")
+// qrValidityWindow returns how long one ref stays usable. The reference uses 60
+// seconds for the first of six codes and 20 seconds for the rest; printing all
+// six at once therefore guarantees the phone scans an expired code.
+func qrValidityWindow(index, total int) time.Duration {
+	if total == 6 && index == 0 {
+		return 60 * time.Second
+	}
+	return 20 * time.Second
+}
+
+// printAllCodes prints every code at once. Only useful for inspection: the
+// server expires refs, so a human cannot scan more than the current one.
+func printAllCodes(refs []string, noiseKey, identity noise.KeyPair, advSecret [32]byte) {
 	for i, ref := range refs {
 		payload := pairing.QRPayload{
 			Ref:               ref,
 			NoisePublicKey:    noiseKey.Pub,
 			IdentityPublicKey: identity.Pub,
 			AdvSecret:         advSecret,
-			ClientType:        "1",
+			ClientType:        pairingClientType,
 		}
 		code, err := payload.Encode()
 		if err != nil {
-			return fmt.Errorf("encode QR payload %d: %w", i, err)
+			fmt.Printf("encode QR payload %d: %v\n", i, err)
+			continue
 		}
 		fmt.Printf("\n--- code %d/%d ---\n", i+1, len(refs))
 		if qr, qerr := qrcode.New(code, qrcode.Medium); qerr == nil {
-			// Small string halves the height by packing two module rows per
-			// terminal line; many phones scan this directly.
 			fmt.Println(qr.ToSmallString(false))
-		} else {
-			fmt.Printf("(QR render failed: %v)\n", qerr)
 		}
 		fmt.Println(code)
 	}
-	fmt.Println()
-	return nil
+}
+
+// startQRRotation shows one code at a time for its validity window, clearing
+// the screen between codes. It stops when done or when stop is closed.
+func startQRRotation(ctx context.Context, stop <-chan struct{}, refs []string, noiseKey, identity noise.KeyPair, advSecret [32]byte) {
+	codes := make([]string, 0, len(refs))
+	for i, ref := range refs {
+		payload := pairing.QRPayload{
+			Ref:               ref,
+			NoisePublicKey:    noiseKey.Pub,
+			IdentityPublicKey: identity.Pub,
+			AdvSecret:         advSecret,
+			ClientType:        pairingClientType,
+		}
+		code, err := payload.Encode()
+		if err != nil {
+			fmt.Printf("encode QR payload %d: %v\n", i, err)
+			return
+		}
+		codes = append(codes, code)
+	}
+
+	go func() {
+		rotateQRCodes(ctx, stop, codes, func(index int, code string, window time.Duration) {
+			clearScreen()
+			fmt.Printf("code %d/%d — valid for %s. Scan now:\n", index+1, len(codes), window)
+			fmt.Println("(WhatsApp > Linked devices > Link a device)")
+			if qr, qerr := qrcode.New(code, qrcode.Medium); qerr == nil {
+				// Small string halves the height by packing two module rows per
+				// terminal line, which most phone cameras still read.
+				fmt.Println(qr.ToSmallString(false))
+			} else {
+				fmt.Printf("(QR render failed: %v)\n", qerr)
+			}
+			fmt.Println(code)
+		})
+		fmt.Println("\nall codes shown; waiting for the server's answer")
+	}()
+}
+
+// rotateQRCodes walks the refs, handing each code to emit for exactly its
+// validity window. The loop is separated from printing so the sequencing can be
+// tested without a terminal or a phone.
+func rotateQRCodes(ctx context.Context, stop <-chan struct{}, refs []string, emit func(index int, code string, window time.Duration)) {
+	for i, ref := range refs {
+		window := qrValidityWindow(i, len(refs))
+		emit(i, ref, window)
+
+		timer := time.NewTimer(window)
+		select {
+		case <-timer.C:
+		case <-stop:
+			timer.Stop()
+			return
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		}
+	}
+}
+
+// clearScreen homes the cursor and clears when stdout is a terminal. Redirected
+// output keeps every code, which is what a log needs.
+func clearScreen() {
+	if fi, err := os.Stdout.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		fmt.Println()
+		return
+	}
+	fmt.Print("\033[2J\033[H")
 }
 
 // answerPing replies to the keepalive so the server keeps the socket open
@@ -199,19 +313,39 @@ func answerPing(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, 
 	return nil
 }
 
-// handlePairSuccess decodes the credential material and writes it to OutPath.
+// handlePairSuccess decodes the credential material, confirms the link to the
+// server, and writes the record to OutPath.
+//
+// The confirmation is not optional: the reference sends an iq result carrying
+// <pair-device-sign><device-identity> with the self-signed identity, and only
+// then does the linking complete. Skipping it leaves the phone showing a device
+// that never finishes linking.
 //
 // Decoding needs tokens that only appear in this stanza, so a partial table
 // fails here with a clear message rather than a wrong credential.
-func handlePairSuccess(node *wabinary.Node, noiseKey, identity noise.KeyPair, advSecret [32]byte, registrationID uint32, outPath string) error {
+func handlePairSuccess(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, node *wabinary.Node, noiseKey, identity noise.KeyPair, advSecret [32]byte, registrationID uint32, outPath string) error {
 	success, err := pairing.ParsePairSuccess(node)
 	if err != nil {
+		sendPairError(ctx, sc, codec, node.Attrs["id"], 500, "internal-error")
 		return fmt.Errorf("parse pair-success: %w", err)
 	}
 	verified, err := pairing.VerifyDeviceIdentity(success.DeviceIdentity, advSecret[:], identity.Pub[:])
 	if err != nil {
+		// The server signed with a different account key than the one our QR
+		// advertised, or the HMAC does not match. Telling the server lets the
+		// phone show a reason instead of waiting forever.
+		sendPairError(ctx, sc, codec, success.RequestID, 401, "signature-mismatch")
 		return fmt.Errorf("verify device identity: %w", err)
 	}
+
+	signed, err := pairing.SignDeviceIdentity(verified, identity.Pub[:], wasignal.XEdDSASigner{Private: identity.Priv})
+	if err != nil {
+		return fmt.Errorf("sign device identity: %w", err)
+	}
+	if err := sendPairDeviceSign(ctx, sc, codec, success.RequestID, verified.KeyIndex, signed); err != nil {
+		return fmt.Errorf("confirm pairing: %w", err)
+	}
+
 	fmt.Printf("\nPAIRED: jid=%s lid=%s platform=%s\n", success.ID, success.LID, success.Platform)
 
 	record := &credentialRecord{
@@ -234,6 +368,7 @@ func handlePairSuccess(node *wabinary.Node, noiseKey, identity noise.KeyPair, ad
 	record.Device.Details = verified.Details
 	record.Device.AccountKey = verified.AccountKey
 	record.Device.AccountSignature = verified.AccountSignature
+	record.Device.DeviceSignature = signed
 
 	if outPath == "" {
 		fmt.Println("\nno -out given; credentials not written")
@@ -244,6 +379,76 @@ func handlePairSuccess(node *wabinary.Node, noiseKey, identity noise.KeyPair, ad
 	}
 	fmt.Printf("credentials written to %s (mode 0600)\n", outPath)
 	return nil
+}
+
+// sendPairDeviceSign tells the server which identity this device will present.
+// The server treats the pairing as complete only after this arrives.
+func sendPairDeviceSign(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, requestID string, keyIndex uint32, signedIdentity []byte) error {
+	confirm := &wabinary.Node{
+		Tag: "iq",
+		Attrs: wabinary.Attrs{
+			"to":   serverJID,
+			"type": "result",
+			"id":   requestID,
+		},
+		Children: []wabinary.Node{{
+			Tag: "pair-device-sign",
+			Children: []wabinary.Node{{
+				Tag:   "device-identity",
+				Attrs: wabinary.Attrs{"key-index": strconv.FormatUint(uint64(keyIndex), 10)},
+				Bytes: signedIdentity,
+			}},
+		}},
+	}
+	frame, err := codec.Encode(confirm)
+	if err != nil {
+		return fmt.Errorf("encode pair-device-sign: %w", err)
+	}
+	if err := sc.WriteFrame(ctx, frame); err != nil {
+		return fmt.Errorf("send pair-device-sign: %w", err)
+	}
+	fmt.Println("pair-device-sign sent")
+	return nil
+}
+
+// sendPairError reports a failure to the server the way the reference does, so
+// the phone shows a specific reason instead of a generic link failure.
+func sendPairError(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, requestID string, code int, text string) {
+	errNode := &wabinary.Node{
+		Tag: "iq",
+		Attrs: wabinary.Attrs{
+			"to":   serverJID,
+			"type": "error",
+			"id":   requestID,
+		},
+		Children: []wabinary.Node{{
+			Tag:   "error",
+			Attrs: wabinary.Attrs{"code": strconv.Itoa(code), "text": text},
+		}},
+	}
+	frame, err := codec.Encode(errNode)
+	if err != nil {
+		fmt.Printf("could not encode pair error: %v\n", err)
+		return
+	}
+	if err := sc.WriteFrame(ctx, frame); err != nil {
+		fmt.Printf("could not send pair error: %v\n", err)
+	}
+}
+
+// dumpFrame writes an undecodable frame to a file so the missing token can be
+// recovered later. The bytes are the only record of a stanza that a phone scan
+// produced, and producing it again costs another pairing attempt.
+func dumpFrame(frame []byte) (string, error) {
+	dir := "undecoded"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, time.Now().UTC().Format("20060102T150405.000000000")+".bin")
+	if err := os.WriteFile(path, frame, 0o600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // qrStringForTest renders a payload and returns the string the encoder was
@@ -270,10 +475,16 @@ func loadDictionary(path string) (*wabinary.Dictionary, error) {
 // buildPairingPayload is the payload the server needs before it speaks (PF-068),
 // bound to the identity key that will appear in the QR so the certificate chain
 // and the pairing payload describe the same device.
+//
+// The signed prekey must be signed by that same identity key: the server
+// verifies eSkeySig with eIdent before it will let the phone link the device.
+// A zero-filled signature passes local validation (it is 64 bytes) but fails
+// that check, and the phone then reports only "couldn't link new device".
 func buildPairingPayload(identity noise.KeyPair, registrationID uint32) ([]byte, error) {
-	signed, err := noise.GenerateKeyPair()
+	identityPair := wasignal.KeyPair{Private: identity.Priv, Public: identity.Pub}
+	signed, err := wasignal.GenerateSignedPreKey(1, wasignal.XEdDSASigner{Private: identity.Priv})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("signed prekey: %w", err)
 	}
 	return auth.BuildClientPayload(auth.Input{
 		Version: auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
@@ -293,17 +504,43 @@ func buildPairingPayload(identity noise.KeyPair, registrationID uint32) ([]byte,
 		ConnectReason: protobuf.ClientPayload_USER_ACTIVATED,
 		Registration: auth.Registration{
 			RegistrationID:        registrationID,
-			IdentityKey:           identity.Pub[:],
-			SignedPreKeyID:        1,
-			SignedPreKey:          signed.Pub[:],
-			SignedPreKeySignature: make([]byte, 64),
+			IdentityKey:           identityPair.Public[:],
+			SignedPreKeyID:        signed.ID,
+			SignedPreKey:          signed.Pair.Public[:],
+			SignedPreKeySignature: signed.Signature,
 		},
 		DeviceProps: auth.DeviceProps{
-			OS:           "whatsmeow",
-			Version:      auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
-			PlatformType: protobuf.DeviceProps_UNKNOWN,
+			OS:      "whatsmeow",
+			Version: auth.Version{Primary: 2, Secondary: 3000, Tertiary: 1052556849},
+			// The reference reports a concrete browser platform for a QR
+			// login, and its client-type field derives from it. UNKNOWN is
+			// not what a web pairing ever sends.
+			PlatformType: protobuf.DeviceProps_CHROME,
+			HistorySync:  pairingHistorySync(),
 		},
 	})
+}
+
+// pairingHistorySync mirrors the capability block the reference advertises for
+// a companion device. It is sent, not negotiated: the phone decides what to
+// sync from these flags.
+func pairingHistorySync() *auth.HistorySync {
+	return &auth.HistorySync{
+		StorageQuotaMB:                 10240,
+		InlineInitialPayload:           true,
+		SupportCallLogHistory:          true,
+		SupportBotUserAgentChatHistory: true,
+		SupportCagReactionsAndPolls:    true,
+		SupportBizHostedMsg:            true,
+		SupportRecentSyncChunkTuning:   true,
+		SupportHostedGroupMsg:          true,
+		SupportFbidBotChatHistory:      true,
+		SupportMessageAssociation:      true,
+		SupportGroupHistory:            true,
+		ThumbnailSyncDaysLimit:         60,
+		SupportManusHistory:            true,
+		SupportHatchHistory:            true,
+	}
 }
 
 func hasChild(node *wabinary.Node, tag string) bool {
@@ -341,6 +578,7 @@ type deviceRec struct {
 	Details          []byte `json:"details"`
 	AccountKey       []byte `json:"account_key"`
 	AccountSignature []byte `json:"account_signature"`
+	DeviceSignature  []byte `json:"device_signature"`
 }
 
 func writeCredentialRecord(path string, record *credentialRecord) error {

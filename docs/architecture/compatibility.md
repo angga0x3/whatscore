@@ -16,7 +16,7 @@ run.
 | Auth payload accepted | **supported** | live: `whatscore-probe -payload` builds a real registration payload and the server answers 679 bytes (PF-068) |
 | Pairing reply decoded | **supported** | with the nine-token partial table in `deployments/tokendict`, the live stanza decodes to 6 refs and the iq result is accepted (PF-069) |
 | Pairing stanza + keepalive | **supported** | pair-device decoded to 6 refs, ack accepted, keepalive pings decoded and answered (PF-069/PF-070) |
-| Pairing (QR → success) | **in progress** | everything up to rendering a QR works against the live server; `pair-success` needs a phone to scan it |
+| Pairing (QR → success) | **in progress** | scannable QR with rotation works live; one phone attempt was refused, and it exposed three fixed defects (PF-072…PF-074); `pair-success` still unobserved |
 | Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
 | Message send/receive | **untested** | needs pairing |
 | Media upload/download | **untested** | needs pairing + an upload endpoint |
@@ -45,6 +45,12 @@ go run ./cmd/whatscore-probe -timeout 25s
 The probe never pairs, never authenticates, never sends a message, and never
 persists a key. If it reports `server-rejected`, the first diverging layer is
 the one in `detail`.
+
+Its `-pair` mode is the exception and is manual by design: it contacts the
+server with fresh keys, renders a QR from the refs the server sends, and — if a
+phone scans one — verifies `pair-success`, completes the link, and writes
+credentials. It needs a token table and a dedicated number; see
+`docs/pairing-manual.md`.
 
 ## What this matrix deliberately does not say
 

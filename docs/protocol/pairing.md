@@ -1,8 +1,13 @@
 # Pairing findings
 
 Device-pairing payloads of the multi-device flow. Extracted from read-only
-reference study of whatsmeow `pair.go` on 2026-11-15; no live pairing run is
-recorded yet, so findings stay **Probable**.
+reference study of whatsmeow `pair.go` and from one live pairing attempt that
+reached a scannable QR on 2026-11-15. No successful pairing is recorded, so
+findings that only the server could confirm stay **Probable**.
+
+The live attempt produced a real result: the phone refused the link, and reading
+the code it was given found two defects (PF-072, PF-074) that reading the
+reference alone would not have surfaced as *our* bugs.
 
 ## PF-015: QR payload format
 
@@ -88,6 +93,73 @@ provisioning, and a live pairing run remain.
 
 ---
 
-Status: the pairing stanza, the acknowledge, and the keepalive round-trip
-against the live server. `pair-success` has not been observed, because it only
-arrives after a phone scans a QR composed from these refs.
+Status: the pairing stanza, the acknowledge, the keepalive round-trip, and a
+scannable QR all work against the live server. `pair-success` has not been
+observed, because it only arrives after a phone accepts a QR.
+
+The first phone attempt was refused, and that refusal found two real defects:
+the payload carried a zero-filled signed-prekey signature (PF-072), and all six
+QR codes were printed at once although only one is valid at a time (PF-074). The
+confirmation step that ends the linking handshake was also missing entirely
+(PF-073). All three are fixed and covered by tests; whether they were jointly
+sufficient is unknown until a scan succeeds.
+
+## PF-071: qr-client-type derives from the reported platform
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-071 |
+| **Title** | A QR login reports a concrete browser platform in `DeviceProps.platformType`; the QR `clientType` field is derived from it, and `1` is Chrome |
+| **Layer** | pairing |
+| **Source** | reference study of whatsmeow `pair.go`, `pair-code.go`, `store/clientpayload.go` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` (`TestPairingPayloadReportsAChromePlatform`) |
+| **Related findings** | PF-015, PF-024 |
+| **Notes** | `getQRClientType` maps `DeviceProps.platformType` to `PairClientChrome = "1"`, `Edge = "2"`, `Firefox = "3"`, … The fallback for a plain web client with no platform set is `PairClientOtherWebClient = "9"`, not Chrome. WhatsCore previously sent `UNKNOWN` while claiming client type `1`, which described no real client. The payload now reports `CHROME`. **Not yet proven against the server**: a scan on a phone is the only test. |
+
+## PF-072: The registration payload must carry a real signed prekey
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-072 |
+| **Title** | `eSkeySig` must be an XEdDSA signature by `eIdent` over `0x05 ‖ signedPreKey`; a zero-filled 64-byte signature passes local length checks and is still unusable |
+| **Layer** | auth |
+| **Source** | reference study of whatsmeow `store.getRegistrationPayload`, plus a phone's own failure report |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Confirmed by construction; the server-side rejection is inferred |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` (`TestPairingPayloadSignsThePreKey`), `protocol/signal` (`XEdDSASigner` vectors, PF-067) |
+| **Related findings** | PF-023, PF-067, PF-073 |
+| **Notes** | The first pairing attempt produced six QR payloads from live refs, and the phone answered "couldn't link new device". The payload carried `eSkeySig = 64 × 0x00`: exactly the right length, so `protocol/auth` accepted it, but not a signature. The reference signs the prekey with the identity key before sending it. This is a concrete divergence found by running rather than reading. **Limits**: the phone's message is generic; that this was *the* cause of the link failure is not proven, only that it was a genuine defect that had to be fixed before any other cause could be ruled out. |
+
+## PF-073: Pairing completes only after pair-device-sign
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-073 |
+| **Title** | After verifying `pair-success` the client must reply with `iq{type=result, id=<pair-success id>}` containing `<pair-device-sign><device-identity key-index=…>`, carrying the self-signed identity with the account key removed |
+| **Layer** | pairing |
+| **Source** | reference study of whatsmeow `pair.go` `handlePair` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `protocol/pairing` (`TestSignDeviceIdentityDropsAccountKey`, `TestSignDeviceIdentityRejectsBadInput`) |
+| **Related findings** | PF-016, PF-017 |
+| **Notes** | Message is `0x06,0x01 ‖ details ‖ identityPub ‖ accountSignatureKey`, signed with the identity key. The container sent back has `details`, `accountSignature`, and `deviceSignature`, but **not** `accountSignatureKey`, which stays server-side. WhatsCore's probe previously verified `pair-success` and then stopped, so the phone would have shown a device that never finished linking even on a successful scan. An `iq{type=error}` with code `401` `signature-mismatch` or `500` `internal-error` is the reference's way of reporting a bad container. |
+
+## PF-074: Pairing QR refs expire and must be rotated
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-074 |
+| **Title** | The six refs are not simultaneously valid: the first is offered for 60 s and each following one for 20 s, so showing all six at once guarantees an expired scan |
+| **Layer** | pairing |
+| **Source** | reference study of whatsmeow `qrchan.go` `emitQRs` |
+| **Observed date** | 2026-11-15 |
+| **Confidence** | Probable |
+| **Status** | Verified-by-test |
+| **Proving test** | `cmd/whatscore-probe` (`TestQRValidityWindowMatchesTheReference`, `TestRotationShowsOneCodeAtATime`) |
+| **Related findings** | PF-015, PF-069 |
+| **Notes** | `timeout := 20 * time.Second; if len(codes) == 6 { timeout = 60 * time.Second }` applies to the first code only. The probe now prints one code at a time, clears the terminal between codes, and keeps answering keepalives throughout — verified live: codes 1 and 2 were each shown for their window with pings answered in between. This alone can explain a scan failure, which is why the previous run could not distinguish expiry from PF-072. |

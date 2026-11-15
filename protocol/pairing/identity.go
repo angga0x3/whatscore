@@ -112,3 +112,48 @@ func VerifyDeviceIdentity(container, advSecret, identityPub []byte) (*DeviceIden
 		DeviceSignature:  cloneBytes(signed.GetDeviceSignature()),
 	}, nil
 }
+
+// DeviceSigner signs the PF-017 device-identity message. The interface keeps
+// this package independent of one signing construction; signal.XEdDSASigner is
+// the only implementation that matches the server.
+type DeviceSigner interface {
+	SignDeviceIdentity(details, identityPub, accountSignatureKey []byte) ([]byte, error)
+}
+
+// SignDeviceIdentity returns the self-signed ADVSignedDeviceIdentity the client
+// sends back in <pair-device-sign>. It signs
+// 0x06,0x01 ‖ details ‖ identityPub ‖ accountSignatureKey and then drops the
+// account key, which is what the server expects to receive back: the account
+// signature key stays server-side.
+func SignDeviceIdentity(verified *DeviceIdentity, identityPub []byte, signer DeviceSigner) ([]byte, error) {
+	if verified == nil {
+		return nil, fmt.Errorf("%w: nil device identity", ErrInvalidDeviceIdentity)
+	}
+	if signer == nil {
+		return nil, fmt.Errorf("%w: no device signer", ErrInvalidDeviceIdentity)
+	}
+	if len(identityPub) != 32 {
+		return nil, fmt.Errorf("%w: identity key is %d bytes, want 32", ErrInvalidDeviceIdentity, len(identityPub))
+	}
+	if len(verified.AccountKey) != 32 {
+		return nil, fmt.Errorf("%w: account key is %d bytes, want 32", ErrInvalidDeviceIdentity, len(verified.AccountKey))
+	}
+
+	signature, err := signer.SignDeviceIdentity(verified.Details, identityPub, verified.AccountKey)
+	if err != nil {
+		return nil, fmt.Errorf("%w: device signature: %w", ErrInvalidDeviceIdentity, err)
+	}
+	if len(signature) != 64 {
+		return nil, fmt.Errorf("%w: device signature is %d bytes, want 64", ErrInvalidDeviceIdentity, len(signature))
+	}
+
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(&protobuf.ADVSignedDeviceIdentity{
+		Details:          cloneBytes(verified.Details),
+		AccountSignature: cloneBytes(verified.AccountSignature),
+		DeviceSignature:  signature,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("%w: marshaling self-signed identity: %w", ErrInvalidDeviceIdentity, err)
+	}
+	return raw, nil
+}

@@ -388,6 +388,24 @@ func parseDeviceProps(raw []byte) (DeviceProps, error) {
 			Tertiary:  version.GetTertiary(),
 		}
 	}
+	if h := props.GetHistorySyncConfig(); h != nil {
+		out.HistorySync = &HistorySync{
+			StorageQuotaMB:                 h.GetStorageQuotaMb(),
+			InlineInitialPayload:           h.GetInlineInitialPayloadInE2EeMsg(),
+			SupportCallLogHistory:          h.GetSupportCallLogHistory(),
+			SupportBotUserAgentChatHistory: h.GetSupportBotUserAgentChatHistory(),
+			SupportCagReactionsAndPolls:    h.GetSupportCagReactionsAndPolls(),
+			SupportBizHostedMsg:            h.GetSupportBizHostedMsg(),
+			SupportRecentSyncChunkTuning:   h.GetSupportRecentSyncChunkMessageCountTuning(),
+			SupportHostedGroupMsg:          h.GetSupportHostedGroupMsg(),
+			SupportFbidBotChatHistory:      h.GetSupportFbidBotChatHistory(),
+			SupportMessageAssociation:      h.GetSupportMessageAssociation(),
+			SupportGroupHistory:            h.GetSupportGroupHistory(),
+			ThumbnailSyncDaysLimit:         h.GetThumbnailSyncDaysLimit(),
+			SupportManusHistory:            h.GetSupportManusHistory(),
+			SupportHatchHistory:            h.GetSupportHatchHistory(),
+		}
+	}
 	if err := validateDeviceProps(out); err != nil {
 		return DeviceProps{}, err
 	}
