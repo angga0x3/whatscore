@@ -324,9 +324,10 @@ messages into `core/events` values. **Allowed deps.** `protocol/*` via interface
 storage interfaces, stdlib. **Tests.** Fake-server conversation scripts; retry/backoff and dedup
 tables.
 **Status.** `core/messaging.Sender` builds and writes plaintext and Signal-encrypted text stanzas and
-receipts over a `FrameWriter`; `Receiver` decodes inbound text and receipts into `events.Message` /
-`events.Receipt` values (malformed frames are logged and dropped). Inbound `<enc>` decryption,
-retries/dedup, and carrier selection for prekey messages remain.
+receipts over a `FrameWriter`; `Receiver` decodes inbound plaintext text, encrypted `<enc>` text, and
+receipts into `events.Message` / `events.Receipt` values, decrypting on a state clone so a failed
+attempt never advances the live ratchet. Prekey bootstrap on inbound, retries/dedup, and persistence
+callbacks remain.
 
 ### 4.14 `core/events`
 
