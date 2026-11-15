@@ -12,6 +12,8 @@ import (
 	corecredentials "github.com/angga0x3/whatscore/core/credentials"
 	"github.com/angga0x3/whatscore/core/events"
 	"github.com/angga0x3/whatscore/core/session"
+	"github.com/angga0x3/whatscore/protocol/binary"
+	stanza "github.com/angga0x3/whatscore/protocol/messaging"
 	"github.com/angga0x3/whatscore/protocol/transport"
 	storecreds "github.com/angga0x3/whatscore/storage/credentials"
 	"github.com/angga0x3/whatscore/storage/envelope"
@@ -19,12 +21,13 @@ import (
 
 type fakeConn struct {
 	frames chan []byte
+	writes chan []byte
 	closed chan struct{}
 	once   sync.Once
 }
 
 func newFakeConn() *fakeConn {
-	return &fakeConn{frames: make(chan []byte), closed: make(chan struct{})}
+	return &fakeConn{frames: make(chan []byte), writes: make(chan []byte, 8), closed: make(chan struct{})}
 }
 
 func (f *fakeConn) ReadFrame(ctx context.Context) ([]byte, error) {
@@ -38,7 +41,7 @@ func (f *fakeConn) ReadFrame(ctx context.Context) ([]byte, error) {
 	}
 }
 
-func (f *fakeConn) WriteFrame(ctx context.Context, _ []byte) error {
+func (f *fakeConn) WriteFrame(ctx context.Context, frame []byte) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -46,8 +49,9 @@ func (f *fakeConn) WriteFrame(ctx context.Context, _ []byte) error {
 	case <-f.closed:
 		return transport.ErrClosed
 	default:
-		return nil
 	}
+	f.writes <- append([]byte(nil), frame...)
+	return nil
 }
 
 func (f *fakeConn) Close() error {
@@ -170,14 +174,53 @@ func TestConnectCanceled(t *testing.T) {
 	}
 }
 
-func TestSendMessageNotImplemented(t *testing.T) {
-	c, _ := testClient(t)
-	id, err := c.SendMessage(context.Background(), NewTextMessage("hello"))
-	if !errors.Is(err, ErrNotImplemented) {
-		t.Fatalf("want ErrNotImplemented, got %v", err)
+func TestSendMessage(t *testing.T) {
+	conn := newFakeConn()
+	bus := events.NewBus()
+	c, err := New("session-1", WithDialer(&fakeDialer{conn: conn}), WithBus(bus))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if id != "" {
+	t.Cleanup(func() {
+		_ = c.Close(context.Background())
+		bus.Close()
+	})
+	ctx := context.Background()
+	if err := c.Connect(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := c.SendMessage(ctx, Message{To: "628123@s.whatsapp.net", Text: "hello"})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if len(id) != 20 {
 		t.Fatalf("id = %q", id)
+	}
+
+	var frame []byte
+	select {
+	case frame = <-conn.writes:
+	case <-time.After(2 * time.Second):
+		t.Fatal("message frame was not written")
+	}
+	node, err := binary.NewCodec(nil).Decode(bytes.NewReader(frame))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	msg, err := stanza.ParseTextMessage(node)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if msg.ID != id || msg.Text != "hello" || msg.To.String() != "628123@s.whatsapp.net" {
+		t.Fatalf("message = %#v", msg)
+	}
+}
+
+func TestSendMessageRequiresConnection(t *testing.T) {
+	c, _ := testClient(t)
+	if _, err := c.SendMessage(context.Background(), Message{To: "1@s.whatsapp.net", Text: "x"}); !errors.Is(err, session.ErrNotConnected) {
+		t.Fatalf("want ErrNotConnected, got %v", err)
 	}
 }
 

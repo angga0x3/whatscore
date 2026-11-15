@@ -2,9 +2,9 @@
 // the session actor, the event bus, and the credential manager behind a small
 // API; protocol types never leak through it.
 //
-// Status: connect/disconnect/subscribe/close are implemented. Sending is not:
-// it needs the Signal and messaging layers, so SendMessage returns
-// ErrNotImplemented instead of pretending.
+// Sending currently writes a plaintext text stanza (no Signal encryption).
+// Isolated tests and fake-server runs can use it; production use waits for
+// protocol/signal.
 package client
 
 import (
@@ -15,13 +15,10 @@ import (
 
 	corecredentials "github.com/angga0x3/whatscore/core/credentials"
 	"github.com/angga0x3/whatscore/core/events"
+	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/session"
 	"github.com/angga0x3/whatscore/protocol/transport"
 )
-
-// ErrNotImplemented is returned by operations whose protocol layers are not
-// wired yet.
-var ErrNotImplemented = errors.New("client: not implemented yet")
 
 // ErrInvalidConfig is returned by New when the configuration is unusable.
 var ErrInvalidConfig = errors.New("client: invalid config")
@@ -40,6 +37,7 @@ func NewTextMessage(text string) Message { return Message{Text: text} }
 type Client struct {
 	id      string
 	session *session.Session
+	sender  *coremessaging.Sender
 	bus     *events.Bus
 	ownBus  bool
 	creds   *corecredentials.Manager
@@ -189,9 +187,18 @@ func New(id string, opts ...Option) (*Client, error) {
 		}
 		return nil, err
 	}
+	sender, err := coremessaging.NewSender(sess)
+	if err != nil {
+		_ = sess.Stop(context.Background())
+		if ownBus {
+			cfg.bus.Close()
+		}
+		return nil, err
+	}
 	return &Client{
 		id:      id,
 		session: sess,
+		sender:  sender,
 		bus:     cfg.bus,
 		ownBus:  ownBus,
 		creds:   cfg.creds,
@@ -226,9 +233,11 @@ func (c *Client) Credentials() *corecredentials.Manager {
 	return c.creds
 }
 
-// SendMessage is not implemented until Signal and messaging are wired.
-func (c *Client) SendMessage(context.Context, Message) (string, error) {
-	return "", fmt.Errorf("%w: sending requires protocol/signal", ErrNotImplemented)
+// SendMessage builds and writes a plaintext text stanza. End-to-end
+// encryption (Signal) is not wired yet; the frame is only protected by the
+// transport encryption when a Noise connector is installed.
+func (c *Client) SendMessage(ctx context.Context, msg Message) (string, error) {
+	return c.sender.SendText(ctx, msg.To, msg.Text)
 }
 
 // Close stops the session and, when the client owns it, closes the event bus.
