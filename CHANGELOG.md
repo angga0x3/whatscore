@@ -27,11 +27,24 @@ project is pre-1.0, so breaking changes happen in minor versions.
 - A web QR login reports `DeviceProps.platformType = CHROME`, matching the
   client-type field `1` the QR already carried (PF-071).
 
+### Proven live
+
+- A phone scan of a WhatsCore-generated QR produced a real `pair-success`. Its
+  account-identity HMAC verified against the adv secret from that QR and its
+  account signature against that QR's identity key (PF-075).
+- The `pair-success` stanza decodes: nine tokens the `pair-device` set lacked
+  were recovered from the saved frame and cross-checked with a second decoder
+  (`deployments/tokendict/pairing-minimal.json`).
+- An unconfirmed `pair-success` is followed by `<stream:error>` and then
+  `<xmlstreamend>` — the mechanism behind the phone's generic refusal (PF-076).
+
 ### Known limits
 
-- No scan has succeeded. One phone attempt was refused with a generic message;
-  the three defects above are the ones it exposed, and whether they were
-  jointly sufficient is unknown.
+- The link still has not completed: the first readable `pair-success` arrived
+  after the probe had already been unable to decode it. No session, no message,
+  and no credential file from a live run exist yet.
+- The token table is partial by design. It now covers what the server has
+  actually sent, and nothing more.
 
 ## [v0.0.1] — 2026-11-15
 
