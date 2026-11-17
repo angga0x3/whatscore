@@ -60,7 +60,7 @@ Proven against the live service:
 Not proven, and not claimed:
 
 - [ ] A sent media attachment rendering on the phone (the server accepted the stanza; no device observation)
-- [ ] The own-device copy of a send appearing on the phone (`PF-090`); its receive half is live-proven
+- [ ] The own-device copy of a send rendering on the phone (`PF-090`); both its send (same id, phone session, acknowledged) and its receive half are live-proven
 - [ ] The REST server and SDK against the live service (they are tested against the fake server)
 - [ ] Group **sending** — receiving works; enumerating a group's devices and the send side do not exist yet
 - [ ] Newsletters beyond plaintext notifications

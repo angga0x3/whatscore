@@ -23,7 +23,7 @@ run.
 | Receive a text message | **supported** | live queue drain: pkmsg bootstrap, decrypt, render, delivery receipt, ratchet persisted (PF-087) |
 | Receive media | **supported** | a phone-sent sticker decrypted, downloaded from the CDN, passed SHA-256, and landed as a 51 KB WebP (2026-11-16) |
 | Send media | **partially proven** | upload accepted live 2026-11-17 (HTTP 200, url + direct_path) and a media-class message was acknowledged; probe and REST both send; phone rendering unproven (PF-092) |
-| Own-device copy of a send | **untested live** | implemented in the probe and the REST runtime (PF-090); the copy needs a session with the phone, and no live run has shown it on the phone yet |
+| Own-device copy of a send | **partially proven** | probe and REST runtime send it (PF-090); live 2026-11-17 both copies went out under one id and were acknowledged. The phone's rendering is unconfirmed |
 | App-state sync | **supported** | 11 key shares, 15 patches, 39/39 mutations verified and decoded live (2026-11-16) |
 | Group messaging | **partially proven** | sender-key decryption works live (PF-093); a group protocol message opened on 2026-11-17. Group text and sending are untested |
 

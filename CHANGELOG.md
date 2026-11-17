@@ -218,6 +218,11 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Proven live
 
+- The own-device copy is sent live (2026-11-17). A first-contact text to a
+  third party went out as the recipient's copy and, over the phone session
+  restored from disk, as a `DeviceSentMessage` copy under the same id; the
+  server acknowledged both (`ack class="message"`). The phone's rendering of
+  that copy is the part still unobserved.
 - Group sender keys decrypt live (2026-11-17). The queue's group stanza
   carried a `pkmsg` distribution for this device and an `skmsg` ciphertext;
   the distribution installed the member's key, the XEdDSA signature verified,
