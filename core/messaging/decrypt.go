@@ -86,42 +86,44 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 		return
 	}
 
-	// The decrypted bytes are a protobuf Message, not a raw string. A payload
-	// with no text (an image, a reaction, a protocol message) is not an error
-	// here: it decrypts fine and this layer simply has nothing to render.
-	text, err := stanza.DecodeTextMessage(plaintext)
+	// The decrypted bytes are a protobuf Message. DecodePayload classifies it:
+	// text, a media attachment, or a protocol message. Decoding text alone
+	// here meant every media message after the first (which rides the msg
+	// carrier, not pkmsg) decrypted cleanly and then vanished.
+	payload, err := stanza.DecodePayload(plaintext)
 	if err != nil {
-		r.logger.InfoContext(ctx, "decrypted a message with no text payload", "peer", peer, "error", err)
+		r.logger.InfoContext(ctx, "decrypted a message with no usable payload", "peer", peer, "error", err)
 		return
 	}
-
-	timestamp := timestampOf(node)
-	r.bus.Publish(events.Event{
-		Type:      events.TypeMessage,
-		SessionID: r.sessionID,
-		Timestamp: timestamp,
-		Message: &events.Message{
-			ID:        envelope.ID,
-			Chat:      peer.String(),
-			Sender:    peer.String(),
-			Timestamp: timestamp,
-			Direction: events.DirectionIncoming,
-			Text:      text,
-			IsGroup:   peer.Server == stanza.GroupServer,
-		},
-	})
+	r.publishIncoming(ctx, envelope.ID, peer, timestampOf(node), payload)
 }
 
 // publishIncoming turns one decoded payload into the event the rest of the
 // stack sees: a text message, or a message carrying a media attachment.
+//
+// A device-sent copy is the account's own message mirrored from another
+// device, so it belongs to the chat it names and is outgoing — not to a chat
+// with the sending device.
 func (r *Receiver) publishIncoming(ctx context.Context, id string, peer stanza.JID, timestamp time.Time, payload *stanza.Payload) {
+	chat := peer
+	direction := events.DirectionIncoming
+	if payload.Destination != "" {
+		dest, err := stanza.ParseJID(payload.Destination)
+		if err != nil {
+			r.logger.WarnContext(ctx, "device-sent copy names an unparseable destination",
+				"destination", payload.Destination, "error", err)
+		} else {
+			chat = dest
+			direction = events.DirectionOutgoing
+		}
+	}
 	msg := &events.Message{
 		ID:        id,
-		Chat:      peer.String(),
+		Chat:      chat.String(),
 		Sender:    peer.String(),
 		Timestamp: timestamp,
-		Direction: events.DirectionIncoming,
-		IsGroup:   peer.Server == stanza.GroupServer,
+		Direction: direction,
+		IsGroup:   chat.Server == stanza.GroupServer,
 	}
 	switch payload.Kind {
 	case stanza.PayloadText:

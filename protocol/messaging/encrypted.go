@@ -29,6 +29,14 @@ type EncryptedText struct {
 	Version    string
 	Carrier    string
 	Ciphertext []byte
+	// Peer addresses one device of an account rather than the account. The
+	// normal outbound shape names a user JID and the server fans out to its
+	// devices; a device-qualified "to" is only legal when the sender means
+	// exactly that device — the own-device copy and a retry receipt do
+	// (whatsmeow's `SendRequestExtra{Peer: true}`). Such a stanza also
+	// carries device_fanout="false", because there is nothing left to fan
+	// out.
+	Peer bool
 }
 
 // BuildEncryptedText builds `<message id to type="text"><enc v=... type=...>`
@@ -37,7 +45,7 @@ func BuildEncryptedText(message EncryptedText) (*binary.Node, error) {
 	if err := message.To.validateAddress(); err != nil {
 		return nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
 	}
-	if message.To.Device > 0 {
+	if message.To.Device > 0 && !message.Peer {
 		return nil, fmt.Errorf("%w: to %q is device-qualified", ErrInvalidMessage, message.To)
 	}
 	if err := validateMessageID(message.ID); err != nil {
@@ -59,13 +67,19 @@ func BuildEncryptedText(message EncryptedText) (*binary.Node, error) {
 	if len(message.Ciphertext) == 0 {
 		return nil, fmt.Errorf("%w: empty ciphertext", ErrInvalidMessage)
 	}
+	attrs := binary.Attrs{
+		"id":   message.ID,
+		"to":   message.To.String(),
+		"type": MessageTypeText,
+	}
+	if message.To.Device > 0 {
+		// A device-addressed stanza goes to that device alone; the attribute
+		// is what tells the server not to fan it out to the account's others.
+		attrs["device_fanout"] = "false"
+	}
 	return &binary.Node{
-		Tag: tagMessage,
-		Attrs: binary.Attrs{
-			"id":   message.ID,
-			"to":   message.To.String(),
-			"type": MessageTypeText,
-		},
+		Tag:   tagMessage,
+		Attrs: attrs,
 		Children: []binary.Node{{
 			Tag:   tagEnc,
 			Attrs: binary.Attrs{attrVersion: message.Version, attrCarrier: message.Carrier},

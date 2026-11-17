@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/prekeys"
 	"github.com/angga0x3/whatscore/protocol/binary"
+	stanza "github.com/angga0x3/whatscore/protocol/messaging"
 	"github.com/angga0x3/whatscore/protocol/signal"
 	syncpkg "github.com/angga0x3/whatscore/protocol/sync"
 )
@@ -70,6 +72,13 @@ type sessionRuntime struct {
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
+	// ownLID is the account's LID: the own-device copy of a send is addressed
+	// to the phone's session, which is the one whose user matches it.
+	ownLID string
+	// signals persists every peer ratchet this session installs or advances.
+	// A restart without it is a one-way door: the peer continues the chain
+	// with msg carriers and this device has no state to open them (PF-087).
+	signals *signalStore
 
 	// write is the session's WriteFrame, attached after construction because
 	// the session needs the handler before it exists.
@@ -82,7 +91,7 @@ type sessionRuntime struct {
 
 // newSessionRuntime wires the receiver with the session's key material and
 // starts the bus loop that answers message events with delivery receipts.
-func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, deviceIdentity []byte, media mediaSaver, bus *events.Bus, appStatePath string) (*sessionRuntime, error) {
+func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, account pairedAccount, media mediaSaver, bus *events.Bus, appStatePath string, signals *signalStore) (*sessionRuntime, error) {
 	receiver, err := coremessaging.NewReceiver(bus, id, coremessaging.WithReceiverCodec(codec))
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: receiver: %w", id, err)
@@ -108,8 +117,10 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		mediaSaved:     make(map[string]bool),
 		uploaded:       make(map[uint32]bool),
 		identity:       identity,
-		deviceIdentity: append([]byte(nil), deviceIdentity...),
+		deviceIdentity: append([]byte(nil), account.SignedIdentity...),
+		ownLID:         account.LID,
 		mediaSaver:     media,
+		signals:        signals,
 		stop:           make(chan struct{}),
 	}
 	r.loadAppStateKeys()
@@ -132,7 +143,13 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		if err := sender.SetPeer(peer, ps); err != nil {
 			logger.Warn("could not mirror peer session to the sender", "session", id, "peer", peer, "error", err)
 		}
+		if err := r.persistSession(peer, ps); err != nil {
+			logger.Warn("could not persist peer session", "session", id, "peer", peer, "error", err)
+		}
 	})
+	if err := r.restoreSessions(); err != nil {
+		return nil, fmt.Errorf("cmd/whatscore: session %s: restore sessions: %w", id, err)
+	}
 
 	// Delivery receipts follow the decrypt, not the stanza: the server keeps
 	// a message it has no receipt for, so a failed decrypt can be recovered
@@ -739,7 +756,7 @@ func (r *sessionRuntime) DeliverText(ctx context.Context, to, text string) (stri
 	if r.write == nil {
 		return "", fmt.Errorf("session %s: runtime not attached", r.id)
 	}
-	id, _, err := r.sender.SendEncryptedText(ctx, to, text)
+	id, session, err := r.sender.SendEncryptedText(ctx, to, text)
 	if errors.Is(err, coremessaging.ErrNoSession) {
 		var peerSession *coremessaging.PeerSession
 		id, peerSession, err = r.sender.SendPreKeyText(ctx, to, text, r.registrationID)
@@ -748,10 +765,132 @@ func (r *sessionRuntime) DeliverText(ctx context.Context, to, text string) (stri
 			if err := r.receiver.SetReceiverPeer(to, peerSession); err != nil {
 				r.logger.Warn("could not install the initiator session for inbound", "session", r.id, "peer", to, "error", err)
 			}
+			session = peerSession
 		}
 	}
 	if err != nil {
 		return "", fmt.Errorf("session %s: deliver: %w", r.id, err)
 	}
+	// The send advanced the ratchet and no observer fires for it: a restart
+	// that reads the old state would encrypt from a chain the peer has left.
+	if err := r.persistSession(to, session); err != nil {
+		r.logger.Warn("could not persist the session after sending", "session", r.id, "peer", to, "error", err)
+	}
+	// The own-device copy is what makes the send appear on the phone. It is
+	// best effort: the recipient's copy is already on the wire, and a phone
+	// this device has never heard from has no ratchet to ride.
+	r.sendOwnDeviceCopy(ctx, to, id, text)
 	return id, nil
+}
+
+// restoreSessions loads every persisted peer ratchet into the receiver and
+// the sender, so a restart continues the conversations the last process had
+// instead of re-initiating them (which spends a prekey and orphans the chain
+// the peer is answering on).
+func (r *sessionRuntime) restoreSessions() error {
+	if r.signals == nil {
+		return nil
+	}
+	stored, err := r.signals.loadAll(context.Background())
+	if err != nil {
+		return err
+	}
+	restored := 0
+	for peer, ps := range stored {
+		if err := r.receiver.SetReceiverPeer(peer, ps); err != nil {
+			return fmt.Errorf("install %s: %w", peer, err)
+		}
+		if err := r.sender.SetPeer(peer, ps); err != nil {
+			return fmt.Errorf("install %s: %w", peer, err)
+		}
+		restored++
+	}
+	if restored > 0 {
+		r.logger.Info("peer sessions restored", "session", r.id, "count", restored)
+	}
+	return nil
+}
+
+// persistSession writes one peer ratchet to the encrypted store.
+func (r *sessionRuntime) persistSession(peer string, ps *coremessaging.PeerSession) error {
+	if r.signals == nil || ps == nil || ps.State == nil {
+		return nil
+	}
+	return r.signals.save(context.Background(), peer, ps)
+}
+
+// phonePeerFor finds the stored peer that belongs to the phone: its JID user
+// matches the account's LID user, because the LID is account-scoped while the
+// device suffix differs per device. An empty result means the phone has never
+// written to this device, so no ratchet exists to carry the own-device copy.
+func phonePeerFor(ownLID string, peers []string) string {
+	if ownLID == "" {
+		return ""
+	}
+	want := jidUser(ownLID)
+	if want == "" {
+		return ""
+	}
+	for _, peer := range peers {
+		if jidUser(peer) == want {
+			return peer
+		}
+	}
+	return ""
+}
+
+// jidUser returns the user part of a JID, without the device or the server.
+func jidUser(jid string) string {
+	user := jid
+	if at := strings.Index(user, "@"); at >= 0 {
+		user = user[:at]
+	}
+	if colon := strings.Index(user, ":"); colon >= 0 {
+		user = user[:colon]
+	}
+	return user
+}
+
+// sendOwnDeviceCopy sends the DeviceSentMessage copy of a 1:1 send to the
+// phone, over the ratchet the phone's own messages bootstrapped. The copy
+// carries the recipient copy's id — one logical message, two ciphertexts —
+// so the phone renders one message in the destination chat as outgoing.
+//
+// A device that has never heard from the phone has no ratchet to ride, and the
+// server serves no bundle for the account's own devices: the copy is skipped,
+// not failed, and the recipient's copy has already gone out.
+func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id, text string) {
+	if r.signals == nil || r.ownLID == "" {
+		return
+	}
+	// A send to the account itself already reaches the phone as the
+	// recipient's copy; a second copy would show the same message twice in
+	// the self chat.
+	if jidUser(to) == jidUser(r.ownLID) {
+		return
+	}
+	peers, err := r.signals.peers(ctx)
+	if err != nil {
+		r.logger.Warn("could not list peers for the own-device copy", "session", r.id, "error", err)
+		return
+	}
+	phone := phonePeerFor(r.ownLID, peers)
+	if phone == "" {
+		r.logger.Debug("no phone session; own-device copy skipped", "session", r.id)
+		return
+	}
+	payload, err := stanza.EncodeDeviceSentMessage(to, text)
+	if err != nil {
+		r.logger.Warn("could not build the own-device copy", "session", r.id, "error", err)
+		return
+	}
+	copyID, session, err := r.sender.SendEncryptedPayloadWithID(ctx, phone, id, payload)
+	if err != nil {
+		r.logger.Warn("own-device copy failed", "session", r.id, "phone", phone, "error", err)
+		return
+	}
+	if err := r.persistSession(phone, session); err != nil {
+		r.logger.Warn("could not persist the phone session after the copy", "session", r.id, "error", err)
+	}
+	r.logger.Info("own-device copy sent", "session", r.id, "id", copyID, "phone", phone)
 }

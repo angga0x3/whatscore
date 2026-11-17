@@ -143,3 +143,40 @@ func TestEncryptedTextInvalid(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildEncryptedTextPeerAddressing pins the two shapes a device-qualified
+// destination has: refused by default (the server fans out to the account's
+// devices), and allowed when the caller means exactly one device — the
+// own-device copy and a retry receipt do. The second shape carries
+// device_fanout="false", because there is nothing left to fan out.
+func TestBuildEncryptedTextPeerAddressing(t *testing.T) {
+	deviceJID := JID{User: "266988689592415", Device: 39, Server: "lid"}
+	message := EncryptedText{ID: "P1", To: deviceJID, Carrier: CarrierMsg, Ciphertext: []byte{1, 2, 3}}
+
+	if _, err := BuildEncryptedText(message); !errors.Is(err, ErrInvalidMessage) {
+		t.Fatalf("device-qualified to accepted without Peer: %v", err)
+	}
+
+	message.Peer = true
+	node, err := BuildEncryptedText(message)
+	if err != nil {
+		t.Fatalf("peer-addressed build: %v", err)
+	}
+	if got := node.Attrs["to"]; got != "266988689592415:39@lid" {
+		t.Fatalf("to = %q", got)
+	}
+	if got := node.Attrs["device_fanout"]; got != "false" {
+		t.Fatalf("device_fanout = %q, want false", got)
+	}
+
+	// An account address is unaffected: no fan-out attribute is invented.
+	node, err = BuildEncryptedText(EncryptedText{
+		ID: "P2", To: JID{User: "628123", Server: UserServer}, Carrier: CarrierMsg, Ciphertext: []byte{1},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.Attrs["device_fanout"]; ok {
+		t.Fatal("account-addressed stanza carries device_fanout")
+	}
+}

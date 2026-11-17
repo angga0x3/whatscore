@@ -283,3 +283,33 @@ A real client must:
 | **Proving test** | `cmd/whatscore-probe` — `NewReceiver` defaults to `slog.DiscardHandler`, and the probe now passes a debug handler |
 | **Related findings** | PF-087 |
 | **Notes** | `core/messaging.NewReceiver` discards its logger by default, which is reasonable for a library and wrong for an operator-facing tool: `bad message MAC`, a missing prekey, and a malformed envelope all became the same observable — nothing. The probe now logs at debug level, and the listen path reports a closed connection as an error instead of waiting out the timeout and printing "window ended". Both changes exist because the first live receive attempt produced a log that could not distinguish success from silent failure. |
+
+## PF-090: Every 1:1 send is two plaintexts — the recipient's and the own-device copy
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-090 |
+| **Title** | A direct message is encrypted twice: once as the payload itself for the recipient, and once as `DeviceSentMessage{destinationJID, message}` for the account's other devices; the copy is what makes a linked device's send appear on the phone |
+| **Layer** | messaging |
+| **Source** | inferred — reference study of whatsmeow `send.go` `marshalMessage` and `encryptMessageForDevices` |
+| **Observed date** | 2026-11-16 |
+| **Confidence** | Probable |
+| **Status** | Implemented, not yet proven live |
+| **Proving test** | `TestEncodeDeviceSentMessageWrapsTheDestination`, `TestDecodePayloadUnwrapsDeviceSentMessage`, `TestReceiverPublishesOwnDeviceCopyInItsDestinationChat` |
+| **Related findings** | PF-083, PF-086 |
+| **Notes** | whatsmeow builds the copy for every non-group, non-newsletter send and selects it per device: devices of the sender's own account (matched by JID user, PN or LID) get the wrapped plaintext, everyone else gets the bare one. The wrapper is `Message.deviceSentMessage` (field 31) with `destinationJID` (1) and `message` (2). Receivers unwrap it before classifying content, and the chat is the destination — the sending device is the sender, not the chat. A retry of a message the account itself sent re-wraps it the same way (whatsmeow `retry.go`), which is why the unwrap belongs in the payload decoder rather than in one send path. The copy is addressed to one device, not to an account: its `to` is the phone's device-qualified JID and the stanza carries `device_fanout="false"`, because there is nothing left to fan out. Every other outbound message keeps the account-addressed shape and the server does the fan-out. Both the probe (`-send`) and the server (`DeliverText`) send the copy only when a session with the phone already exists: the server does not serve a bundle for the account's own devices, so without a bootstrapped ratchet there is nothing to encrypt to. This is why a note-to-self sent from a linked device reaches the phone but never echoes back to the sending device (2026-11-15 observation) — and why the phone must speak first for the copy to become possible. The copy shares the recipient copy's message id so the phone renders one message rather than two. |
+
+## PF-091: The msg carrier carries every payload kind, not just text
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-091 |
+| **Title** | After the first message a conversation continues with `type="msg"` carriers, and those carry the same protobuf `Message` kinds as `pkmsg`; a receive path that decodes text only drops every image, sticker and voice note |
+| **Layer** | messaging |
+| **Source** | inferred — the carrier only names how the session was established; the payload is opaque to it |
+| **Observed date** | 2026-11-16 |
+| **Confidence** | Confirmed by construction (both carriers hold the same protobuf) |
+| **Status** | Verified-by-test |
+| **Proving test** | `TestReceiverDecryptsMediaOnEstablishedSession` |
+| **Related findings** | PF-083, PF-089 |
+| **Notes** | The two receive paths had drifted: `pkmsg` classified the plaintext with `DecodePayload` (text, media, protocol), while `msg` called `DecodeTextMessage` and dropped anything without text as "no text payload". A sticker that arrived on a continued session therefore decrypted cleanly, advanced the ratchet, and produced no event — the same silent-loss shape as PF-088. Both paths now classify identically. |

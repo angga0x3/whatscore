@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	gosignal "os/signal"
 	"strconv"
@@ -86,20 +87,19 @@ func runSend(cfg sendConfig) error {
 	// or an immediate close, which would end the connection this send needs.
 	// The keys are managed by -listen, which owns the persistent key file.
 
-	// 2. Fetch the peer's bundle through the same loop, so an inbound message
-	//    arriving mid-fetch is not discarded.
+	// 2. Resolve the destination and restore what this device already knows.
+	//    A session the listener bootstrapped is the one this send must
+	//    continue: re-initiating would spend another one-time prekey and
+	//    orphan the chain the peer is already answering on.
 	peerJID, err := stanza.ParseJID(cfg.To)
 	if err != nil {
 		return fmt.Errorf("to %q: %w", cfg.To, err)
 	}
-	bundle, err := fetchPreKeyBundle(ctx, d, peerJID.String())
+	sessionsPath := sessionsPathFor(cfg.KeyPath)
+	sessions, err := loadSessionsFile(sessionsPath)
 	if err != nil {
-		return fmt.Errorf("prekey bundle for %s: %w", peerJID.String(), err)
+		return err
 	}
-	if err := signal.ParsePreKeyBundle(*bundle); err != nil {
-		return fmt.Errorf("peer bundle for %s does not verify: %w", peerJID.String(), err)
-	}
-	fmt.Printf("bundle: fetched and signature verified (signed prekey %d)\n", bundle.SignedPreKeyID)
 
 	// 3. Encrypt and send.
 	identityPair := signal.KeyPair{Private: record.IdentityPriv, Public: record.IdentityPub}
@@ -108,8 +108,33 @@ func runSend(cfg sendConfig) error {
 		return err
 	}
 	sender.SetIdentityPair(identityPair)
+	if n, err := sessions.installSender(sender); err != nil {
+		return err
+	} else if n > 0 {
+		fmt.Printf("sessions: %d restored from %s\n", n, sessionsPath)
+	}
 
-	id, session, err := sender.SendPreKeyTextWithBundle(ctx, peerJID.String(), cfg.Text, bundle, record.RegistrationID)
+	// The id is minted here, not inside the sender, because the own-device
+	// copy below must carry the same one: one logical message, two
+	// ciphertexts. A second id would make the phone show the send twice.
+	id, err := randomID()
+	if err != nil {
+		return err
+	}
+	id, session, err := sender.SendEncryptedTextWithID(ctx, peerJID.String(), id, cfg.Text)
+	if errors.Is(err, messaging.ErrNoSession) {
+		// First contact: the bundle is a server round trip through the same
+		// loop, so an inbound message arriving mid-fetch is not discarded.
+		bundle, fetchErr := fetchPreKeyBundle(ctx, d, peerJID.String())
+		if fetchErr != nil {
+			return fmt.Errorf("prekey bundle for %s: %w", peerJID.String(), fetchErr)
+		}
+		if verifyErr := signal.ParsePreKeyBundle(*bundle); verifyErr != nil {
+			return fmt.Errorf("peer bundle for %s does not verify: %w", peerJID.String(), verifyErr)
+		}
+		fmt.Printf("bundle: fetched and signature verified (signed prekey %d)\n", bundle.SignedPreKeyID)
+		id, session, err = sender.SendPreKeyTextWithBundleID(ctx, peerJID.String(), id, cfg.Text, bundle, record.RegistrationID)
+	}
 	if err != nil {
 		return fmt.Errorf("send: %w", err)
 	}
@@ -117,6 +142,27 @@ func runSend(cfg sendConfig) error {
 		return fmt.Errorf("send returned no session")
 	}
 	fmt.Printf("\nSENT: id=%s to=%s\n", id, peerJID.String())
+
+	// The ratchet moved. The receiver's observer never fires for a send, so a
+	// run that does not write the state here leaves the store one step behind
+	// and the next run encrypts from a chain the peer has already left.
+	if err := sessions.persist(sessionsPath, peerJID.String(), session); err != nil {
+		fmt.Printf("could not persist the %s session: %v\n", peerJID.String(), err)
+	}
+
+	// The own-device copy: whatsmeow's marshalMessage builds two plaintexts
+	// for every 1:1 send — the recipient copy above, and this one wrapped in
+	// DeviceSentMessage for the account's own devices. Without it the message
+	// delivers to the recipient but never appears on the sender's phone.
+	//
+	// A send to the account itself is the exception: the recipient copy is
+	// already addressed to our own devices, so a second copy would show the
+	// message twice in the self chat.
+	if jidUserFor(peerJID.String()) == jidUserFor(record.LID) {
+		fmt.Println("own-device copy skipped: the destination is this account")
+	} else if err := sendOwnDeviceCopy(ctx, frameWriter{sc: sc}, codec, sessions, sessionsPath, record, peerJID.String(), id, cfg.Text); err != nil {
+		fmt.Printf("own-device copy failed: %v\n", err)
+	}
 
 	// Writing the frame only proves the bytes left. The server answers with an
 	// ack, an error, or silence, and only the first two mean anything.

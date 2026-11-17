@@ -268,7 +268,7 @@ func runListen(cfg sendConfig) error {
 						// blocked collections" — the keys were missing when
 						// the first request went out; with them the patches
 						// verify. The re-request must not block the read loop.
-						go requestAppStateSync(ctx, d, sc, codec, record, source, &mu, appStateKeys, sender, sessions.Sessions)
+						go requestAppStateSync(ctx, d, sc, codec, record, source, &mu, appStateKeys, sender, sessions, sessionsPath)
 					}
 					if ev.Message.Protocol.HistorySync {
 						// The ack the phone's "keep both apps open" phase waits
@@ -348,7 +348,7 @@ func runListen(cfg sendConfig) error {
 	// pushes key shares as protocol messages. WhatsApp Web and Baileys request
 	// these right after login; skipping it leaves the phone in the "keep both
 	// apps open" phase indefinitely.
-	requestAppStateSync(ctx, d, sc, codec, record, source, &mu, appStateKeys, sender, sessions.Sessions)
+	requestAppStateSync(ctx, d, sc, codec, record, source, &mu, appStateKeys, sender, sessions, sessionsPath)
 
 	// whatsmeow marks the client available with a presence stanza right after
 	// login; without it the server keeps the device passive and every stanza
@@ -782,7 +782,7 @@ func sendHistSyncReceipt(ctx context.Context, sc noise.SecureConn, codec wabinar
 // requestAppStateSync fetches the app state patches for every collection.
 // A fresh device has no stored versions, so every collection asks for a
 // snapshot; mutations verify against the keys the phone shared.
-func requestAppStateSync(ctx context.Context, d *dispatcher, sc noise.SecureConn, codec wabinary.Codec, record *credentialRecord, source *preKeyStore, mu *sync.Mutex, appStateKeys map[string][]byte, sender *coremessaging.Sender, sessions map[string]storedSession) {
+func requestAppStateSync(ctx context.Context, d *dispatcher, sc noise.SecureConn, codec wabinary.Codec, record *credentialRecord, source *preKeyStore, mu *sync.Mutex, appStateKeys map[string][]byte, sender *coremessaging.Sender, sessions *sessionsFile, sessionsPath string) {
 	mu.Lock()
 	keyCount := len(appStateKeys)
 	mu.Unlock()
@@ -861,11 +861,11 @@ func requestAppStateSync(ctx context.Context, d *dispatcher, sc noise.SecureConn
 	// phone answers with an APP_STATE_SYNC_KEY_SHARE, whose storage already
 	// triggers a re-request of the pending patches.
 	if len(missing) > 0 && sender != nil {
-		phonePeer := phonePeerFor(record.LID, sessions)
+		phonePeer := phonePeerFor(record.LID, sessions.Sessions)
 		go func() {
 			reqCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
-			if err := sendAppStateKeyRequest(reqCtx, sender, phonePeer, missing); err != nil {
+			if err := sendAppStateKeyRequest(reqCtx, sender, sessions, sessionsPath, phonePeer, missing); err != nil {
 				fmt.Printf("app state key request failed: %v\n", err)
 			}
 		}()

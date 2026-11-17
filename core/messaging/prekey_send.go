@@ -47,7 +47,7 @@ func (s *Sender) SendPreKeyText(ctx context.Context, to, text string, registrati
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: bundle for %q: %w", peer, err)
 	}
-	return s.sendPreKeyTextWithBundle(ctx, jid, peer, text, registrationID, bundle)
+	return s.sendPreKeyTextWithBundle(ctx, jid, peer, "", text, registrationID, bundle)
 }
 
 // SendPreKeyTextWithBundle sends the first message using a bundle the caller
@@ -55,6 +55,13 @@ func (s *Sender) SendPreKeyText(ctx context.Context, to, text string, registrati
 // modes, so callers that manage the connection themselves fetch it and hand it
 // over rather than letting the sender do I/O it cannot retry.
 func (s *Sender) SendPreKeyTextWithBundle(ctx context.Context, to, text string, bundle *signal.PreKeyBundle, registrationID uint32) (string, *PeerSession, error) {
+	return s.SendPreKeyTextWithBundleID(ctx, to, "", text, bundle, registrationID)
+}
+
+// SendPreKeyTextWithBundleID is SendPreKeyTextWithBundle with a caller-chosen
+// id; an empty id generates one. The id is shared with the own-device copy of
+// the same send, so the phone renders one message instead of two.
+func (s *Sender) SendPreKeyTextWithBundleID(ctx context.Context, to, id, text string, bundle *signal.PreKeyBundle, registrationID uint32) (string, *PeerSession, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
@@ -65,11 +72,11 @@ func (s *Sender) SendPreKeyTextWithBundle(ctx context.Context, to, text string, 
 	if jid.User == "" {
 		return "", nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
 	}
-	return s.sendPreKeyTextWithBundle(ctx, jid, jid.String(), text, registrationID, bundle)
+	return s.sendPreKeyTextWithBundle(ctx, jid, jid.String(), id, text, registrationID, bundle)
 }
 
 // sendPreKeyTextWithBundle is the shared body of both public entry points.
-func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, peer, text string, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
+func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, peer, id, text string, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
 	if bundle == nil {
 		return "", nil, fmt.Errorf("%w: nil bundle for %q", ErrInvalidMessage, peer)
 	}
@@ -88,9 +95,11 @@ func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, p
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: initiate state: %w", err)
 	}
-	id, err := s.newID()
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+	if id == "" {
+		id, err = s.newID()
+		if err != nil {
+			return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+		}
 	}
 
 	// The plaintext inside <enc> is a protobuf Message, not the raw string:
@@ -111,6 +120,7 @@ func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, p
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
 		ID: id, To: jid, Carrier: stanza.CarrierPKMsg, Ciphertext: wire,
+		Peer: jid.Device > 0,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)

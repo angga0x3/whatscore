@@ -18,11 +18,13 @@ run.
 | Pairing stanza + keepalive | **supported** | pair-device decoded to 6 refs, ack accepted, keepalive pings decoded and answered (PF-069/PF-070) |
 | Pairing (QR → success) | **supported** | a phone scan produced a verified `pair-success`, `pair-device-sign` was accepted, and credentials were written (PF-075) |
 | Login with paired credentials | **supported** | reconnects with the login payload and the server answers `<success>` (PF-077, PF-078) |
-| Binary node encoding | **unknown** | no real token table ships (spec §10.2) |
+| Binary node encoding | **supported** | with a completed token table the live stanzas decode (PF-069, PF-087) |
 | Send a text message | **supported** | the server acknowledges a real message stanza and attaches a timestamp (PF-082, PF-083) |
-| Receive a text message | **partially proven** | the stanza arrives and decodes; decryption works in test with a valid key, but the live backlog is unreadable because the pairing run discarded its signed prekey (PF-085) |
-| Media upload/download | **untested** | needs pairing + an upload endpoint |
-| App-state sync | **untested** | needs pairing |
+| Receive a text message | **supported** | live queue drain: pkmsg bootstrap, decrypt, render, delivery receipt, ratchet persisted (PF-087) |
+| Receive media | **supported** | a phone-sent sticker decrypted, downloaded from the CDN, passed SHA-256, and landed as a 51 KB WebP (2026-11-16) |
+| Send media | **untested** | upload route exists; no live upload recorded |
+| Own-device copy of a send | **untested live** | implemented in the probe and the REST runtime (PF-090); the copy needs a session with the phone, and no live run has shown it on the phone yet |
+| App-state sync | **supported** | 11 key shares, 15 patches, 39/39 mutations verified and decoded live (2026-11-16) |
 
 ## Against the fake server (in-repo)
 

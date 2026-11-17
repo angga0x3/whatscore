@@ -31,6 +31,120 @@ func TestEncodeTextMessageIsConversation(t *testing.T) {
 	}
 }
 
+// TestEncodeDeviceSentMessageWrapsTheDestination pins the own-device shape:
+// field 31 carries a DeviceSentMessage whose destinationJID is the chat the
+// message belongs to and whose message is the same payload the recipient got.
+// A copy without the wrapper renders in the wrong chat — or nowhere.
+func TestEncodeDeviceSentMessageWrapsTheDestination(t *testing.T) {
+	raw, err := EncodeDeviceSentMessage("628123@s.whatsapp.net", "halo")
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var message protobuf.Message
+	if err := proto.Unmarshal(raw, &message); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	dsm := message.GetDeviceSentMessage()
+	if dsm == nil {
+		t.Fatal("deviceSentMessage missing")
+	}
+	if dsm.GetDestinationJID() != "628123@s.whatsapp.net" {
+		t.Fatalf("destinationJID = %q", dsm.GetDestinationJID())
+	}
+	if dsm.GetMessage().GetConversation() != "halo" {
+		t.Fatalf("inner conversation = %q", dsm.GetMessage().GetConversation())
+	}
+	// Field 31, wire type 2: 31<<3|2 = 250, encoded as 0xfa 0x01.
+	if len(raw) < 2 || raw[0] != 0xfa || raw[1] != 0x01 {
+		t.Fatalf("payload does not start with field 31: % x", raw[:min(4, len(raw))])
+	}
+}
+
+// TestEncodeDeviceSentMessageRejectsEmptyDestination fails closed: a copy with
+// no destination has no chat to appear in.
+func TestEncodeDeviceSentMessageRejectsEmptyDestination(t *testing.T) {
+	if _, err := EncodeDeviceSentMessage("", "halo"); err == nil {
+		t.Fatal("empty destination accepted")
+	}
+}
+
+// TestDecodePayloadUnwrapsDeviceSentMessage pins the receive side of the
+// own-device copy: the account's other devices get the wrapped form, so a
+// decoder that only reads the outer message sees nothing. The destination is
+// reported because the copy belongs to that chat, not to the sending device.
+func TestDecodePayloadUnwrapsDeviceSentMessage(t *testing.T) {
+	raw, err := EncodeDeviceSentMessage("628123@s.whatsapp.net", "dari hp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := DecodePayload(raw)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if payload.Kind != PayloadText || payload.Text != "dari hp" {
+		t.Fatalf("payload = %#v", payload)
+	}
+	if payload.Destination != "628123@s.whatsapp.net" {
+		t.Fatalf("destination = %q", payload.Destination)
+	}
+
+	// The text reader unwraps too, because it is the same decision.
+	if text, err := DecodeTextMessage(raw); err != nil || text != "dari hp" {
+		t.Fatalf("text = %q, %v", text, err)
+	}
+}
+
+// TestDecodePayloadReportsNoDestinationForPlainMessages keeps the two shapes
+// distinguishable: an unwrapped message names no chat because the sender is
+// the chat.
+func TestDecodePayloadReportsNoDestinationForPlainMessages(t *testing.T) {
+	raw, err := EncodeTextMessage("halo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := DecodePayload(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Destination != "" {
+		t.Fatalf("destination = %q, want empty", payload.Destination)
+	}
+}
+
+// TestDecodePayloadUnwrapsNestedCopies keeps the bounded loop honest: a copy
+// of a copy is still one message, and stopping at one level would surface an
+// empty outer message.
+func TestDecodePayloadUnwrapsNestedCopies(t *testing.T) {
+	inner, err := EncodeDeviceSentMessage("628123@s.whatsapp.net", "berlapis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wrapped protobuf.Message
+	if err := proto.Unmarshal(inner, &wrapped); err != nil {
+		t.Fatal(err)
+	}
+	outer, err := proto.Marshal(&protobuf.Message{
+		DeviceSentMessage: &protobuf.DeviceSentMessage{
+			DestinationJID: proto.String("628999@s.whatsapp.net"),
+			Message:        &wrapped,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := DecodePayload(outer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if payload.Text != "berlapis" {
+		t.Fatalf("text = %q", payload.Text)
+	}
+	// The outermost destination is the chat the copy was addressed to.
+	if payload.Destination != "628999@s.whatsapp.net" {
+		t.Fatalf("destination = %q", payload.Destination)
+	}
+}
+
 // TestDecodeTextMessageHandlesBothCarriers covers the two forms a text can
 // arrive in, because a peer chooses which to send.
 func TestDecodeTextMessageHandlesBothCarriers(t *testing.T) {

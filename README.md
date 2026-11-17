@@ -16,37 +16,54 @@
 pure Go. It owns its own protocol engine — transport, Noise, binary codec,
 pairing, Signal — plus an idiomatic **Go SDK** and a **self-hosted REST API**.
 
-The transport and Noise layers are verified against the live service. The rest
-is implemented, tested against a fake server, and honest about what it has not
-proven yet. No port of an existing library, no CGo, one static binary.
+The transport and Noise layers are verified against the live service, and so is
+the rest of the core path: pairing, login, sending, receiving, media receive,
+and app-state sync have all run against WhatsApp with a real phone. What has
+not been proven is named in [Status](#status) rather than implied. No port of an
+existing library, no CGo, one static binary.
 
 ## Status
 
-The protocol engine is real, and one part of it is proven against the live
-service: **transport and the Noise handshake complete against
-`wss://web.whatsapp.com/ws/chat`**, including certificate verification against
-the pinned root key (four out of four runs, reproducible with
-`go run ./cmd/whatscore-probe`).
-
-Everything after that handshake is still unproven against WhatsApp: binary
-encoding needs the token table, pairing needs a signature the project has not
-decided how to implement, and no message has been delivered.
+The protocol engine runs against the live service. A real phone has scanned a
+WhatsCore QR, the link completed, and the device has since logged in, sent, and
+received — with the caveat that every live run used a token table supplied by
+the operator, which this repository does not ship.
 
 | Layer | State |
 |-------|-------|
 | Transport + Noise | **Live-verified** (`PF-002…PF-009`) |
-| Binary codec | Implemented and fuzz-tested; needs the real token table |
-| Pairing | QR, stanzas, identity verification, credential vault; **signing undecided** (ADR 0001) |
-| Auth payloads | Registration + login implemented and unit-tested; not yet accepted live |
-| Signal | X3DH, ratchet, message crypto, prekey bootstrap, persistence — vector-tested |
-| Media | Envelope, streaming, range; orchestrated through the SDK |
-| App-state sync | Patch parse, mutation decode, LTHash, envelope MACs |
-| REST + SDK | Sessions, messages, media, webhooks, SSE; SDK send/receive encrypted |
+| Binary codec | Live-verified with an operator-supplied table; none ships (spec §10.2) |
+| Pairing | **Live-verified** — QR → `pair-success` → `pair-device-sign` → credentials (PF-073…PF-079) |
+| Auth payloads | **Live-verified** — registration and login accepted (PF-068, PF-077) |
+| Signal | **Live-verified** — pkmsg bootstrap, ratchet continuation, persistence (PF-065, PF-087) |
+| Media | **Receive live-verified** (a sticker decrypted, downloaded, verified); send untested |
+| App-state sync | **Live-verified** — 11 key shares, 15 patches, 39/39 mutations decoded |
+| REST + SDK | Implemented and tested against the fake server; not yet run live |
 
-Two things block live use, and neither is code: the **token table licence**
-(spec §10.2, validator ready in `cmd/tokendict`) and the **XEdDSA signer**
-(ADR 0001). Until both are settled this project makes no claim of working
-against WhatsApp — see [compatibility](docs/architecture/compatibility.md).
+Proven against the live service:
+
+- [x] WebSocket transport, intro header, frame reassembly
+- [x] Noise handshake, including certificate verification against the pinned root
+- [x] Pairing end to end: QR, `pair-success` verification, `pair-device-sign`, credentials
+- [x] Login with paired credentials
+- [x] Sending a text message, acknowledged by the server and delivered to the phone
+- [x] Receiving: offline queue drain, pkmsg bootstrap, decrypt, delivery receipts
+- [x] Receiving media: a sticker decrypted, downloaded, SHA-256 verified, written to disk
+- [x] App-state sync, history chunks acknowledged, provisioning banner released
+
+Not proven, and not claimed:
+
+- [ ] Media **send** — the upload route exists, no live upload recorded
+- [ ] The own-device copy of a send (`PF-090`) — implemented, not yet seen on the phone
+- [ ] The REST server and SDK against the live service (they are tested against the fake server)
+- [ ] Group messaging, sender keys, and newsletters beyond plaintext notifications
+
+Two things still gate a general-purpose deployment, and neither is protocol
+code: the **token table** is operator data (spec §10.2, validator in
+`cmd/tokendict`), and every live claim above was made with one supplied; the
+**XEdDSA signer** was a project decision (ADR 0001), now implemented and in
+use. See [compatibility](docs/architecture/compatibility.md) for the row-by-row
+state.
 
 ## Roadmap
 
@@ -54,37 +71,22 @@ against WhatsApp — see [compatibility](docs/architecture/compatibility.md).
 |-------|-----------|--------|
 | 0 | Foundation — skeleton, config, PostgreSQL, migrations, CI | **Complete** |
 | 1 | Transport & Noise | **Complete** — live handshake verified |
-| 2 | Binary protocol | **Complete** — token table external (licence pending) |
-| 3 | Pairing & authentication | **Blocked** on the signer decision (ADR 0001) |
-| 4 | Messaging (Signal) | **Complete** pending live interop |
+| 2 | Binary protocol | **Complete** — token table is operator data |
+| 3 | Pairing & authentication | **Complete** — live pairing and login verified |
+| 4 | Messaging (Signal) | **Complete** — live send and receive verified |
 | 5 | Public SDK | **Complete** pending live interop |
 | 6 | API server | **Complete** pending live interop |
-| 7 | Release v0.1.0 | **Blocked** on phases 3 and 2; v0.0.1 shipped instead |
+| 7 | Release v0.1.0 | **Next** — media send, own-device copy on the phone, live SDK interop |
 
-**v0.0.1 — released 2026-11-15.** A protocol foundation preview, not a working
-WhatsApp client. What it proves, and what it deliberately does not claim, is in
-[docs/releases/v0.0.1.md](docs/releases/v0.0.1.md).
-
-Proven against the live service:
-
-- [x] WebSocket transport, intro header, frame reassembly
-- [x] Noise handshake, including certificate verification against the pinned root
-- [x] Registration payload accepted; `pair-device` stanza decoded to 6 refs
-- [x] iq result accepted by the server
-
-Not proven, and not claimed:
-
-- [ ] Pairing completion — three reply token indices are unobserved
-- [ ] Binary encoding against real traffic beyond the pairing stanza
-- [ ] Message send/receive, media, app-state sync
+**v0.0.1 — released 2026-11-15.** A protocol foundation preview. Everything
+above landed after it and is recorded in the [changelog](CHANGELOG.md).
 
 ## SDK
 
 A first SDK facade exists in `core/client` (`github.com/angga0x3/whatscore/core/client`):
-connect, disconnect, state, events, credential access, plaintext text
-sending, inbound text events, and receipts. **End-to-end encryption is not wired yet** —
-the text frame is only protected by transport encryption when a Noise connector
-is installed; Signal lands next.
+connect, disconnect, state, events, credential access, plaintext and
+Signal-encrypted text sending, inbound text events, and receipts. It is tested
+against the fake server and has not been run against WhatsApp yet.
 
 **Current API:**
 
@@ -122,10 +124,12 @@ _ = c.Disconnect(ctx)
 A root-level `whatscore.NewClient` alias and the full target API land once the
 SDK shape freezes (Phase 5).
 
-## Quickstart (works today)
+## Quickstart
 
-Only the REST server foundation runs today. The protocol engine cannot connect
-to WhatsApp yet — see [Status](#status).
+The REST server runs against PostgreSQL. Pairing and messaging need an operator
+token table (spec §10.2) — the server starts without one, but a session cannot
+decode or encode WhatsApp frames until it is supplied. The live path so far is
+the probe, documented in [docs/pairing-manual.md](docs/pairing-manual.md).
 
 ```bash
 git clone https://github.com/angga0x3/whatscore.git

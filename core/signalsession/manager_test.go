@@ -40,7 +40,9 @@ func newManager(t *testing.T) (*Manager, *storecreds.MemoryBackend) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager, err := New(vault, "session-1")
+	manager, err := New(vault, "session-1", WithNotFound(func(err error) bool {
+		return errors.Is(err, storecreds.ErrNotFound)
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,5 +224,59 @@ func TestRecordParseRejects(t *testing.T) {
 	}
 	if _, err := (&Record{}).MarshalBinary(); !errors.Is(err, ErrInvalidRecord) {
 		t.Fatalf("nil state: %v", err)
+	}
+}
+
+// TestPeersListsSavedPeers pins the index that makes a restore possible: the
+// store cannot be enumerated, so a session that cannot ask "which peers do I
+// have?" starts every restart empty and loses every ratchet (PF-087).
+func TestPeersListsSavedPeers(t *testing.T) {
+	ctx := context.Background()
+	manager, _ := newManager(t)
+
+	peers, err := manager.Peers(ctx)
+	if err != nil {
+		t.Fatalf("empty Peers: %v", err)
+	}
+	if len(peers) != 0 {
+		t.Fatalf("peers = %v, want none", peers)
+	}
+
+	for _, peer := range []string{"a@s.whatsapp.net", "266988689592415:39@lid"} {
+		record := &Record{PeerIdentity: [signal.KeySize]byte{0x11}, State: testState(t)}
+		if err := manager.SaveRecord(ctx, peer, record); err != nil {
+			t.Fatalf("save %s: %v", peer, err)
+		}
+	}
+	// Saving the same peer twice must not duplicate it.
+	record := &Record{PeerIdentity: [signal.KeySize]byte{0x22}, State: testState(t)}
+	if err := manager.SaveRecord(ctx, "a@s.whatsapp.net", record); err != nil {
+		t.Fatal(err)
+	}
+
+	peers, err = manager.Peers(ctx)
+	if err != nil {
+		t.Fatalf("Peers: %v", err)
+	}
+	if len(peers) != 2 {
+		t.Fatalf("peers = %v, want 2 entries", peers)
+	}
+	if peers[0] != "a@s.whatsapp.net" || peers[1] != "266988689592415:39@lid" {
+		t.Fatalf("peers = %v, want insertion order", peers)
+	}
+}
+
+// TestPeersRejectsCorruptIndex keeps a damaged index loud: silently starting
+// empty would look exactly like a peer that never wrote.
+func TestPeersRejectsCorruptIndex(t *testing.T) {
+	ctx := context.Background()
+	manager, _ := newManager(t)
+	// The index is stored through the same encrypted store as the records, so
+	// a corrupt value has to be written the same way to be readable.
+	if err := manager.store.Put(ctx, "sessions/session-1/signal.index", []byte("not json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Peers(ctx); err == nil {
+		t.Fatal("corrupt index accepted")
 	}
 }

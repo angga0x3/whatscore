@@ -37,6 +37,16 @@ func (s *Sender) SetPeer(peer string, session *PeerSession) error {
 // It returns the message id and the updated session, which the caller must
 // persist before sending again.
 func (s *Sender) SendEncryptedText(ctx context.Context, to, text string) (string, *PeerSession, error) {
+	return s.SendEncryptedTextWithID(ctx, to, "", text)
+}
+
+// SendEncryptedTextWithID is SendEncryptedText with a caller-chosen id; an
+// empty id generates one.
+//
+// A shared id is what lets one logical message reach several devices: the
+// recipient copy and the own-device copy of a 1:1 send carry the same id, so
+// the phone shows one message rather than two, and receipts name one id.
+func (s *Sender) SendEncryptedTextWithID(ctx context.Context, to, id, text string) (string, *PeerSession, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
@@ -52,9 +62,11 @@ func (s *Sender) SendEncryptedText(ctx context.Context, to, text string) (string
 		return "", nil, ErrNoSession
 	}
 
-	id, err := s.newID()
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+	if id == "" {
+		id, err = s.newID()
+		if err != nil {
+			return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+		}
 	}
 	// The plaintext inside <enc> is a protobuf Message on both carriers (PF-083)
 	// — the msg carrier after a bootstrap carries it exactly like the pkmsg one
@@ -70,6 +82,7 @@ func (s *Sender) SendEncryptedText(ctx context.Context, to, text string) (string
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
 		ID: id, To: jid, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
+		Peer: jid.Device > 0,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
@@ -100,6 +113,17 @@ func (s *Sender) SetIdentityPair(pair signal.KeyPair) {
 // the server-driven protocol messages — the app state key request is one —
 // that ride the same session as text but carry no conversation field.
 func (s *Sender) SendEncryptedPayload(ctx context.Context, to string, payload []byte) (string, *PeerSession, error) {
+	return s.SendEncryptedPayloadWithID(ctx, to, "", payload)
+}
+
+// SendEncryptedPayloadWithID is SendEncryptedPayload with a caller-chosen id.
+// An empty id generates one.
+//
+// A shared id is what lets one logical message reach several devices: the
+// recipient copy and the own-device copy of a 1:1 send carry the same id, so
+// the phone's copy is the same message rather than a second one, and receipts
+// name one id instead of two.
+func (s *Sender) SendEncryptedPayloadWithID(ctx context.Context, to, id string, payload []byte) (string, *PeerSession, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
@@ -115,9 +139,11 @@ func (s *Sender) SendEncryptedPayload(ctx context.Context, to string, payload []
 		return "", nil, ErrNoSession
 	}
 
-	id, err := s.newID()
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+	if id == "" {
+		id, err = s.newID()
+		if err != nil {
+			return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
+		}
 	}
 	ciphertext, err := session.State.Encrypt(stanza.PadMessage(payload), s.identity, session.PeerIdentity)
 	if err != nil {
@@ -125,6 +151,7 @@ func (s *Sender) SendEncryptedPayload(ctx context.Context, to string, payload []
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
 		ID: id, To: jid, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
+		Peer: jid.Device > 0,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)

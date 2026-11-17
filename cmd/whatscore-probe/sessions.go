@@ -97,6 +97,50 @@ func (s *sessionsFile) record(peer string, session *coremessaging.PeerSession) e
 	return nil
 }
 
+// persist records one session and writes the store in the same step.
+//
+// The receiver's observer covers decrypts, but an outbound send advances the
+// ratchet too. A send that leaves the state on disk one step behind makes the
+// next run encrypt from a spent chain — the peer cannot open it, and the
+// message key is gone. Every outbound session the sender returns is written
+// here before the process can end.
+func (s *sessionsFile) persist(path, peer string, session *coremessaging.PeerSession) error {
+	if err := s.record(peer, session); err != nil {
+		return err
+	}
+	return s.save(path)
+}
+
+// installSender restores every stored session into a sender, for callers that
+// send but never receive. A session -listen bootstrapped is one -send must
+// continue: initiating a new prekey session instead would spend another
+// one-time prekey and orphan the chain the peer is already answering on.
+func (s *sessionsFile) installSender(sender *coremessaging.Sender) (int, error) {
+	if sender == nil {
+		return 0, fmt.Errorf("no sender to install sessions into")
+	}
+	installed := 0
+	for peer, rec := range s.Sessions {
+		raw, err := base64.StdEncoding.DecodeString(rec.State)
+		if err != nil {
+			return installed, fmt.Errorf("decode session for %s: %w", peer, err)
+		}
+		state := &signal.State{}
+		if err := state.UnmarshalBinary(raw); err != nil {
+			return installed, fmt.Errorf("restore session for %s: %w", peer, err)
+		}
+		var identity [32]byte
+		if len(rec.PeerIdentity) == len(identity) {
+			copy(identity[:], rec.PeerIdentity)
+		}
+		if err := sender.SetPeer(peer, &coremessaging.PeerSession{PeerIdentity: identity, State: state}); err != nil {
+			return installed, fmt.Errorf("install sender session for %s: %w", peer, err)
+		}
+		installed++
+	}
+	return installed, nil
+}
+
 // install registers every stored session with the receiver and the sender,
 // so a msg-carrier message from a peer this device has already bootstrapped
 // decrypts in this run instead of dying with "no peer session" — and an

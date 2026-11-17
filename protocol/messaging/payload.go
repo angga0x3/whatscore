@@ -35,7 +35,8 @@ func EncodeTextMessage(text string) ([]byte, error) {
 
 // DecodeTextMessage extracts the text from a decrypted application payload.
 // Both carriers a text can arrive in are handled: bare conversation, and
-// extendedTextMessage.text.
+// extendedTextMessage.text. A device-sent copy is unwrapped first: that is the
+// shape the account's own devices receive when another device sends.
 func DecodeTextMessage(raw []byte) (string, error) {
 	if len(raw) == 0 {
 		return "", fmt.Errorf("%w: empty payload", ErrInvalidMessagePayload)
@@ -44,10 +45,11 @@ func DecodeTextMessage(raw []byte) (string, error) {
 	if err := proto.Unmarshal(raw, &message); err != nil {
 		return "", fmt.Errorf("%w: unmarshaling: %w", ErrInvalidMessagePayload, err)
 	}
-	if text := message.GetConversation(); text != "" {
+	inner, _ := unwrapDeviceSent(&message)
+	if text := inner.GetConversation(); text != "" {
 		return text, nil
 	}
-	if text := message.GetExtendedTextMessage().GetText(); text != "" {
+	if text := inner.GetExtendedTextMessage().GetText(); text != "" {
 		return text, nil
 	}
 	return "", fmt.Errorf("%w: payload carries no text (unsupported message type)", ErrInvalidMessagePayload)
@@ -145,6 +147,11 @@ type Payload struct {
 	Text     string
 	Media    *MediaAttachment
 	Protocol *ProtocolInfo
+	// Destination is the chat a device-sent copy belongs to. The account's own
+	// devices receive the wrapped form, whose outer message carries no chat of
+	// its own; an empty Destination means the payload was not wrapped and the
+	// sender is the chat.
+	Destination string
 }
 
 // DecodePayload reads a decrypted application payload and classifies it: text
@@ -152,6 +159,10 @@ type Payload struct {
 // PayloadUnknown, not an error — the earlier "carries no text (unsupported
 // message type)" error conflated a full inbox of legitimate non-text content
 // with a failure.
+//
+// A device-sent copy is unwrapped first and its destinationJID reported, so a
+// message another of the account's devices sent lands in the chat it was
+// addressed to rather than in a chat with the sending device.
 func DecodePayload(raw []byte) (*Payload, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("%w: empty payload", ErrInvalidMessagePayload)
@@ -160,6 +171,14 @@ func DecodePayload(raw []byte) (*Payload, error) {
 	if err := proto.Unmarshal(raw, &message); err != nil {
 		return nil, fmt.Errorf("%w: unmarshaling: %w", ErrInvalidMessagePayload, err)
 	}
+	inner, destination := unwrapDeviceSent(&message)
+	payload := decodeInner(inner)
+	payload.Destination = destination
+	return payload, nil
+}
+
+// decodeInner classifies an already-unwrapped message.
+func decodeInner(message *protobuf.Message) *Payload {
 	switch {
 	case message.GetProtocolMessage() != nil:
 		pm := message.GetProtocolMessage()
@@ -177,34 +196,53 @@ func DecodePayload(raw []byte) (*Payload, error) {
 				info.AppKeys[hex.EncodeToString(key.GetKeyID().GetID())] = append([]byte(nil), key.GetKeyData().GetKeyData()...)
 			}
 		}
-		return &Payload{Kind: PayloadProtocol, Protocol: info}, nil
+		return &Payload{Kind: PayloadProtocol, Protocol: info}
 	case message.GetConversation() != "":
-		return &Payload{Kind: PayloadText, Text: message.GetConversation()}, nil
+		return &Payload{Kind: PayloadText, Text: message.GetConversation()}
 	case message.GetExtendedTextMessage() != nil:
-		return &Payload{Kind: PayloadText, Text: message.GetExtendedTextMessage().GetText()}, nil
+		return &Payload{Kind: PayloadText, Text: message.GetExtendedTextMessage().GetText()}
 	case message.GetImageMessage() != nil:
 		m := message.GetImageMessage()
 		return &Payload{Kind: PayloadImage, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), m.GetCaption(), "",
-			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeImage)}, nil
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeImage)}
 	case message.GetStickerMessage() != nil:
 		m := message.GetStickerMessage()
 		return &Payload{Kind: PayloadSticker, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), "", "",
-			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeImage)}, nil
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeImage)}
 	case message.GetVideoMessage() != nil:
 		m := message.GetVideoMessage()
 		return &Payload{Kind: PayloadVideo, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), m.GetCaption(), "",
-			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeVideo)}, nil
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeVideo)}
 	case message.GetAudioMessage() != nil:
 		m := message.GetAudioMessage()
 		return &Payload{Kind: PayloadAudio, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), "", "",
-			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeAudio)}, nil
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeAudio)}
 	case message.GetDocumentMessage() != nil:
 		m := message.GetDocumentMessage()
 		return &Payload{Kind: PayloadDocument, Media: mediaFrom(m.GetDirectPath(), m.GetMimetype(), "", m.GetFileName(),
-			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeDocument)}, nil
+			m.GetFileLength(), m.GetMediaKey(), m.GetFileSHA256(), m.GetFileEncSHA256(), m.GetMediaKeyTimestamp(), media.TypeDocument)}
 	default:
-		return &Payload{Kind: PayloadUnknown}, nil
+		return &Payload{Kind: PayloadUnknown}
 	}
+}
+
+// unwrapDeviceSent returns the message a device-sent wrapper carries and the
+// chat it belongs to. An unwrapped message returns itself and no destination.
+// Nested wrappers are unwrapped too: nothing forbids a copy of a copy, and
+// stopping at one level would surface an empty message.
+func unwrapDeviceSent(message *protobuf.Message) (*protobuf.Message, string) {
+	destination := ""
+	for depth := 0; depth < 8; depth++ {
+		dsm := message.GetDeviceSentMessage()
+		if dsm == nil || dsm.GetMessage() == nil {
+			return message, destination
+		}
+		if destination == "" {
+			destination = dsm.GetDestinationJID()
+		}
+		message = dsm.GetMessage()
+	}
+	return message, destination
 }
 
 func mediaFrom(directPath, mimetype, caption, fileName string, fileLength uint64,
@@ -221,4 +259,37 @@ func mediaFrom(directPath, mimetype, caption, fileName string, fileLength uint64
 		MediaKeyTimestamp: mediaKeyTimestamp,
 		KeysType:          keysType,
 	}
+}
+
+// EncodeDeviceSentMessage wraps a text message in the device-sent envelope
+// whatsmeow's marshalMessage builds for every 1:1 send: the sender encrypts
+// one copy for the recipient and one copy — this one — for the account's own
+// devices. Without the own copy the message delivers to the recipient but
+// never appears on the sender's phone.
+//
+// The copy carries the same message id as the recipient's copy: one logical
+// message, two ciphertexts. A different id would make the phone show the
+// message twice — once as sent, once as received from itself.
+func EncodeDeviceSentMessage(destJID, text string) ([]byte, error) {
+	return EncodeDeviceSentPayload(destJID, &protobuf.Message{
+		Conversation: proto.String(text),
+	})
+}
+
+// EncodeDeviceSentPayload wraps an already-built payload. Media and richer
+// messages use this: the wrapper's inner message is whatever the recipient
+// copy carries.
+func EncodeDeviceSentPayload(destJID string, message *protobuf.Message) ([]byte, error) {
+	if destJID == "" {
+		return nil, fmt.Errorf("%w: empty destination", ErrInvalidMessagePayload)
+	}
+	if message == nil {
+		return nil, fmt.Errorf("%w: empty message", ErrInvalidMessagePayload)
+	}
+	return proto.Marshal(&protobuf.Message{
+		DeviceSentMessage: &protobuf.DeviceSentMessage{
+			DestinationJID: proto.String(destJID),
+			Message:        message,
+		},
+	})
 }

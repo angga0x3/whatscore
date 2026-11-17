@@ -1,6 +1,7 @@
 # Roadmap — execution plan
 
-Status snapshot: Phase 0–2 complete; Phases 3–5 in progress. This file
+Status snapshot: Phases 0–4 complete and live-verified; phases 5–6 complete
+pending live interop; phase 7 is next. This file
 turns the phase table in the technical specification into workstreams with
 owners, file boundaries, acceptance criteria, and dependencies. It is updated
 as workstreams land.
@@ -9,16 +10,16 @@ as workstreams land.
 
 | Area | Done | Missing |
 |------|------|---------|
-| Transport | dial, framing, intro header, backoff/retry | live interop |
-| Noise | XX handshake, cert chain, secure conn, fake server | live interop |
-| Binary | node codec, vectors, fuzz, dictionary loader | real token table |
-| Pairing | QR payload, pair-device/pair-success, identity verification | device signature, manager wiring |
-| Auth | registration ClientPayload + DeviceProps | login payload, challenge handling |
-| Messaging | JID, text `<message>`, `<receipt>` | encrypted `<enc>` carrier (PF-034) |
-| Media | HKDF + CBC/HMAC byte envelope | streaming, sidecar hashes |
-| Storage | envelope, credential vault, PostgreSQL backend, `core/credentials` manager | Signal-addressed stores |
-| Core | event bus, session runtime, credentials, per-peer Signal store, encrypted send/receive + prekey bootstrap, media orchestration, contact/group caches | SQLite + SDK orchestration |
-| SDK / API | — | everything |
+| Transport | dial, framing, intro header, backoff/retry | **live-verified** |
+| Noise | XX handshake, cert chain, secure conn, fake server | **live-verified** |
+| Binary | node codec, vectors, fuzz, dictionary loader | live-verified with an operator table |
+| Pairing | QR payload, pair-device/pair-success, device signature, manager wiring | **live-verified** (PF-073…PF-079) |
+| Auth | registration ClientPayload + DeviceProps, login payload | **live-verified** (PF-068, PF-077) |
+| Messaging | JID, `<message>`, `<receipt>`, encrypted `<enc>` carriers, own-device copy | media send, groups, sender keys |
+| Media | HKDF + CBC/HMAC, streaming, sidecar hashes, CDN receive | media upload against the live service |
+| Storage | envelope, credential vault, PostgreSQL + SQLite backends, Signal-addressed stores | — |
+| Core | event bus, session runtime, credentials, per-peer Signal store, encrypted send/receive + prekey bootstrap, media orchestration, contact/group caches | live SDK orchestration |
+| SDK / API | facade, REST service, webhooks, SSE, media routes | live interop |
 
 ## Execution log
 
@@ -65,8 +66,17 @@ as workstreams land.
 | 2026-11-15 | Token policy | candidate-table validator + CLI, no table shipped |
 | 2026-11-15 | Engine | connect/auth/pairing orchestration; signing gap explicit |
 | 2026-11-15 | SDK media | SendMedia/ReceiveMedia over the existing Signal path |
+| 2026-11-16 | Live pairing + login | a phone scan completed the link; `pair-device-sign` accepted; login answers `<success>` (PF-075…PF-077) |
+| 2026-11-16 | Live send + receive | a text is acknowledged and delivered; the queue drains and pkmsg bootstraps decrypt (PF-083, PF-085, PF-087) |
+| 2026-11-16 | Live media receive | a phone-sent sticker decrypted, downloaded from the CDN, SHA-256 verified, stored (PF-089) |
+| 2026-11-16 | Live app-state sync | 11 key shares, 15 patches, 39/39 mutations decoded; history chunks ACK'd; provisioning banner released |
+| 2026-11-16 | Own-device copy | `DeviceSentMessage` built for the phone and unwrapped on receive (PF-090) |
+| 2026-11-16 | Send-path persistence | `-send` restores sessions and writes the advanced ratchet back |
+| 2026-11-16 | Media on msg carriers | both receive paths classify through `DecodePayload` (PF-091) |
+| 2026-11-16 | Server Signal persistence | ratchets restored and saved through the vault; restarts continue conversations instead of re-initiating |
+| 2026-11-16 | Server own-device copy | `DeliverText` sends the phone the wrapped copy under the recipient copy's id |
 
-Next: device-signature decision, credential manager, Signal/sync, SDK facade.
+Next: media send, the own-device copy observed on the phone, live SDK interop.
 
 ## Workstreams
 
@@ -157,13 +167,15 @@ is proven live is stated, and everything else is labelled untested.
 
 | Blocker | State | What changed |
 |---------|-------|--------------|
-| Token table (spec §10.2) | **Decided + now the single blocker** | ADR 0002 makes it operator data; PF-068 shows the server's reply cannot be decoded without it, so pairing stops here until a table is supplied |
-| XEdDSA signing (ADR 0001) | **Resolved** — implemented, validated against reference vectors | `internal/xeddsa` signs; vectors come from `go.mau.fi/libsignal v0.2.2`, and the verifier must accept them (PF-067) |
-| Auth acceptance live | **Resolved** (PF-068) | A registration payload with real keys is accepted and answered; the earlier 1006 close was caused by zero-filled test keys, not by the payload shape |
+| Token table (spec §10.2) | **Decided — operator data** | ADR 0002 makes it operator data; every live run so far used a supplied table, and nothing ships |
+| XEdDSA signing (ADR 0001) | **Resolved** — implemented, validated against reference vectors | `internal/xeddsa` signs; vectors come from `go.mau.fi/libsignal v0.2.2` (PF-067) |
+| Auth acceptance live | **Resolved** (PF-068) | A registration payload with real keys is accepted and answered; the earlier 1006 close was caused by zero-filled test keys |
+| Media send live | **Open** | The upload path is implemented and tested locally; no live upload has been recorded |
+| Own-device copy on the phone | **Open** | The copy is sent when a phone session exists (PF-090); not yet observed rendering on the phone |
 
-Nothing else in the stack is blocked: transport, Noise, Signal, media, sync,
-REST, and the SDK all have green tests and only need the three items above to
-become usable against the real service.
+Nothing else in the stack is blocked: transport, Noise, Signal, media receive,
+sync, REST, and the SDK all have green tests; the live rows above are the
+remaining interop work.
 
 ## Risks
 
@@ -171,7 +183,7 @@ become usable against the real service.
 |------|--------|------------|
 | XEdDSA signing is custom crypto | security, review load | decide before coding; no unaudited primitives |
 | Token table licensing | cannot decode real traffic | injected dictionary; keep the codec independent |
-| Live interop absent | compatibility claims unproven | keep findings Probable; no release claims |
+| Live interop partial | SDK/REST claims unproven live | keep the probe as the live harness; no release claims beyond the matrix |
 | Protocol drift | wire changes | dated findings, reopen instead of replace |
 | Parallel edits collide | broken tree | disjoint package boundaries; main session integrates |
 

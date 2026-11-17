@@ -56,7 +56,9 @@ func ParseRecord(raw []byte) (*Record, error) {
 	return record, nil
 }
 
-// SaveRecord encodes and stores the record for peer.
+// SaveRecord encodes and stores the record for peer, and adds the peer to the
+// index. The record goes first: an index entry without a record is dropped on
+// load, while a record without an index entry would be invisible.
 func (m *Manager) SaveRecord(ctx context.Context, peer string, record *Record) error {
 	key, err := m.key(peer)
 	if err != nil {
@@ -68,6 +70,12 @@ func (m *Manager) SaveRecord(ctx context.Context, peer string, record *Record) e
 	}
 	if err := m.store.Put(ctx, key, raw); err != nil {
 		return fmt.Errorf("core/signalsession: save %q: %w", peer, err)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.addPeer(ctx, peer); err != nil {
+		return err
 	}
 	return nil
 }

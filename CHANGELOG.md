@@ -7,6 +7,55 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- The REST send path now sends the own-device copy too: `DeliverText` builds
+  the `DeviceSentMessage` for the phone after the recipient's copy, under the
+  same message id, over the ratchet the phone's messages bootstrapped. The
+  copy is best effort — a device that has never heard from the phone has no
+  ratchet to ride, and the recipient's copy has already gone out.
+- The server persists Signal ratchets across restarts. Every session the
+  receiver installs or advances, and every ratchet a send advances, is written
+  to the credential vault through `core/signalsession`; `restoreSessions`
+  installs them before the first frame is read. Before this, every restart
+  re-initiated a prekey session and orphaned the chain the peer was answering
+  on — the server-side form of the PF-087 redelivery.
+- `core/signalsession.Manager.Peers` and the peer index it reads: the store
+  is a key/value vault with no enumeration, and a restore has to know which
+  peers exist. The index is written after each record, so an entry without a
+  record is skipped on load and a record is never invisible.
+- The own-device copy of a 1:1 send. whatsmeow's `marshalMessage` builds two
+  plaintexts for every direct message: the recipient's, and a
+  `DeviceSentMessage{destinationJID, message}` copy encrypted to the account's
+  other devices. `-send` now sends that second copy over the ratchet the
+  phone's messages bootstrapped, so a message this device sends appears on the
+  phone in the destination chat instead of nowhere. Without a stored session
+  with the phone the copy is skipped and reported: a bundle fetch for the own
+  account is not served, so there is nothing else to encrypt to. Not yet
+  proven live.
+- `DeviceSentMessage` in the message protobuf (field 31, `destinationJID` 1,
+  `message` 2), `EncodeDeviceSentMessage` to build the copy, and unwrapping on
+  the receive side. A decrypted copy is published in the chat its
+  `destinationJID` names, as outgoing, with the sending device as its sender —
+  the shape the account's other devices see for this device's sends.
+- Peer-addressed message stanzas: a device-qualified `to` is now legal when
+  the caller means exactly one device (the own-device copy, a retry), carries
+  `device_fanout="false"`, and is still refused for ordinary sends where the
+  server must fan out to the account's devices (PF-090).
+- `-send` restores the stored sessions before encrypting and writes the
+  advanced ratchet back after sending. The receiver's session observer covers
+  decrypts only, so the send path used to leave the store one step behind: the
+  next run encrypted from a chain the peer had already left, and every send
+  re-initiated a prekey session against a peer this device was already talking
+  to.
+
+### Fixed
+
+- Media arriving on an established session is published. The msg carrier —
+  every message after the first in a conversation — decoded text only, so an
+  image, sticker or voice note that decrypted cleanly was dropped as "no text
+  payload". Both carriers now classify through `DecodePayload`.
+
+### Added
+
 - `whatscore-probe -dump <frame.bin> -dict <table>` decodes one saved
   `undecoded/*.bin` frame. Holes in the table are filled with placeholders that
   name their slot (`¿s153`, `¿d0[56]`), so a frame the table almost covers still

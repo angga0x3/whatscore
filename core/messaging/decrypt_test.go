@@ -7,8 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/angga0x3/whatscore/core/events"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
+	"github.com/angga0x3/whatscore/protocol/protobuf"
 	"github.com/angga0x3/whatscore/protocol/signal"
 )
 
@@ -164,5 +167,120 @@ func TestReceiverEncryptedValidation(t *testing.T) {
 	}
 	if err := receiver.SetReceiverPeer("p", &PeerSession{}); err == nil {
 		t.Fatal("nil state must fail")
+	}
+}
+
+// TestReceiverDecryptsMediaOnEstablishedSession pins the msg-carrier half of
+// the media path: after the first message the ratchet continues with msg
+// carriers, and a sticker arriving that way used to decrypt and then vanish
+// because only text was decoded on that path.
+func TestReceiverDecryptsMediaOnEstablishedSession(t *testing.T) {
+	bus := events.NewBus()
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	alice, bob, aliceID, bobID := newDecryptFixture(t)
+	peer := "628123@s.whatsapp.net"
+	receiver, err := NewReceiver(bus, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver.SetReceiverIdentity(bobID)
+	if err := receiver.SetReceiverPeer(peer, &PeerSession{PeerIdentity: aliceID, State: bob}); err != nil {
+		t.Fatal(err)
+	}
+
+	sticker, err := proto.Marshal(&protobuf.Message{
+		StickerMessage: &protobuf.StickerMessage{
+			Url:           proto.String("https://mmg.whatsapp.net/x"),
+			DirectPath:    proto.String("/v/t62/x"),
+			Mimetype:      proto.String("image/webp"),
+			FileLength:    proto.Uint64(51_000),
+			MediaKey:      bytes.Repeat([]byte{0x07}, 32),
+			FileSHA256:    bytes.Repeat([]byte{0x08}, 32),
+			FileEncSHA256: bytes.Repeat([]byte{0x09}, 32),
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := alice.Encrypt(stanza.PadMessage(sticker), aliceID, bobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.HandleFrame(context.Background(), encryptedFrame(t, "M1", peer, ciphertext, stanza.CarrierMsg, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case ev := <-sub.C:
+		if ev.Message == nil || ev.Message.Media == nil {
+			t.Fatalf("message = %#v", ev.Message)
+		}
+		if ev.Message.Media.Kind != string(stanza.PayloadSticker) ||
+			ev.Message.Media.DirectPath != "/v/t62/x" || ev.Message.Media.FileLength != 51_000 {
+			t.Fatalf("media = %#v", ev.Message.Media)
+		}
+		if ev.Message.Chat != peer || ev.Message.Direction != events.DirectionIncoming {
+			t.Fatalf("chat = %q direction = %q", ev.Message.Chat, ev.Message.Direction)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event published")
+	}
+}
+
+// TestReceiverPublishesOwnDeviceCopyInItsDestinationChat pins the device-sent
+// copy: another device of this account sent the message, so it belongs to the
+// chat it names, as outgoing — not to a chat with the sending device.
+func TestReceiverPublishesOwnDeviceCopyInItsDestinationChat(t *testing.T) {
+	bus := events.NewBus()
+	defer bus.Close()
+	sub := bus.Subscribe()
+	defer sub.Close()
+
+	alice, bob, aliceID, bobID := newDecryptFixture(t)
+	phone := "266988689592415:39@lid"
+	destination := "628555@s.whatsapp.net"
+	receiver, err := NewReceiver(bus, "session-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receiver.SetReceiverIdentity(bobID)
+	if err := receiver.SetReceiverPeer(phone, &PeerSession{PeerIdentity: aliceID, State: bob}); err != nil {
+		t.Fatal(err)
+	}
+
+	wrapped, err := stanza.EncodeDeviceSentMessage(destination, "dari hp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := alice.Encrypt(stanza.PadMessage(wrapped), aliceID, bobID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := receiver.HandleFrame(context.Background(), encryptedFrame(t, "D1", phone, ciphertext, stanza.CarrierMsg, 0)); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case ev := <-sub.C:
+		if ev.Message == nil {
+			t.Fatalf("event = %#v", ev)
+		}
+		if ev.Message.Text != "dari hp" {
+			t.Fatalf("text = %q", ev.Message.Text)
+		}
+		if ev.Message.Chat != destination {
+			t.Fatalf("chat = %q, want %q", ev.Message.Chat, destination)
+		}
+		if ev.Message.Direction != events.DirectionOutgoing {
+			t.Fatalf("direction = %q, want outgoing", ev.Message.Direction)
+		}
+		if ev.Message.Sender != phone {
+			t.Fatalf("sender = %q, want the sending device", ev.Message.Sender)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event published")
 	}
 }

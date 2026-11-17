@@ -34,8 +34,20 @@ message Message {
   // Protocol messages: history sync notifications, ephemeral settings,
   // revocations. Field 12 per the reference proto.
   optional ProtocolMessage protocolMessage = 12;
+  // The device-sent wrapper: the copy a linked device sends to the account's
+  // own devices so the message appears on the phone. Field 31 per the
+  // reference proto.
+  optional DeviceSentMessage deviceSentMessage = 31;
   // Text with metadata; the plain text is in `text`.
   optional ExtendedTextMessage extendedTextMessage = 6;
+}
+
+// DeviceSentMessage wraps a message a companion device sent, so the account's
+// other devices render it in the destination chat as outgoing. Field numbers
+// per the reference proto.
+message DeviceSentMessage {
+  optional string destinationJID = 1;
+  optional Message message = 2;
 }
 
 // ProtocolMessage wraps the server-driven control messages. Only the

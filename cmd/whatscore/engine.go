@@ -308,11 +308,15 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	_, signedIdentity, err := f.loadAccountCredentials(ctx, id)
+	_, account, err := f.loadAccountCredentials(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, signedIdentity, f.media, f.bus, keys.appStatePath)
+	signals, err := newSignalStore(f.vault, id)
+	if err != nil {
+		return nil, fmt.Errorf("cmd/whatscore: session %s: signal store: %w", id, err)
+	}
+	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, account, f.media, f.bus, keys.appStatePath, signals)
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: runtime: %w", id, err)
 	}
@@ -434,25 +438,34 @@ func (f *sessionFactory) saveAccountCredentials(ctx context.Context, id string, 
 	return nil
 }
 
+// pairedAccount is what the account record contributes to a running session
+// beyond the login credentials: the device-identity blob the retry receipt
+// carries, and the account LID the own-device copy is addressed by.
+type pairedAccount struct {
+	SignedIdentity []byte
+	LID            string
+}
+
 // loadAccountCredentials returns the stored login credentials plus the
-// signed device-identity blob, or nils when the session has never paired.
-func (f *sessionFactory) loadAccountCredentials(ctx context.Context, id string) (*engine.Credentials, []byte, error) {
+// account metadata, or nils when the session has never paired.
+func (f *sessionFactory) loadAccountCredentials(ctx context.Context, id string) (*engine.Credentials, pairedAccount, error) {
 	blob, err := f.vault.Get(ctx, accountKey(id))
 	switch {
 	case err == nil:
 	case errors.Is(err, storagecredentials.ErrNotFound):
-		return nil, nil, nil
+		return nil, pairedAccount{}, nil
 	default:
-		return nil, nil, fmt.Errorf("cmd/whatscore: session %s: load account record: %w", id, err)
+		return nil, pairedAccount{}, fmt.Errorf("cmd/whatscore: session %s: load account record: %w", id, err)
 	}
 	var rec accountRecord
 	if err := json.Unmarshal(blob, &rec); err != nil {
-		return nil, nil, fmt.Errorf("cmd/whatscore: session %s: decode account record: %w", id, err)
+		return nil, pairedAccount{}, fmt.Errorf("cmd/whatscore: session %s: decode account record: %w", id, err)
 	}
 	if rec.Username == 0 {
-		return nil, nil, fmt.Errorf("%w: session %s account record has no username", ErrCredentialState, id)
+		return nil, pairedAccount{}, fmt.Errorf("%w: session %s account record has no username", ErrCredentialState, id)
 	}
-	return &engine.Credentials{Username: rec.Username, Device: rec.Device}, rec.SignedIdentity, nil
+	return &engine.Credentials{Username: rec.Username, Device: rec.Device},
+		pairedAccount{SignedIdentity: rec.SignedIdentity, LID: rec.LID}, nil
 }
 
 // sessionKeys is the engine-ready key material for one session.
