@@ -22,7 +22,7 @@ run.
 | Send a text message | **supported** | the server acknowledges a real message stanza and attaches a timestamp (PF-082, PF-083) |
 | Receive a text message | **supported** | live queue drain: pkmsg bootstrap, decrypt, render, delivery receipt, ratchet persisted (PF-087) |
 | Receive media | **supported** | a phone-sent sticker decrypted, downloaded from the CDN, passed SHA-256, and landed as a 51 KB WebP (2026-11-16) |
-| Send media | **untested** | upload route exists; no live upload recorded |
+| Send media | **untested live** | probe upload path implemented (PF-092); unit-tested request/payload shapes, no live upload recorded |
 | Own-device copy of a send | **untested live** | implemented in the probe and the REST runtime (PF-090); the copy needs a session with the phone, and no live run has shown it on the phone yet |
 | App-state sync | **supported** | 11 key shares, 15 patches, 39/39 mutations verified and decoded live (2026-11-16) |
 

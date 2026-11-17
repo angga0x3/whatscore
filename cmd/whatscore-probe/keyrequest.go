@@ -100,7 +100,7 @@ func jidUserFor(jid string) string {
 // wrapped message in the destination chat as outgoing, which is how a linked
 // device's send appears on the sender's phone. whatsmeow marshalMessage
 // builds this second plaintext for every 1:1 send.
-func sendOwnDeviceCopy(ctx context.Context, w coremessaging.FrameWriter, codec wabinary.Codec, sessions *sessionsFile, sessionsPath string, record *credentialRecord, destJID, messageID, text string) error {
+func sendOwnDeviceCopy(ctx context.Context, w coremessaging.FrameWriter, codec wabinary.Codec, sessions *sessionsFile, sessionsPath string, record *credentialRecord, destJID, messageID string, inner *protobuf.Message) error {
 	phonePeer := phonePeerFor(record.LID, sessions.Sessions)
 	if phonePeer == "" {
 		return fmt.Errorf("no session with the phone's device; the copy cannot ride an existing ratchet")
@@ -135,7 +135,7 @@ func sendOwnDeviceCopy(ctx context.Context, w coremessaging.FrameWriter, codec w
 	}); err != nil {
 		return err
 	}
-	payload, err := stanza.EncodeDeviceSentMessage(destJID, text)
+	payload, err := stanza.EncodeDeviceSentPayload(destJID, inner)
 	if err != nil {
 		return err
 	}

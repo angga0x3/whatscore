@@ -77,6 +77,30 @@ func (s *Sender) SendPreKeyTextWithBundleID(ctx context.Context, to, id, text st
 
 // sendPreKeyTextWithBundle is the shared body of both public entry points.
 func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, peer, id, text string, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
+	payload, err := stanza.EncodeTextMessage(text)
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
+	}
+	return s.SendPreKeyPayloadAs(ctx, jid.String(), id, stanza.MessageTypeText, payload, bundle, registrationID)
+}
+
+// SendPreKeyPayloadAs sends an arbitrary payload as the first message of a
+// session, over a pkmsg carrier. It is the first-contact half of
+// SendEncryptedPayloadAs: text uses it with the text class, an upload with
+// the media class.
+func (s *Sender) SendPreKeyPayloadAs(ctx context.Context, to, id, msgType string, payload []byte, bundle *signal.PreKeyBundle, registrationID uint32) (string, *PeerSession, error) {
+	jid, err := stanza.ParseJID(strings.TrimSpace(to))
+	if err != nil {
+		return "", nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
+	}
+	if jid.User == "" {
+		return "", nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
+	}
+	return s.sendPreKeyPayload(ctx, jid, id, msgType, payload, registrationID, bundle)
+}
+
+func (s *Sender) sendPreKeyPayload(ctx context.Context, jid stanza.JID, id, msgType string, payload []byte, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
+	peer := jid.String()
 	if bundle == nil {
 		return "", nil, fmt.Errorf("%w: nil bundle for %q", ErrInvalidMessage, peer)
 	}
@@ -102,11 +126,8 @@ func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, p
 		}
 	}
 
-	// The plaintext inside <enc> is a protobuf Message, not the raw string:
-	// that is what the receiving client parses and renders (PF-083).
-	payload, err := stanza.EncodeTextMessage(text)
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
+	if len(payload) == 0 {
+		return "", nil, fmt.Errorf("%w: empty payload", ErrInvalidMessage)
 	}
 	// Pad before encrypting (whatsmeow padMessage): a compliant receiver
 	// validates the padding and refuses unpadded plaintexts.
@@ -119,7 +140,7 @@ func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, p
 		return "", nil, fmt.Errorf("core/messaging: prekey message: %w", err)
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
-		ID: id, To: jid, Carrier: stanza.CarrierPKMsg, Ciphertext: wire,
+		ID: id, To: jid, Type: msgType, Carrier: stanza.CarrierPKMsg, Ciphertext: wire,
 		Peer: jid.Device > 0,
 	})
 	if err != nil {

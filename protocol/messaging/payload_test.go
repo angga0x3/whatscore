@@ -254,3 +254,103 @@ func TestUnpadRejectsUnpaddedPlaintext(t *testing.T) {
 		t.Fatal("unpadded plaintext accepted")
 	}
 }
+
+// mediaMessage is one complete, valid upload the media tests mutate.
+func mediaMessage() MediaMessage {
+	return MediaMessage{
+		Kind:          PayloadImage,
+		URL:           "https://mmg.whatsapp.net/x",
+		DirectPath:    "/v/t62/x",
+		MimeType:      "image/jpeg",
+		Caption:       "pantai",
+		FileSHA256:    bytes.Repeat([]byte{0x01}, 32),
+		FileEncSHA256: bytes.Repeat([]byte{0x02}, 32),
+		MediaKey:      bytes.Repeat([]byte{0x03}, 32),
+		FileLength:    1234,
+		Width:         800,
+		Height:        600,
+	}
+}
+
+// TestEncodeMediaMessageImage pins the image fields a recipient needs to
+// download and decrypt: location, digests, key, length and mimetype.
+func TestEncodeMediaMessageImage(t *testing.T) {
+	raw, err := EncodeMediaMessage(mediaMessage())
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var message protobuf.Message
+	if err := proto.Unmarshal(raw, &message); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	img := message.GetImageMessage()
+	if img == nil {
+		t.Fatal("imageMessage missing")
+	}
+	if img.GetUrl() != "https://mmg.whatsapp.net/x" || img.GetDirectPath() != "/v/t62/x" {
+		t.Fatalf("location = %q %q", img.GetUrl(), img.GetDirectPath())
+	}
+	if img.GetMimetype() != "image/jpeg" || img.GetCaption() != "pantai" {
+		t.Fatalf("mime/caption = %q %q", img.GetMimetype(), img.GetCaption())
+	}
+	if img.GetFileLength() != 1234 || img.GetWidth() != 800 || img.GetHeight() != 600 {
+		t.Fatalf("size = %d %dx%d", img.GetFileLength(), img.GetWidth(), img.GetHeight())
+	}
+	if !bytes.Equal(img.GetMediaKey(), bytes.Repeat([]byte{0x03}, 32)) {
+		t.Fatal("media key did not survive")
+	}
+	if !bytes.Equal(img.GetFileSHA256(), bytes.Repeat([]byte{0x01}, 32)) ||
+		!bytes.Equal(img.GetFileEncSHA256(), bytes.Repeat([]byte{0x02}, 32)) {
+		t.Fatal("digests did not survive")
+	}
+}
+
+// TestEncodeMediaMessageDocument pins the document fields: name and title are
+// what the recipient's client shows in a file bubble.
+func TestEncodeMediaMessageDocument(t *testing.T) {
+	m := mediaMessage()
+	m.Kind = PayloadDocument
+	m.MimeType = "application/pdf"
+	m.FileName = "laporan.pdf"
+	m.Title = "laporan"
+	m.Caption = ""
+	raw, err := EncodeMediaMessage(m)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var message protobuf.Message
+	if err := proto.Unmarshal(raw, &message); err != nil {
+		t.Fatal(err)
+	}
+	doc := message.GetDocumentMessage()
+	if doc == nil {
+		t.Fatal("documentMessage missing")
+	}
+	if doc.GetFileName() != "laporan.pdf" || doc.GetTitle() != "laporan" || doc.GetMimetype() != "application/pdf" {
+		t.Fatalf("document = %#v", doc)
+	}
+}
+
+// TestEncodeMediaMessageRejectsIncomplete fails closed on every field a
+// download or a decrypt needs.
+func TestEncodeMediaMessageRejectsIncomplete(t *testing.T) {
+	cases := map[string]func(*MediaMessage){
+		"kind":      func(m *MediaMessage) { m.Kind = PayloadText },
+		"url":       func(m *MediaMessage) { m.URL = "" },
+		"direct":    func(m *MediaMessage) { m.DirectPath = "" },
+		"mime":      func(m *MediaMessage) { m.MimeType = "" },
+		"key":       func(m *MediaMessage) { m.MediaKey = []byte{1} },
+		"file hash": func(m *MediaMessage) { m.FileSHA256 = nil },
+		"enc hash":  func(m *MediaMessage) { m.FileEncSHA256 = make([]byte, 31) },
+		"length":    func(m *MediaMessage) { m.FileLength = 0 },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			m := mediaMessage()
+			mutate(&m)
+			if _, err := EncodeMediaMessage(m); err == nil {
+				t.Fatal("incomplete media accepted")
+			}
+		})
+	}
+}

@@ -124,6 +124,14 @@ func (s *Sender) SendEncryptedPayload(ctx context.Context, to string, payload []
 // the phone's copy is the same message rather than a second one, and receipts
 // name one id instead of two.
 func (s *Sender) SendEncryptedPayloadWithID(ctx context.Context, to, id string, payload []byte) (string, *PeerSession, error) {
+	return s.SendEncryptedPayloadAs(ctx, to, id, stanza.MessageTypeText, payload)
+}
+
+// SendEncryptedPayloadAs is SendEncryptedPayloadWithID with an explicit
+// transport class: "text" for conversation payloads, "media" for the five
+// attachment kinds (PF-089). The class is what the live service stamps on the
+// stanza; the payload itself decides what a client renders.
+func (s *Sender) SendEncryptedPayloadAs(ctx context.Context, to, id, msgType string, payload []byte) (string, *PeerSession, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
@@ -150,7 +158,7 @@ func (s *Sender) SendEncryptedPayloadWithID(ctx context.Context, to, id string, 
 		return "", nil, fmt.Errorf("core/messaging: encrypt: %w", err)
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
-		ID: id, To: jid, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
+		ID: id, To: jid, Type: msgType, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
 		Peer: jid.Device > 0,
 	})
 	if err != nil {

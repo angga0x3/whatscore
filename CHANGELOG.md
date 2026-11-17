@@ -47,6 +47,23 @@ project is pre-1.0, so breaking changes happen in minor versions.
   re-initiated a prekey session against a peer this device was already talking
   to.
 
+### Added
+
+- `-send -file <path> [-mime …] [-caption …]` sends one image or document.
+  The file is encrypted with `core/media`, the encrypted blob is uploaded to
+  the CDN host the server names, and the message protobuf carries the upload's
+  URL/direct path plus the envelope's digests and key. The own-device copy
+  wraps the same inner message. Shapes come from reference study (PF-092); no
+  live upload has been recorded yet, so the CDN's acceptance is unproven.
+- `internal/mediaupload` posts one encrypted blob and parses the reply, with
+  the media connection query's answer in `ParseConn`. The request shape is
+  pinned against a real HTTP server: `/mms/{type}/{token}`, the URL-safe
+  base64 of the blob's SHA-256 as the token, `auth` in the query, and the web
+  origin on the request.
+- `EncodeMediaMessage` builds the image/document/video/audio/sticker protobuf
+  one upload fills, and `SendEncryptedPayloadAs`/`SendPreKeyPayloadAs` send an
+  arbitrary payload under an explicit stanza class (`text` or `media`).
+
 ### Fixed
 
 - App state sync keys are stored in the credential vault. The runtime wrote

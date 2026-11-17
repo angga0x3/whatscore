@@ -293,3 +293,156 @@ func EncodeDeviceSentPayload(destJID string, message *protobuf.Message) ([]byte,
 		},
 	})
 }
+
+// MediaMessage is one uploaded attachment as it travels in the message
+// protobuf: the CDN location, the digest and key the recipient verifies, and
+// the descriptive fields a client renders.
+//
+// The values come from two places and both are load-bearing: FileSHA256,
+// FileEncSHA256 and MediaKey from core/media's descriptor (the envelope), and
+// URL/DirectPath from the upload reply. Filling one from the other's source
+// produces a message the recipient downloads and cannot open.
+type MediaMessage struct {
+	Kind PayloadKind
+	// URL and DirectPath are the upload's transport hints.
+	URL        string
+	DirectPath string
+	MimeType   string
+	Caption    string
+	FileName   string
+	Title      string
+	// FileSHA256 is SHA-256 of the plaintext; FileEncSHA256 is SHA-256 of
+	// the encrypted blob as uploaded.
+	FileSHA256    []byte
+	FileEncSHA256 []byte
+	MediaKey      []byte
+	FileLength    uint64
+	Width         uint32
+	Height        uint32
+	Seconds       uint32
+	PTT           bool
+	IsAnimated    bool
+}
+
+// EncodeMediaMessage builds the protobuf Message one media kind carries.
+// Field numbers are the ones already declared from the reference proto.
+func EncodeMediaMessage(m MediaMessage) ([]byte, error) {
+	if err := m.validate(); err != nil {
+		return nil, err
+	}
+	message := &protobuf.Message{}
+	switch m.Kind {
+	case PayloadImage:
+		message.ImageMessage = &protobuf.ImageMessage{
+			Url:           proto.String(m.URL),
+			Mimetype:      proto.String(m.MimeType),
+			Caption:       optionalString(m.Caption),
+			FileSHA256:    append([]byte(nil), m.FileSHA256...),
+			FileLength:    proto.Uint64(m.FileLength),
+			Height:        optionalUint32(m.Height),
+			Width:         optionalUint32(m.Width),
+			MediaKey:      append([]byte(nil), m.MediaKey...),
+			FileEncSHA256: append([]byte(nil), m.FileEncSHA256...),
+			DirectPath:    proto.String(m.DirectPath),
+		}
+	case PayloadSticker:
+		message.StickerMessage = &protobuf.StickerMessage{
+			Url:           proto.String(m.URL),
+			FileSHA256:    append([]byte(nil), m.FileSHA256...),
+			FileEncSHA256: append([]byte(nil), m.FileEncSHA256...),
+			MediaKey:      append([]byte(nil), m.MediaKey...),
+			Mimetype:      proto.String(m.MimeType),
+			Height:        optionalUint32(m.Height),
+			Width:         optionalUint32(m.Width),
+			DirectPath:    proto.String(m.DirectPath),
+			FileLength:    proto.Uint64(m.FileLength),
+			IsAnimated:    proto.Bool(m.IsAnimated),
+		}
+	case PayloadVideo:
+		message.VideoMessage = &protobuf.VideoMessage{
+			Url:           proto.String(m.URL),
+			Mimetype:      proto.String(m.MimeType),
+			FileSHA256:    append([]byte(nil), m.FileSHA256...),
+			FileLength:    proto.Uint64(m.FileLength),
+			Seconds:       optionalUint32(m.Seconds),
+			MediaKey:      append([]byte(nil), m.MediaKey...),
+			Caption:       optionalString(m.Caption),
+			Height:        optionalUint32(m.Height),
+			Width:         optionalUint32(m.Width),
+			FileEncSHA256: append([]byte(nil), m.FileEncSHA256...),
+			DirectPath:    proto.String(m.DirectPath),
+		}
+	case PayloadAudio:
+		message.AudioMessage = &protobuf.AudioMessage{
+			Url:           proto.String(m.URL),
+			Mimetype:      proto.String(m.MimeType),
+			FileSHA256:    append([]byte(nil), m.FileSHA256...),
+			FileLength:    proto.Uint64(m.FileLength),
+			Seconds:       optionalUint32(m.Seconds),
+			Ptt:           proto.Bool(m.PTT),
+			MediaKey:      append([]byte(nil), m.MediaKey...),
+			FileEncSHA256: append([]byte(nil), m.FileEncSHA256...),
+			DirectPath:    proto.String(m.DirectPath),
+		}
+	case PayloadDocument:
+		message.DocumentMessage = &protobuf.DocumentMessage{
+			Url:           proto.String(m.URL),
+			Mimetype:      proto.String(m.MimeType),
+			Title:         proto.String(m.Title),
+			FileSHA256:    append([]byte(nil), m.FileSHA256...),
+			FileLength:    proto.Uint64(m.FileLength),
+			MediaKey:      append([]byte(nil), m.MediaKey...),
+			FileName:      proto.String(m.FileName),
+			FileEncSHA256: append([]byte(nil), m.FileEncSHA256...),
+			DirectPath:    proto.String(m.DirectPath),
+		}
+	}
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(message)
+	if err != nil {
+		return nil, fmt.Errorf("%w: marshaling: %w", ErrInvalidMessagePayload, err)
+	}
+	return raw, nil
+}
+
+// validate fails closed: a media message that names no blob, no key, or no
+// digest downloads into nothing and is not worth sending.
+func (m MediaMessage) validate() error {
+	switch m.Kind {
+	case PayloadImage, PayloadSticker, PayloadVideo, PayloadAudio, PayloadDocument:
+	default:
+		return fmt.Errorf("%w: media kind %q", ErrInvalidMessagePayload, m.Kind)
+	}
+	if m.URL == "" || m.DirectPath == "" {
+		return fmt.Errorf("%w: media has no url or direct path", ErrInvalidMessagePayload)
+	}
+	if m.MimeType == "" {
+		return fmt.Errorf("%w: media has no mimetype", ErrInvalidMessagePayload)
+	}
+	if len(m.MediaKey) != 32 {
+		return fmt.Errorf("%w: media key is %d bytes, want 32", ErrInvalidMessagePayload, len(m.MediaKey))
+	}
+	if len(m.FileSHA256) != 32 || len(m.FileEncSHA256) != 32 {
+		return fmt.Errorf("%w: media digests must be 32 bytes", ErrInvalidMessagePayload)
+	}
+	if m.FileLength == 0 {
+		return fmt.Errorf("%w: media has no length", ErrInvalidMessagePayload)
+	}
+	if m.Kind == PayloadAudio && m.PTT && m.Seconds == 0 {
+		return fmt.Errorf("%w: voice note has no duration", ErrInvalidMessagePayload)
+	}
+	return nil
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return proto.String(value)
+}
+
+func optionalUint32(value uint32) *uint32 {
+	if value == 0 {
+		return nil
+	}
+	return proto.Uint32(value)
+}

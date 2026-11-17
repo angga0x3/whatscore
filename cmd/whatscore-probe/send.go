@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/internal/waref"
 	"github.com/angga0x3/whatscore/protocol/auth"
@@ -20,13 +22,18 @@ import (
 	"github.com/angga0x3/whatscore/protocol/transport"
 )
 
-// sendConfig is one attempt to deliver a text message.
+// sendConfig is one attempt to deliver a message: text, or one media file.
 type sendConfig struct {
 	Endpoint string
 	CredPath string
 	DictPath string
 	To       string
 	Text     string
+	// FilePath turns the send into a media send: the file is encrypted,
+	// uploaded, and the message protobuf carries its CDN location.
+	FilePath string
+	MimeType string
+	Caption  string
 	Timeout  time.Duration
 	KeyPath  string
 	MediaDir string
@@ -114,6 +121,16 @@ func runSend(cfg sendConfig) error {
 		fmt.Printf("sessions: %d restored from %s\n", n, sessionsPath)
 	}
 
+	// The message itself: a text conversation, or one uploaded attachment.
+	inner, msgType, err := buildOutgoing(ctx, d, cfg)
+	if err != nil {
+		return err
+	}
+	payload, err := proto.Marshal(inner)
+	if err != nil {
+		return fmt.Errorf("marshal payload: %w", err)
+	}
+
 	// The id is minted here, not inside the sender, because the own-device
 	// copy below must carry the same one: one logical message, two
 	// ciphertexts. A second id would make the phone show the send twice.
@@ -121,7 +138,7 @@ func runSend(cfg sendConfig) error {
 	if err != nil {
 		return err
 	}
-	id, session, err := sender.SendEncryptedTextWithID(ctx, peerJID.String(), id, cfg.Text)
+	id, session, err := sender.SendEncryptedPayloadAs(ctx, peerJID.String(), id, msgType, payload)
 	if errors.Is(err, messaging.ErrNoSession) {
 		// First contact: the bundle is a server round trip through the same
 		// loop, so an inbound message arriving mid-fetch is not discarded.
@@ -133,7 +150,7 @@ func runSend(cfg sendConfig) error {
 			return fmt.Errorf("peer bundle for %s does not verify: %w", peerJID.String(), verifyErr)
 		}
 		fmt.Printf("bundle: fetched and signature verified (signed prekey %d)\n", bundle.SignedPreKeyID)
-		id, session, err = sender.SendPreKeyTextWithBundleID(ctx, peerJID.String(), id, cfg.Text, bundle, record.RegistrationID)
+		id, session, err = sender.SendPreKeyPayloadAs(ctx, peerJID.String(), id, msgType, payload, bundle, record.RegistrationID)
 	}
 	if err != nil {
 		return fmt.Errorf("send: %w", err)
@@ -160,7 +177,7 @@ func runSend(cfg sendConfig) error {
 	// message twice in the self chat.
 	if jidUserFor(peerJID.String()) == jidUserFor(record.LID) {
 		fmt.Println("own-device copy skipped: the destination is this account")
-	} else if err := sendOwnDeviceCopy(ctx, frameWriter{sc: sc}, codec, sessions, sessionsPath, record, peerJID.String(), id, cfg.Text); err != nil {
+	} else if err := sendOwnDeviceCopy(ctx, frameWriter{sc: sc}, codec, sessions, sessionsPath, record, peerJID.String(), id, inner); err != nil {
 		fmt.Printf("own-device copy failed: %v\n", err)
 	}
 
@@ -375,4 +392,21 @@ func nodeHasChildID(node *wabinary.Node, id string) bool {
 		}
 	}
 	return false
+}
+
+// buildOutgoing produces the protobuf Message a send carries and the stanza
+// class it travels under. Text is one conversation field; a file is one
+// uploaded attachment whose digests and key came from the envelope.
+func buildOutgoing(ctx context.Context, d *dispatcher, cfg sendConfig) (*protobuf.Message, string, error) {
+	if cfg.FilePath != "" {
+		message, err := buildMediaPayload(ctx, d, cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		return message, stanza.MessageTypeMedia, nil
+	}
+	if cfg.Text == "" {
+		return nil, "", fmt.Errorf("send needs -text or -file")
+	}
+	return &protobuf.Message{Conversation: proto.String(cfg.Text)}, stanza.MessageTypeText, nil
 }

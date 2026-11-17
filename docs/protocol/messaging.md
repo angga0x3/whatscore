@@ -313,3 +313,18 @@ A real client must:
 | **Proving test** | `TestReceiverDecryptsMediaOnEstablishedSession` |
 | **Related findings** | PF-083, PF-089 |
 | **Notes** | The two receive paths had drifted: `pkmsg` classified the plaintext with `DecodePayload` (text, media, protocol), while `msg` called `DecodeTextMessage` and dropped anything without text as "no text payload". A sticker that arrived on a continued session therefore decrypted cleanly, advanced the ratchet, and produced no event — the same silent-loss shape as PF-088. Both paths now classify identically. |
+
+## PF-092: Outbound media is an upload plus a message that names it
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-092 |
+| **Title** | Sending an attachment is two steps: POST the encrypted blob to the CDN host named by `<media_conn>`, then send a message whose protobuf names the resulting URL/direct path and the envelope's digests and key |
+| **Layer** | media |
+| **Source** | inferred — reference study of whatsmeow `upload.go`, `mediaconn.go`; envelope from PF-040…PF-045 |
+| **Observed date** | 2026-11-17 |
+| **Confidence** | Probable |
+| **Status** | Implemented, not yet proven live |
+| **Proving test** | `internal/mediaupload` (request shape, media connection parse), `TestEncodeMediaMessageImage`, `TestEncodeMediaMessageDocument`, `TestEncodeMediaMessageRejectsIncomplete` |
+| **Related findings** | PF-040, PF-043, PF-045, PF-089 |
+| **Notes** | The media connection is an iq with `xmlns="w:m"`, `type="set"`, `to="s.whatsapp.net"` and a `<media_conn/>` child; the reply carries `auth`, `ttl` and a list of `<host hostname="…"/>`. The upload is `POST https://{host}/mms/{type}/{token}?auth=…&token=…`, where the token is the URL-safe base64 of the encrypted blob's SHA-256, the body is the blob exactly as `core/media` produced it (ciphertext ‖ MAC), and `Origin`/`Referer` name the web client. The reply names `url` and `direct_path`. The message then carries `fileSHA256` (plaintext), `fileEncSHA256` (blob as uploaded), `mediaKey`, `fileLength`, the MIME type and the location; the stanza's type attr is `media` (PF-089). The probe sends images and documents (`-send -file …`) and wraps the same inner message for the own-device copy (PF-090). Not yet proven: whether the CDN accepts this request from this client and whether the phone renders the result — no live upload has been recorded. |

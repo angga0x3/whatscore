@@ -9,7 +9,9 @@ import (
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	wabinary "github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
+	"github.com/angga0x3/whatscore/protocol/protobuf"
 	"github.com/angga0x3/whatscore/protocol/signal"
+	"google.golang.org/protobuf/proto"
 )
 
 // captureWriter keeps the frames a send produced, so a test can decode what
@@ -69,7 +71,7 @@ func TestSendOwnDeviceCopyWrapsForThePhoneAndPersists(t *testing.T) {
 
 	writer := &captureWriter{}
 	codec := wabinary.NewCodec(nil)
-	if err := sendOwnDeviceCopy(context.Background(), writer, codec, store, sessionsPath, record, "628555@s.whatsapp.net", "MSGID1", "halo dari web"); err != nil {
+	if err := sendOwnDeviceCopy(context.Background(), writer, codec, store, sessionsPath, record, "628555@s.whatsapp.net", "MSGID1", textInner("halo dari web")); err != nil {
 		t.Fatalf("sendOwnDeviceCopy: %v", err)
 	}
 
@@ -115,7 +117,7 @@ func TestSendOwnDeviceCopyReportsMissingPhoneSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := &credentialRecord{LID: "266988689592415:39@lid"}
-	if err := sendOwnDeviceCopy(context.Background(), &captureWriter{}, wabinary.NewCodec(nil), store, sessionsPath, record, "628555@s.whatsapp.net", "MSGID2", "halo"); err == nil {
+	if err := sendOwnDeviceCopy(context.Background(), &captureWriter{}, wabinary.NewCodec(nil), store, sessionsPath, record, "628555@s.whatsapp.net", "MSGID2", textInner("halo")); err == nil {
 		t.Fatal("copy sent without a phone session")
 	}
 }
@@ -144,7 +146,7 @@ func TestSendOwnDeviceCopyPlaintextNamesTheDestination(t *testing.T) {
 
 	writer := &captureWriter{}
 	codec := wabinary.NewCodec(nil)
-	if err := sendOwnDeviceCopy(context.Background(), writer, codec, store, sessionsPath, record, "628555@s.whatsapp.net", "MSGID3", "isi pesan"); err != nil {
+	if err := sendOwnDeviceCopy(context.Background(), writer, codec, store, sessionsPath, record, "628555@s.whatsapp.net", "MSGID3", textInner("isi pesan")); err != nil {
 		t.Fatal(err)
 	}
 	node, err := codec.Decode(bytes.NewReader(writer.frames[0]))
@@ -228,6 +230,11 @@ func newCopyFixture(t *testing.T) (session *coremessaging.PeerSession, phone *si
 	}
 	phone = signal.NewResponder(keys.RootKey, signed.Pair, keys.ChainKey)
 	return &coremessaging.PeerSession{PeerIdentity: phonePair.Public, State: ourState}, phone, identity, phonePair.Public
+}
+
+// textInner is the payload a text send carries, as a message the copy wraps.
+func textInner(text string) *protobuf.Message {
+	return &protobuf.Message{Conversation: proto.String(text)}
 }
 
 var _ = coremessaging.ErrNoSession

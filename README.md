@@ -36,7 +36,7 @@ the operator, which this repository does not ship.
 | Pairing | **Live-verified** — QR → `pair-success` → `pair-device-sign` → credentials (PF-073…PF-079) |
 | Auth payloads | **Live-verified** — registration and login accepted (PF-068, PF-077) |
 | Signal | **Live-verified** — pkmsg bootstrap, ratchet continuation, persistence (PF-065, PF-087) |
-| Media | **Receive live-verified** (a sticker decrypted, downloaded, verified); send untested |
+| Media | **Receive live-verified**; send implemented in the probe, not yet live |
 | App-state sync | **Live-verified** — 11 key shares, 15 patches, 39/39 mutations decoded |
 | REST + SDK | Implemented and tested against the fake server; not yet run live |
 
@@ -53,7 +53,7 @@ Proven against the live service:
 
 Not proven, and not claimed:
 
-- [ ] Media **send** — the upload route exists, no live upload recorded
+- [ ] Media **send** — implemented in the probe, no live upload recorded
 - [ ] The own-device copy of a send (`PF-090`) — implemented, not yet seen on the phone
 - [ ] The REST server and SDK against the live service (they are tested against the fake server)
 - [ ] Group messaging, sender keys, and newsletters beyond plaintext notifications

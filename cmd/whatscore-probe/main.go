@@ -69,9 +69,12 @@ func main() {
 	loginFlag := flag.Bool("login", false, "log in with credentials a previous -pair run wrote")
 	credPath := flag.String("creds", "", "credentials file for -login (the -out file from -pair)")
 	loginDict := flag.String("login-dict", "", "token table for -login (defaults to -dict)")
-	sendFlag := flag.Bool("send", false, "send one text message using credentials a previous -pair run wrote")
+	sendFlag := flag.Bool("send", false, "send one message using credentials a previous -pair run wrote")
 	sendTo := flag.String("to", "", "recipient JID for -send")
 	sendText := flag.String("text", "", "message body for -send")
+	sendFile := flag.String("file", "", "file to send as media with -send (encrypted, uploaded, then messaged)")
+	sendMime := flag.String("mime", "", "MIME type for -file (default: from the extension)")
+	sendCaption := flag.String("caption", "", "caption for -file")
 	listenFlag := flag.Bool("listen", false, "log in, publish prekeys, and decrypt inbound messages")
 	keyPath := flag.String("keys", "", "key file for -listen (default: <creds>.keys.json)")
 	mediaDir := flag.String("media", "media", "directory inbound media is written to")
@@ -119,6 +122,9 @@ func main() {
 			DictPath: *pairDict,
 			To:       *sendTo,
 			Text:     *sendText,
+			FilePath: *sendFile,
+			MimeType: *sendMime,
+			Caption:  *sendCaption,
 			Timeout:  *timeout,
 		})
 		if err != nil {
