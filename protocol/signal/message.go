@@ -126,7 +126,8 @@ func DecryptMessage(wire []byte, keys MessageKeys, sender, receiver [KeySize]byt
 	if err != nil {
 		return nil, err
 	}
-	return decryptParsed(message, keys, sender, receiver)
+	plaintext, err := decryptParsed(message, keys, sender, receiver)
+	return plaintext, err
 }
 
 func decryptParsed(message *Message, keys MessageKeys, sender, receiver [KeySize]byte) ([]byte, error) {

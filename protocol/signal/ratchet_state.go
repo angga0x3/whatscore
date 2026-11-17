@@ -48,6 +48,48 @@ type State struct {
 
 	receiverChains map[[KeySize]byte]*receiverChain
 	skipped        map[skippedKey]MessageKeys
+	pendingPreKey  *PendingPreKey
+}
+
+// PendingPreKey is the bootstrap envelope repeated until an authenticated
+// reply proves the remote device has installed this session. A server ACK
+// does not confirm the remote Signal session.
+type PendingPreKey struct {
+	RegistrationID uint32
+	SignedPreKeyID uint32
+	PreKeyID       uint32
+	BaseKey        [KeySize]byte
+}
+
+// SetPendingPreKey retains the public bootstrap metadata for subsequent sends.
+func (s *State) SetPendingPreKey(p PendingPreKey) { s.pendingPreKey = &p }
+
+// HasPendingPreKey reports whether sends still require the bootstrap envelope.
+func (s *State) HasPendingPreKey() bool { return s.pendingPreKey != nil }
+
+// HasReceived reports whether this session has authenticated an inbound chain.
+func (s *State) HasReceived() bool {
+	for _, chain := range s.receiverChains {
+		if chain.index > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// WrapPendingPreKey wraps a newly encrypted SignalMessage without changing its
+// counter. Repeating this metadata lets a device recover if earlier sends were
+// lost; the ciphertext and message key remain different on every send.
+func (s *State) WrapPendingPreKey(wire []byte, identity [KeySize]byte) ([]byte, bool, error) {
+	if s.pendingPreKey == nil {
+		return wire, false, nil
+	}
+	p := s.pendingPreKey
+	wrapped, err := BuildPreKeyMessage(PreKeyMessage{
+		RegistrationID: p.RegistrationID, SignedPreKeyID: p.SignedPreKeyID,
+		PreKeyID: p.PreKeyID, BaseKey: p.BaseKey, IdentityKey: identity, Message: wire,
+	})
+	return wrapped, true, err
 }
 
 // NewInitiator initializes the Alice side for ProcessBundle semantics
