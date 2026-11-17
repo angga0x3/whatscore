@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/angga0x3/whatscore/core/mediaout"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
 )
 
@@ -20,18 +21,18 @@ func TestMediaKindFor(t *testing.T) {
 		"application/vnd.ms-excel": stanza.PayloadDocument,
 	}
 	for mimeType, want := range cases {
-		kind, keyType, err := mediaKindFor(mimeType)
+		kind, keyType, err := mediaout.KindFor(mimeType)
 		if err != nil {
-			t.Fatalf("mediaKindFor(%q): %v", mimeType, err)
+			t.Fatalf("mediaout.KindFor(%q): %v", mimeType, err)
 		}
 		if kind != want {
-			t.Fatalf("mediaKindFor(%q) = %q, want %q", mimeType, kind, want)
+			t.Fatalf("mediaout.KindFor(%q) = %q, want %q", mimeType, kind, want)
 		}
 		if keyType == "" {
-			t.Fatalf("mediaKindFor(%q) returned no key type", mimeType)
+			t.Fatalf("mediaout.KindFor(%q) returned no key type", mimeType)
 		}
 	}
-	if _, _, err := mediaKindFor("video/mp4"); err == nil {
+	if _, _, err := mediaout.KindFor("video/mp4"); err == nil {
 		t.Fatal("video accepted without a probe flag for it")
 	}
 }

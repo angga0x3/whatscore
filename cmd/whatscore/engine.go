@@ -224,6 +224,15 @@ func (f *sessionFactory) setRuntime(id string, rt *sessionRuntime) {
 	f.mu.Unlock()
 }
 
+// deliverMedia implements the REST attachment-delivery boundary.
+func (f *sessionFactory) deliverMedia(ctx context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error) {
+	rt := f.runtimeFor(sessionID)
+	if rt == nil {
+		return "", fmt.Errorf("cmd/whatscore: session %s is not running", sessionID)
+	}
+	return rt.DeliverMedia(ctx, to, fileName, mimeType, caption, data)
+}
+
 // deliverText implements the REST text-delivery boundary.
 func (f *sessionFactory) deliverText(ctx context.Context, sessionID, to, text string) (string, error) {
 	rt := f.runtimeFor(sessionID)

@@ -49,6 +49,17 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- The REST media routes deliver. `POST /sessions/{id}/messages/image` and
+  `/document` now encrypt, upload to the CDN and send over the session
+  connection when the server runs, under the same media class the probe uses;
+  the response reports `status: "sent"` and the wire id, and the stored
+  record is keyed by it so receipts correlate. Without a deliverer the route
+  keeps its record-only behavior. A failed upload or send answers 502 and
+  stores nothing.
+- `core/mediaout` is the shared attachment pipeline both callers use: encrypt
+  with `core/media`, fetch the media connection through a caller-supplied
+  function, upload, and build the message protobuf. The probe and the server
+  now differ only in how they reach the server, not in the shape they send.
 - `-send -file <path> [-mime …] [-caption …]` sends one image or document.
   The file is encrypted with `core/media`, the encrypted blob is uploaded to
   the CDN host the server names, and the message protobuf carries the upload's

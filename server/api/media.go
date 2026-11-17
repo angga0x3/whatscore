@@ -332,6 +332,7 @@ func (s *MemoryMediaStore) evictOldestLocked(sessionID string) bool {
 // core/media key; every read shape omits it.
 type queuedMedia struct {
 	MessageID string `json:"message_id"`
+	WireID    string `json:"wire_id,omitempty"`
 	MediaID   string `json:"media_id"`
 	Status    string `json:"status"`
 	Size      int    `json:"size"`
@@ -369,6 +370,14 @@ func (h *Handler) sendDocument(w http.ResponseWriter, r *http.Request) {
 	h.sendMedia(w, r, MediaKindDocument)
 }
 
+// MediaDeliverer is the optional send boundary for attachments: when set, an
+// upload is delivered over the session connection and the route reports the
+// wire id; when nil, the route stores the encrypted blob and answers
+// "queued" (the pre-delivery behavior).
+type MediaDeliverer interface {
+	DeliverMedia(ctx context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error)
+}
+
 // sendMedia implements both upload routes. The session checks run before the
 // body is parsed so 404/503 are not masked by a malformed body.
 func (h *Handler) sendMedia(w http.ResponseWriter, r *http.Request, kind string) {
@@ -390,6 +399,21 @@ func (h *Handler) sendMedia(w http.ResponseWriter, r *http.Request, kind string)
 	upload, ok := h.readMediaUpload(w, r, kind)
 	if !ok {
 		return
+	}
+
+	// Delivery happens first: the stored id IS the wire id, so receipts and
+	// events correlate with the REST entry. Without a deliverer the route
+	// keeps its record-only behavior.
+	status := "queued"
+	wireID := ""
+	if h.mediaDeliverer != nil {
+		id, err := h.mediaDeliverer.DeliverMedia(r.Context(), sessionID, upload.to, upload.fileName, upload.mimeType, upload.caption, upload.payload)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, "delivery_failed", err.Error())
+			return
+		}
+		wireID = id
+		status = "sent"
 	}
 
 	descriptor, blob, err := media.Encrypt(upload.payload, mediaTypeFor(kind), upload.fileName)
@@ -414,6 +438,9 @@ func (h *Handler) sendMedia(w http.ResponseWriter, r *http.Request, kind string)
 		return
 	}
 
+	if wireID != "" {
+		messageID = wireID
+	}
 	attachment := MediaAttachment{
 		ID:        mediaID,
 		SessionID: sessionID,
@@ -434,8 +461,9 @@ func (h *Handler) sendMedia(w http.ResponseWriter, r *http.Request, kind string)
 
 	writeJSON(w, http.StatusAccepted, queuedMedia{
 		MessageID: attachment.MessageID,
+		WireID:    wireID,
 		MediaID:   attachment.ID,
-		Status:    "queued",
+		Status:    status,
 		Size:      attachment.Size,
 		SHA256:    attachment.SHA256,
 		MediaKey:  attachment.MediaKey,

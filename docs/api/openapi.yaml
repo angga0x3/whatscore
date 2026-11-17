@@ -315,13 +315,19 @@ paths:
               $ref: "#/components/schemas/SendImageRequest"
       responses:
         "202":
-          description: Message queued
+          description: Attachment recorded and, when an attachment deliverer is configured, uploaded and sent over the session connection (status SENT, wire_id set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
         "400":
           $ref: "#/components/responses/ValidationError"
+        "502":
+          description: Delivery failed (upload or send); nothing was recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/sessions/{sessionId}/messages/document:
     parameters:
@@ -340,13 +346,19 @@ paths:
               $ref: "#/components/schemas/SendDocumentRequest"
       responses:
         "202":
-          description: Message queued
+          description: Document recorded and, when an attachment deliverer is configured, uploaded and sent over the session connection (status SENT, wire_id set)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Message"
         "400":
           $ref: "#/components/responses/ValidationError"
+        "502":
+          description: Delivery failed (upload or send); nothing was recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/sessions/{sessionId}/messages:
     parameters:

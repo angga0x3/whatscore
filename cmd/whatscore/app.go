@@ -135,6 +135,9 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 	apiHandler.SetTextDeliverer(textDelivererFunc(func(ctx context.Context, sessionID, to, text string) (string, error) {
 		return factory.deliverText(ctx, sessionID, to, text)
 	}))
+	apiHandler.SetMediaDeliverer(mediaDelivererFunc(func(ctx context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error) {
+		return factory.deliverMedia(ctx, sessionID, to, fileName, mimeType, caption, data)
+	}))
 	go appendInboundMessages(ctx, bus, messages, logger)
 
 	a := &App{
@@ -170,6 +173,14 @@ type textDelivererFunc func(ctx context.Context, sessionID, to, text string) (st
 
 func (f textDelivererFunc) DeliverText(ctx context.Context, sessionID, to, text string) (string, error) {
 	return f(ctx, sessionID, to, text)
+}
+
+// mediaDelivererFunc adapts the factory's attachment delivery to the API
+// boundary.
+type mediaDelivererFunc func(ctx context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error)
+
+func (f mediaDelivererFunc) DeliverMedia(ctx context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error) {
+	return f(ctx, sessionID, to, fileName, mimeType, caption, data)
 }
 
 // inboundMediaSaver re-encrypts a decrypted CDN blob at rest with a fresh

@@ -9,20 +9,25 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
+	"github.com/angga0x3/whatscore/core/mediaout"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/prekeys"
 	"github.com/angga0x3/whatscore/core/signalsession"
+	"github.com/angga0x3/whatscore/internal/mediaupload"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
+	"github.com/angga0x3/whatscore/protocol/protobuf"
 	"github.com/angga0x3/whatscore/protocol/signal"
 	syncpkg "github.com/angga0x3/whatscore/protocol/sync"
 	storagecredentials "github.com/angga0x3/whatscore/storage/credentials"
+	"google.golang.org/protobuf/proto"
 )
 
 // ServerJID is the WhatsApp service address client-facing stanzas address.
@@ -74,6 +79,10 @@ type sessionRuntime struct {
 	appStateKey string
 	// secrets is the encrypted store every persisted record goes through.
 	secrets signalsession.Store
+	// mediaHTTP posts outbound uploads; mediaConnFn fetches where they go.
+	// Both are replaceable so the media path can be tested without the CDN.
+	mediaHTTP   *http.Client
+	mediaConnFn func(context.Context) (*mediaout.Connection, error)
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
@@ -132,6 +141,12 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		appStateKey:    appStateKey,
 		secrets:        secrets,
 		stop:           make(chan struct{}),
+	}
+	if r.mediaHTTP == nil {
+		r.mediaHTTP = &http.Client{Timeout: 90 * time.Second}
+	}
+	if r.mediaConnFn == nil {
+		r.mediaConnFn = r.queryMediaConnection
 	}
 	r.loadAppStateKeys()
 
@@ -798,8 +813,79 @@ func (r *sessionRuntime) DeliverText(ctx context.Context, to, text string) (stri
 	// The own-device copy is what makes the send appear on the phone. It is
 	// best effort: the recipient's copy is already on the wire, and a phone
 	// this device has never heard from has no ratchet to ride.
-	r.sendOwnDeviceCopy(ctx, to, id, text)
+	r.sendOwnDeviceCopy(ctx, to, id, &protobuf.Message{Conversation: proto.String(text)})
 	return id, nil
+}
+
+// DeliverMedia sends one attachment. It encrypts, uploads and sends; the
+// caller supplies the plaintext, because the REST layer has it before it
+// re-encrypts a copy at rest.
+func (r *sessionRuntime) DeliverMedia(ctx context.Context, to, fileName, mimeType, caption string, data []byte) (string, error) {
+	if r.write == nil {
+		return "", fmt.Errorf("session %s: runtime not attached", r.id)
+	}
+	result, err := mediaout.Build(ctx, r.mediaHTTP, r.mediaConnFn, mediaout.File{
+		Name:     fileName,
+		MimeType: mimeType,
+		Caption:  caption,
+		Data:     data,
+	})
+	if err != nil {
+		return "", fmt.Errorf("session %s: media: %w", r.id, err)
+	}
+	id, session, err := r.sender.SendEncryptedPayloadAs(ctx, to, "", stanza.MessageTypeMedia, result.Payload)
+	if errors.Is(err, coremessaging.ErrNoSession) {
+		var peerSession *coremessaging.PeerSession
+		bundle, fetchErr := r.fetchPreKeyBundle(ctx, to)
+		if fetchErr != nil {
+			return "", fmt.Errorf("session %s: bundle for %s: %w", r.id, to, fetchErr)
+		}
+		id, peerSession, err = r.sender.SendPreKeyPayloadAs(ctx, to, "", stanza.MessageTypeMedia, result.Payload, bundle, r.registrationID)
+		if err == nil && peerSession != nil {
+			if installErr := r.receiver.SetReceiverPeer(to, peerSession); installErr != nil {
+				r.logger.Warn("could not install the initiator session for inbound", "session", r.id, "peer", to, "error", installErr)
+			}
+			session = peerSession
+		}
+	}
+	if err != nil {
+		return "", fmt.Errorf("session %s: deliver media: %w", r.id, err)
+	}
+	if err := r.persistSession(to, session); err != nil {
+		r.logger.Warn("could not persist the session after sending media", "session", r.id, "peer", to, "error", err)
+	}
+	r.sendOwnDeviceCopy(ctx, to, id, result.Message)
+	return id, nil
+}
+
+// queryMediaConnection asks the server where uploads go, over the session's
+// own iq path. It mirrors the probe's proven query (PF-092).
+func (r *sessionRuntime) queryMediaConnection(ctx context.Context) (*mediaout.Connection, error) {
+	reply, err := r.request(ctx, &binary.Node{
+		Tag: "iq",
+		Attrs: binary.Attrs{
+			"to": serverJID, "type": "set", "xmlns": "w:m", "id": r.newRequestID(),
+		},
+		Children: []binary.Node{{Tag: "media_conn"}},
+	}, 20*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("media connection query: %w", err)
+	}
+	for i := range reply.Children {
+		if reply.Children[i].Tag != "media_conn" {
+			continue
+		}
+		conn, err := mediaupload.ParseConn(&reply.Children[i])
+		if err != nil {
+			return nil, err
+		}
+		host, err := conn.Host()
+		if err != nil {
+			return nil, err
+		}
+		return &mediaout.Connection{Auth: conn.Auth, Host: host}, nil
+	}
+	return nil, fmt.Errorf("media connection query: reply has no media_conn")
 }
 
 // restoreSessions loads every persisted peer ratchet into the receiver and
@@ -878,7 +964,7 @@ func jidUser(jid string) string {
 // A device that has never heard from the phone has no ratchet to ride, and the
 // server serves no bundle for the account's own devices: the copy is skipped,
 // not failed, and the recipient's copy has already gone out.
-func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id, text string) {
+func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id string, inner *protobuf.Message) {
 	if r.signals == nil || r.ownLID == "" {
 		return
 	}
@@ -903,7 +989,7 @@ func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id, text str
 	if phone == to {
 		return
 	}
-	payload, err := stanza.EncodeDeviceSentMessage(to, text)
+	payload, err := stanza.EncodeDeviceSentPayload(to, inner)
 	if err != nil {
 		r.logger.Warn("could not build the own-device copy", "session", r.id, "error", err)
 		return

@@ -3,11 +3,16 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/angga0x3/whatscore/core/events"
+	"github.com/angga0x3/whatscore/core/mediaout"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
@@ -347,4 +352,110 @@ func TestAppStateKeysSurviveARestart(t *testing.T) {
 	if string(second.appStateKeys["aa"]) != string([]byte{0x01, 0x02}) {
 		t.Fatalf("key aa = %x", second.appStateKeys["aa"])
 	}
+}
+
+// TestDeliverMediaSendsAndCopies is the server's attachment send: encrypt,
+// upload to a stubbed CDN, send under type="media", persist the ratchet, and
+// mirror the same message to the phone.
+func TestDeliverMediaSendsAndCopies(t *testing.T) {
+	identity, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	peer := "628555@s.whatsapp.net"
+	phone := "266988689592415:35@lid"
+	_, recipientSession, recipientState := peerConversation(t, identity)
+	_, phoneSession, phoneState := peerConversation(t, identity)
+
+	vault := newTestVault(t)
+	seedPeerSession(t, vault, "session-1", peer, recipientSession)
+	seedPeerSession(t, vault, "session-1", phone, phoneSession)
+
+	var uploaded []byte
+	cdn := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		uploaded, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"url":"https://mmg.whatsapp.net/i","direct_path":"/v/t62/i"}`))
+	}))
+	defer cdn.Close()
+
+	runtime, writer := newVaultBackedRuntime(t, "session-1", identity, vault)
+	runtime.ownLID = "266988689592415:39@lid"
+	runtime.mediaHTTP = cdn.Client()
+	runtime.mediaConnFn = func(context.Context) (*mediaout.Connection, error) {
+		return &mediaout.Connection{Auth: "AUTH", Host: strings.TrimPrefix(cdn.URL, "https://")}, nil
+	}
+
+	plaintext := append(append([]byte("\x89PNG\r\n\x1a\n"), []byte("IHDR....")...), []byte(" body")...)
+	id, err := runtime.DeliverMedia(context.Background(), peer, "photo.png", "image/png", "pantai", plaintext)
+	if err != nil {
+		t.Fatalf("deliver media: %v", err)
+	}
+	if id == "" {
+		t.Fatal("empty wire id")
+	}
+	if len(uploaded) == 0 || bytes.Contains(uploaded, plaintext) {
+		t.Fatalf("uploaded bytes = %d, plaintext leaked=%v", len(uploaded), bytes.Contains(uploaded, plaintext))
+	}
+	if len(writer.frames) != 2 {
+		t.Fatalf("frames = %d, want recipient copy and own-device copy", len(writer.frames))
+	}
+
+	codec := binary.NewCodec(nil)
+	recipientNode, err := codec.Decode(bytes.NewReader(writer.frames[0]))
+	if err != nil {
+		t.Fatalf("decode recipient frame: %v", err)
+	}
+	if got := recipientNode.Attrs["type"]; got != "media" {
+		t.Fatalf("recipient stanza type = %q, want media", got)
+	}
+	copyNode, err := codec.Decode(bytes.NewReader(writer.frames[1]))
+	if err != nil {
+		t.Fatalf("decode copy frame: %v", err)
+	}
+	if copyNode.Attrs["to"] != phone || copyNode.Attrs["id"] != recipientNode.Attrs["id"] {
+		t.Fatalf("copy to=%q id=%q", copyNode.Attrs["to"], copyNode.Attrs["id"])
+	}
+
+	// The peer opens the recipient copy and finds the upload's location, the
+	// caption, and digests that match what was uploaded.
+	plain, err := recipientState.Decrypt(recipientNode.Children[0].Bytes, identity.Public, recipientSession.PeerIdentity)
+	if err != nil {
+		t.Fatalf("peer cannot open the media message: %v", err)
+	}
+	payload, err := stanza.DecodePayload(mustUnpad(t, plain))
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Kind != stanza.PayloadImage || payload.Media.Caption != "pantai" {
+		t.Fatalf("payload = %#v / %#v", payload, payload.Media)
+	}
+	encSum := sha256Sum(uploaded)
+	if payload.Media.DirectPath != "/v/t62/i" ||
+		!bytes.Equal(payload.Media.FileEncSHA256, encSum[:]) {
+		t.Fatalf("media = %#v", payload.Media)
+	}
+
+	// The phone opens the wrapped copy and sees the same image message.
+	wrapped, err := phoneState.Decrypt(copyNode.Children[0].Bytes, identity.Public, phoneSession.PeerIdentity)
+	if err != nil {
+		t.Fatalf("phone cannot open the copy: %v", err)
+	}
+	copied, err := stanza.DecodePayload(mustUnpad(t, wrapped))
+	if err != nil {
+		t.Fatalf("decode copy payload: %v", err)
+	}
+	if copied.Destination != peer || copied.Kind != stanza.PayloadImage {
+		t.Fatalf("copy payload = %#v", copied)
+	}
+}
+
+func sha256Sum(b []byte) [32]byte { return sha256.Sum256(b) }
+
+func mustUnpad(t *testing.T, plaintext []byte) []byte {
+	t.Helper()
+	out, err := stanza.UnpadMessage(plaintext, "2")
+	if err != nil {
+		t.Fatalf("unpad: %v", err)
+	}
+	return out
 }

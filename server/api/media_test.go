@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -892,5 +893,81 @@ func TestMediaAttachmentJSONOmitsKey(t *testing.T) {
 		if !strings.Contains(string(raw), field) {
 			t.Fatalf("marshalled attachment is missing %s: %s", field, raw)
 		}
+	}
+}
+
+// mediaDelivererStub records what the route handed to the send boundary.
+type mediaDelivererStub struct {
+	id  string
+	err error
+	got struct {
+		sessionID, to, fileName, mimeType, caption string
+		payload                                    []byte
+	}
+	calls int
+}
+
+func (d *mediaDelivererStub) DeliverMedia(_ context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error) {
+	d.calls++
+	d.got.sessionID, d.got.to, d.got.fileName, d.got.mimeType, d.got.caption = sessionID, to, fileName, mimeType, caption
+	d.got.payload = append([]byte(nil), data...)
+	return d.id, d.err
+}
+
+// TestSendImageDeliversWhenConfigured pins the delivery boundary: with a
+// deliverer installed the upload is sent, the route reports the wire id, and
+// the stored record is keyed by it so receipts correlate.
+func TestSendImageDeliversWhenConfigured(t *testing.T) {
+	f := newMediaFixture(t)
+	f.connect(t)
+	deliverer := &mediaDelivererStub{id: "WIRE1"}
+	f.handler.SetMediaDeliverer(deliverer)
+
+	payload := append(append([]byte(nil), tinyPNG...), []byte(" body")...)
+	rec := f.upload(t, MediaKindImage, "photo.png", "image/png", payload)
+	queued := mustQueuedMedia(t, rec)
+
+	if queued.Status != "sent" || queued.WireID != "WIRE1" || queued.MessageID != "WIRE1" {
+		t.Fatalf("queued = %#v", queued)
+	}
+	if deliverer.calls != 1 {
+		t.Fatalf("deliver calls = %d, want 1", deliverer.calls)
+	}
+	if deliverer.got.to != "6281234567890@s.whatsapp.net" ||
+		deliverer.got.fileName != "photo.png" ||
+		deliverer.got.mimeType != "image/png" ||
+		deliverer.got.sessionID != f.session.ID {
+		t.Fatalf("deliver args = %#v", deliverer.got)
+	}
+	if !bytes.Equal(deliverer.got.payload, payload) {
+		t.Fatal("deliverer did not receive the plaintext")
+	}
+
+	// The record exists under the wire id and still holds ciphertext.
+	attachment, blob, err := f.media.Get(t.Context(), f.session.ID, queued.MediaID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attachment.MessageID != "WIRE1" {
+		t.Fatalf("stored message id = %q", attachment.MessageID)
+	}
+	if bytes.Contains(blob, payload) {
+		t.Fatal("stored blob contains the plaintext")
+	}
+}
+
+// TestSendImageDeliveryFailureIsBadGateway keeps a failed send from storing a
+// record that claims the message went out.
+func TestSendImageDeliveryFailureIsBadGateway(t *testing.T) {
+	f := newMediaFixture(t)
+	f.connect(t)
+	f.handler.SetMediaDeliverer(&mediaDelivererStub{err: errors.New("cdn refused")})
+
+	rec := f.upload(t, MediaKindImage, "photo.png", "image/png", tinyPNG)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, body %s", rec.Code, rec.Body)
+	}
+	if list := f.get(t, "/api/v1/sessions/"+f.session.ID+"/media"); !strings.Contains(list.Body.String(), `"data":[]`) {
+		t.Fatalf("failed delivery stored a record: %s", list.Body)
 	}
 }

@@ -24,6 +24,9 @@ type Handler struct {
 	messages MessageLister
 	// textDeliverer is the optional send boundary; nil records only.
 	textDeliverer TextDeliverer
+	// mediaDeliverer is the optional attachment send boundary; nil stores
+	// the encrypted blob only.
+	mediaDeliverer MediaDeliverer
 	// media is optional: when it is nil the media routes are not mounted and
 	// /api/v1 keeps answering 501 for them.
 	media MediaStore
@@ -78,6 +81,12 @@ func (h *Handler) SetMessages(messages MessageLister) {
 // behavior.
 func (h *Handler) SetTextDeliverer(d TextDeliverer) {
 	h.textDeliverer = d
+}
+
+// SetMediaDeliverer installs the attachment send boundary. Nil keeps the
+// record-only behavior.
+func (h *Handler) SetMediaDeliverer(d MediaDeliverer) {
+	h.mediaDeliverer = d
 }
 
 // SetMedia installs the media store after construction. Mount must be called
