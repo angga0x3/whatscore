@@ -9,6 +9,7 @@ import (
 	"os"
 	gosignal "os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -234,6 +235,33 @@ func runListen(cfg sendConfig) error {
 		switch node.Tag {
 		case "ib":
 			offline.handle(ctx, node)
+			// Respond to the dirty notification: the server marks the account
+			// dirty after pairing and waits for the device to clean it before
+			// trusting it for message routing (whatsmeow MarkNotDirty).
+			if dirty := child(node, "dirty"); dirty != nil {
+				cleanType := dirty.Attrs["type"]
+				ts := dirty.Attrs["timestamp"]
+				if ts == "" {
+					ts = strconv.FormatInt(time.Now().Unix(), 10)
+				}
+				clean := &wabinary.Node{
+					Tag: "iq",
+					Attrs: wabinary.Attrs{
+						"to": serverJID, "type": "set",
+						"xmlns": "urn:xmpp:whatsapp:dirty", "id": mustRequestID(ctx),
+					},
+					Children: []wabinary.Node{{
+						Tag:   "clean",
+						Attrs: wabinary.Attrs{"type": cleanType, "timestamp": ts},
+					}},
+				}
+				frame, encErr := codec.Encode(clean)
+				if encErr == nil {
+					if writeErr := sc.WriteFrame(ctx, frame); writeErr == nil {
+						fmt.Printf("dirty cleaned (type=%s)\n", cleanType)
+					}
+				}
+			}
 			// Server-state routing only; nothing here is user data, and a
 			// hole-decoded one carries placeholder values the strict codec
 			// cannot re-encode for the receiver.
@@ -253,6 +281,10 @@ func runListen(cfg sendConfig) error {
 			fmt.Printf("receiver: %v\n", err)
 		}
 	}
+
+	// LID↔PN mapping: incoming messages carry both addresses. Outbound sends
+	// use the LID JID when known (WhatsApp modern routing).
+	lidMap := newLIDMapping(sessionsPathFor(cfg.KeyPath) + ".lids.json")
 
 	// App state sync keys the phone shares (APP_STATE_SYNC_KEY_SHARE). Patch
 	// MACs reference these ids; without them the app state patches cannot be
@@ -279,6 +311,11 @@ func runListen(cfg sendConfig) error {
 				}
 				if ev.Message == nil {
 					continue
+				}
+				if ev.Message.Sender != "" && strings.Contains(ev.Message.Sender, "@lid") {
+					// The sender_pn attribute is on the raw stanza; the event
+					// only carries the sender. The runtime records it.
+					lidMap.record(ev.Message.Sender, "")
 				}
 				if ev.Message.Protocol != nil {
 					if len(ev.Message.Protocol.AppKeys) > 0 {
@@ -391,6 +428,24 @@ func runListen(cfg sendConfig) error {
 		return fmt.Errorf("mark device active: %w", err)
 	}
 	fmt.Println("session: active")
+
+	// The unified session tells the server this device is ready for real
+	// traffic. whatsmeow sends it as part of SendPresence(Available); without
+	// it the server may not route messages from this device.
+	unifiedSession := &wabinary.Node{
+		Tag: "ib",
+		Children: []wabinary.Node{{
+			Tag:   "unified_session",
+			Attrs: wabinary.Attrs{"id": fmt.Sprintf("%d", time.Now().Unix())},
+		}},
+	}
+	if frame, err := codec.Encode(unifiedSession); err == nil {
+		if err := sc.WriteFrame(ctx, frame); err != nil {
+			fmt.Printf("unified session: %v\n", err)
+		} else {
+			fmt.Println("unified session sent")
+		}
+	}
 
 	// App state sync starts provisioning: the server answers with patches and
 	// pushes key shares as protocol messages. WhatsApp Web and Baileys request
