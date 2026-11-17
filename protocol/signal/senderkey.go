@@ -169,9 +169,9 @@ func GenerateSenderKeyPair() (SenderKeySigningPair, error) {
 	return SenderKeySigningPair{Private: priv, Public: pubFixed}, nil
 }
 
-// serializeSenderKeyDistribution encodes the wire form the parse side reads:
+// SerializeSenderKeyDistribution encodes the wire form the parse side reads:
 // version || {id=1, iteration=2, chainKey=3, signingKey=4}.
-func serializeSenderKeyDistribution(d SenderKeyDistribution) ([]byte, error) {
+func SerializeSenderKeyDistribution(d SenderKeyDistribution) ([]byte, error) {
 	if d.ChainKey == ([KeySize]byte{}) {
 		return nil, fmt.Errorf("%w: empty chain key", ErrInvalidSenderKey)
 	}

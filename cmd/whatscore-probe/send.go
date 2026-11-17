@@ -143,6 +143,18 @@ func runSend(cfg sendConfig) error {
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
+	// Group destinations take the sender-key path: one skmsg for the group
+	// content, the SKDM pairwise to every member device, phash for the
+	// fanout. The sender key is ephemeral (v1).
+	if peerJID.Server == "g.us" {
+		id, devices, groupErr := sendGroupText(ctx, d, sc, codec, record, peerJID.String(), cfg.Text)
+		if groupErr != nil {
+			return fmt.Errorf("group send: %w", groupErr)
+		}
+		fmt.Printf("\nSENT (group): id=%s to=%s, SKDM to %d devices\n", id, peerJID.String(), len(devices))
+		return awaitAck(ctx, d, id, 20*time.Second)
+	}
+
 	// The id is minted here, not inside the sender, because the own-device
 	// copy below must carry the same one: one logical message, two
 	// ciphertexts. A second id would make the phone show the send twice.

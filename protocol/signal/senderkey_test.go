@@ -217,7 +217,7 @@ func TestSerializeSenderKeyDistributionMatchesTheReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wire, err := serializeSenderKeyDistribution(*parsed)
+	wire, err := SerializeSenderKeyDistribution(*parsed)
 	if err != nil {
 		t.Fatal(err)
 	}
