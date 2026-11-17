@@ -61,7 +61,27 @@ func newVaultBackedRuntime(t *testing.T, id string, identity signal.KeyPair, vau
 	}
 	writer := &runtimeWriter{}
 	runtime.attach(writer)
+	runtime.ownJID = "628994340905:39@s.whatsapp.net"
+	runtime.ownLID = "266988689592415:39@lid"
+	runtime.directSource = runtimeTestDevices{signals}
 	return runtime, writer
+}
+
+type runtimeTestDevices struct{ store *signalStore }
+
+func (s runtimeTestDevices) Devices(ctx context.Context, _ []string) ([]string, error) {
+	return s.store.peers(ctx)
+}
+
+func deviceCiphertext(t *testing.T, node *binary.Node, peer string) []byte {
+	t.Helper()
+	for _, participant := range node.Children[0].Children {
+		if participant.Attrs["jid"] == peer {
+			return participant.Children[0].Bytes
+		}
+	}
+	t.Fatalf("no ciphertext for %s", peer)
+	return nil
 }
 
 // newPeerPair builds both ends of an established 1:1 Signal conversation: the
@@ -113,8 +133,15 @@ func peerConversation(t *testing.T, identity signal.KeyPair) (peerIdentity signa
 	if err != nil {
 		t.Fatalf("respond: %v", err)
 	}
-	return peerIdentity, &coremessaging.PeerSession{PeerIdentity: peerIdentity.Public, State: state},
-		signal.NewResponder(keys.RootKey, signed.Pair, keys.ChainKey)
+	remote := signal.NewResponder(keys.RootKey, signed.Pair, keys.ChainKey)
+	reply, err := remote.Encrypt([]byte("authenticated reply"), peerIdentity.Public, identity.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := state.Decrypt(reply, peerIdentity.Public, identity.Public); err != nil {
+		t.Fatal(err)
+	}
+	return peerIdentity, &coremessaging.PeerSession{PeerIdentity: peerIdentity.Public, State: state}, remote
 }
 
 // seedPeerSession writes a peer ratchet the way a previous process would have,
@@ -156,10 +183,10 @@ func TestRuntimeSurvivesARestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got := node.Children[0].Attrs["type"]; got != stanza.CarrierMsg {
+	if got := node.Children[0].Children[0].Children[0].Attrs["type"]; got != stanza.CarrierMsg {
 		t.Fatalf("carrier = %q, want msg — a restored session, not a fresh pkmsg", got)
 	}
-	plaintext, err := theirs.Decrypt(node.Children[0].Bytes, identity.Public, peerIdentity.Public)
+	plaintext, err := theirs.Decrypt(deviceCiphertext(t, node, peer), identity.Public, peerIdentity.Public)
 	if err != nil {
 		t.Fatalf("peer cannot open the restored chain: %v", err)
 	}
@@ -197,7 +224,7 @@ func TestRuntimePersistsOnSend(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	plaintext, err := theirs.Decrypt(node.Children[0].Bytes, identity.Public, peerIdentity.Public)
+	plaintext, err := theirs.Decrypt(deviceCiphertext(t, node, peer), identity.Public, peerIdentity.Public)
 	if err != nil {
 		t.Fatalf("peer cannot open the second message: %v", err)
 	}
@@ -234,30 +261,15 @@ func TestRuntimeSendsTheOwnDeviceCopy(t *testing.T) {
 		t.Fatalf("deliver: %v", err)
 	}
 
-	if len(writer.frames) != 2 {
-		t.Fatalf("frames = %d, want the recipient copy and the own-device copy", len(writer.frames))
+	if len(writer.frames) != 1 {
+		t.Fatalf("frames = %d, want one participant stanza", len(writer.frames))
 	}
 	codec := binary.NewCodec(nil)
 	recipientNode, err := codec.Decode(bytes.NewReader(writer.frames[0]))
 	if err != nil {
 		t.Fatalf("decode recipient frame: %v", err)
 	}
-	copyNode, err := codec.Decode(bytes.NewReader(writer.frames[1]))
-	if err != nil {
-		t.Fatalf("decode copy frame: %v", err)
-	}
-	if got := copyNode.Attrs["to"]; got != phone {
-		t.Fatalf("copy to = %q, want the phone %q", got, phone)
-	}
-	if copyNode.Attrs["id"] != recipientNode.Attrs["id"] {
-		t.Fatalf("copy id = %q, recipient id = %q — one message, one id",
-			copyNode.Attrs["id"], recipientNode.Attrs["id"])
-	}
-	if got := copyNode.Attrs["device_fanout"]; got != "false" {
-		t.Fatalf("device_fanout = %q, want false", got)
-	}
-
-	plaintext, err := phoneState.Decrypt(copyNode.Children[0].Bytes, identity.Public, phoneIdentity.Public)
+	plaintext, err := phoneState.Decrypt(deviceCiphertext(t, recipientNode, phone), identity.Public, phoneIdentity.Public)
 	if err != nil {
 		t.Fatalf("phone cannot open the copy: %v", err)
 	}
@@ -316,7 +328,7 @@ func TestRuntimeSkipsTheCopyForSelfSend(t *testing.T) {
 	runtime, writer := newVaultBackedRuntime(t, "session-1", identity, vault)
 	runtime.ownLID = ownLID
 	runtime.ownJID = "628994340905:39@s.whatsapp.net"
-	for _, dest := range []string{ownLID, "628994340905@s.whatsapp.net"} {
+	for _, dest := range []string{"266988689592415@lid", "628994340905@s.whatsapp.net"} {
 		if _, err := runtime.DeliverText(context.Background(), dest, "catatan"); err != nil {
 			t.Fatalf("deliver to %s: %v", dest, err)
 		}
@@ -396,8 +408,8 @@ func TestDeliverMediaSendsAndCopies(t *testing.T) {
 	if len(uploaded) == 0 || bytes.Contains(uploaded, plaintext) {
 		t.Fatalf("uploaded bytes = %d, plaintext leaked=%v", len(uploaded), bytes.Contains(uploaded, plaintext))
 	}
-	if len(writer.frames) != 2 {
-		t.Fatalf("frames = %d, want recipient copy and own-device copy", len(writer.frames))
+	if len(writer.frames) != 1 {
+		t.Fatalf("frames = %d, want one media participant stanza", len(writer.frames))
 	}
 
 	codec := binary.NewCodec(nil)
@@ -408,17 +420,10 @@ func TestDeliverMediaSendsAndCopies(t *testing.T) {
 	if got := recipientNode.Attrs["type"]; got != "media" {
 		t.Fatalf("recipient stanza type = %q, want media", got)
 	}
-	copyNode, err := codec.Decode(bytes.NewReader(writer.frames[1]))
-	if err != nil {
-		t.Fatalf("decode copy frame: %v", err)
-	}
-	if copyNode.Attrs["to"] != phone || copyNode.Attrs["id"] != recipientNode.Attrs["id"] {
-		t.Fatalf("copy to=%q id=%q", copyNode.Attrs["to"], copyNode.Attrs["id"])
-	}
 
 	// The peer opens the recipient copy and finds the upload's location, the
 	// caption, and digests that match what was uploaded.
-	plain, err := recipientState.Decrypt(recipientNode.Children[0].Bytes, identity.Public, recipientSession.PeerIdentity)
+	plain, err := recipientState.Decrypt(deviceCiphertext(t, recipientNode, peer), identity.Public, recipientSession.PeerIdentity)
 	if err != nil {
 		t.Fatalf("peer cannot open the media message: %v", err)
 	}
@@ -436,7 +441,7 @@ func TestDeliverMediaSendsAndCopies(t *testing.T) {
 	}
 
 	// The phone opens the wrapped copy and sees the same image message.
-	wrapped, err := phoneState.Decrypt(copyNode.Children[0].Bytes, identity.Public, phoneSession.PeerIdentity)
+	wrapped, err := phoneState.Decrypt(deviceCiphertext(t, recipientNode, phone), identity.Public, phoneSession.PeerIdentity)
 	if err != nil {
 		t.Fatalf("phone cannot open the copy: %v", err)
 	}

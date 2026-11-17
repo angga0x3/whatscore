@@ -157,7 +157,11 @@ func (s *State) Decrypt(wire []byte, sender, receiver [KeySize]byte) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	return decryptParsed(message, keys, sender, receiver)
+	plaintext, err := decryptParsed(message, keys, sender, receiver)
+	if err == nil {
+		s.pendingPreKey = nil
+	}
+	return plaintext, err
 }
 
 func messageMAC(macKey [KeySize]byte, sender, receiver [KeySize]byte, body []byte) []byte {

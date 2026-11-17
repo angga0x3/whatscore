@@ -734,7 +734,7 @@ type recordingChatActions struct {
 	typingErr   error
 }
 
-func (r *recordingChatActions) MarkRead(ctx context.Context, sessionID, chat string, ids []string) error {
+func (r *recordingChatActions) MarkRead(_ context.Context, sessionID, chat string, ids []string) error {
 	r.markReadCalls = append(r.markReadCalls, struct {
 		sessionID, chat string
 		ids             []string
@@ -742,7 +742,7 @@ func (r *recordingChatActions) MarkRead(ctx context.Context, sessionID, chat str
 	return r.markReadErr
 }
 
-func (r *recordingChatActions) SendTyping(ctx context.Context, sessionID, chat string, composing bool) error {
+func (r *recordingChatActions) SendTyping(_ context.Context, sessionID, chat string, composing bool) error {
 	r.typingCalls = append(r.typingCalls, struct {
 		sessionID, chat string
 		composing       bool

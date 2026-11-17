@@ -119,6 +119,10 @@ func (s *Sender) sendPreKeyPayload(ctx context.Context, jid stanza.JID, id, msgT
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: initiate state: %w", err)
 	}
+	state.SetPendingPreKey(signal.PendingPreKey{
+		RegistrationID: registrationID, SignedPreKeyID: initiator.SignedPreKeyID,
+		PreKeyID: initiator.OneTimePreKeyID, BaseKey: initiator.EphemeralPublic,
+	})
 	if id == "" {
 		id, err = s.newID()
 		if err != nil {

@@ -10,9 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -82,8 +80,9 @@ type sessionRuntime struct {
 	secrets signalsession.Store
 	// mediaHTTP posts outbound uploads; mediaConnFn fetches where they go.
 	// Both are replaceable so the media path can be tested without the CDN.
-	mediaHTTP   *http.Client
-	mediaConnFn func(context.Context) (*mediaout.Connection, error)
+	mediaHTTP    *http.Client
+	mediaConnFn  func(context.Context) (*mediaout.Connection, error)
+	directSource coremessaging.DeviceSource
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
@@ -799,34 +798,31 @@ func (r *sessionRuntime) newRequestID() string {
 // prekey session, which is also installed for inbound decryption — the peer's
 // next message rides the same chain.
 func (r *sessionRuntime) DeliverText(ctx context.Context, to, text string) (string, error) {
+	return r.deliverDirect(ctx, to, stanza.MessageTypeText, &protobuf.Message{Conversation: proto.String(text)})
+}
+
+func (r *sessionRuntime) deliverDirect(ctx context.Context, to, msgType string, message *protobuf.Message) (string, error) {
 	if r.write == nil {
 		return "", fmt.Errorf("session %s: runtime not attached", r.id)
 	}
-	id, session, err := r.sender.SendEncryptedText(ctx, to, text)
-	if errors.Is(err, coremessaging.ErrNoSession) {
-		var peerSession *coremessaging.PeerSession
-		id, peerSession, err = r.sender.SendPreKeyText(ctx, to, text, r.registrationID)
-		if err == nil && peerSession != nil {
-			// The initiator holds the same chain the peer's replies will ride.
-			if err := r.receiver.SetReceiverPeer(to, peerSession); err != nil {
-				r.logger.Warn("could not install the initiator session for inbound", "session", r.id, "peer", to, "error", err)
+	source := r.directSource
+	if source == nil {
+		source = runtimeDevices{r}
+	}
+	id, _, err := r.sender.SendDirect(ctx, source, coremessaging.DirectMessage{
+		To: to, Type: msgType, Message: message, OwnJID: r.ownJID, OwnLID: r.ownLID,
+		RegistrationID: r.registrationID,
+		Persist: func(ctx context.Context, peer string, ps *coremessaging.PeerSession) error {
+			if r.signals == nil {
+				return fmt.Errorf("session %s: no persistent Signal store", r.id)
 			}
-			session = peerSession
-		}
-	}
-	if err != nil {
-		return "", fmt.Errorf("session %s: deliver: %w", r.id, err)
-	}
-	// The send advanced the ratchet and no observer fires for it: a restart
-	// that reads the old state would encrypt from a chain the peer has left.
-	if err := r.persistSession(to, session); err != nil {
-		r.logger.Warn("could not persist the session after sending", "session", r.id, "peer", to, "error", err)
-	}
-	// The own-device copy is what makes the send appear on the phone. It is
-	// best effort: the recipient's copy is already on the wire, and a phone
-	// this device has never heard from has no ratchet to ride.
-	r.sendOwnDeviceCopy(ctx, to, id, &protobuf.Message{Conversation: proto.String(text)})
-	return id, nil
+			if err := r.signals.save(ctx, peer, ps); err != nil {
+				return err
+			}
+			return r.receiver.SetReceiverPeer(peer, ps)
+		},
+	})
+	return id, err
 }
 
 // DeliverMedia sends one attachment. It encrypts, uploads and sends; the
@@ -845,29 +841,21 @@ func (r *sessionRuntime) DeliverMedia(ctx context.Context, to, fileName, mimeTyp
 	if err != nil {
 		return "", fmt.Errorf("session %s: media: %w", r.id, err)
 	}
-	id, session, err := r.sender.SendEncryptedPayloadAs(ctx, to, "", stanza.MessageTypeMedia, result.Payload)
-	if errors.Is(err, coremessaging.ErrNoSession) {
-		var peerSession *coremessaging.PeerSession
-		bundle, fetchErr := r.fetchPreKeyBundle(ctx, to)
-		if fetchErr != nil {
-			return "", fmt.Errorf("session %s: bundle for %s: %w", r.id, to, fetchErr)
-		}
-		id, peerSession, err = r.sender.SendPreKeyPayloadAs(ctx, to, "", stanza.MessageTypeMedia, result.Payload, bundle, r.registrationID)
-		if err == nil && peerSession != nil {
-			if installErr := r.receiver.SetReceiverPeer(to, peerSession); installErr != nil {
-				r.logger.Warn("could not install the initiator session for inbound", "session", r.id, "peer", to, "error", installErr)
-			}
-			session = peerSession
-		}
-	}
+	return r.deliverDirect(ctx, to, stanza.MessageTypeMedia, result.Message)
+}
+
+type runtimeDevices struct{ r *sessionRuntime }
+
+func (s runtimeDevices) Devices(ctx context.Context, accounts []string) ([]string, error) {
+	node, err := stanza.BuildDeviceQuery(s.r.newRequestID(), accounts)
 	if err != nil {
-		return "", fmt.Errorf("session %s: deliver media: %w", r.id, err)
+		return nil, err
 	}
-	if err := r.persistSession(to, session); err != nil {
-		r.logger.Warn("could not persist the session after sending media", "session", r.id, "peer", to, "error", err)
+	reply, err := s.r.request(ctx, node, 20*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	r.sendOwnDeviceCopy(ctx, to, id, result.Message)
-	return id, nil
+	return stanza.ParseDeviceQuery(reply)
 }
 
 // queryMediaConnection asks the server where uploads go, over the session's
@@ -964,88 +952,6 @@ func (r *sessionRuntime) persistSession(peer string, ps *coremessaging.PeerSessi
 		return nil
 	}
 	return r.signals.save(context.Background(), peer, ps)
-}
-
-// jidUser returns the user part of a JID, without the device or the server.
-func jidUser(jid string) string {
-	user := jid
-	if at := strings.Index(user, "@"); at >= 0 {
-		user = user[:at]
-	}
-	if colon := strings.Index(user, ":"); colon >= 0 {
-		user = user[:colon]
-	}
-	return user
-}
-
-// sendOwnDeviceCopy sends the DeviceSentMessage copy of a 1:1 send to every
-// other device of the account whose ratchet this session holds. Each copy is
-// addressed to exactly one device (device_fanout="false"): a stanza left to
-// fan out is handed to devices whose sessions cannot open it, and those show
-// "waiting for this message".
-//
-// The copy carries the recipient copy's id — one logical message, several
-// ciphertexts — so each device renders one message in the destination chat as
-// outgoing. Devices that never wrote to this one have no ratchet to ride; the
-// recipient's copy has already gone out, so a missing copy is skipped, not
-// failed.
-func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id string, inner *protobuf.Message) {
-	if r.signals == nil || r.ownLID == "" {
-		return
-	}
-	// A send to the account itself already reaches the other devices as the
-	// recipient's copy; a second copy would show the same message twice in
-	// the self chat. The account has two identities — phone number and LID —
-	// and either one addresses it.
-	user := jidUser(to)
-	if user != "" && (user == jidUser(r.ownLID) || user == jidUser(r.ownJID)) {
-		return
-	}
-	peers, err := r.signals.peers(ctx)
-	if err != nil {
-		r.logger.Warn("could not list peers for the own-device copy", "session", r.id, "error", err)
-		return
-	}
-	payload, err := stanza.EncodeDeviceSentPayload(to, inner)
-	if err != nil {
-		r.logger.Warn("could not build the own-device copy", "session", r.id, "error", err)
-		return
-	}
-	sent := 0
-	for _, peer := range ownDevicePeers(r.ownLID, peers, to) {
-		copyID, session, err := r.sender.SendPeerPayload(ctx, peer, id, stanza.MessageTypeText, payload)
-		if err != nil {
-			r.logger.Warn("own-device copy failed", "session", r.id, "device", peer, "error", err)
-			continue
-		}
-		if err := r.persistSession(peer, session); err != nil {
-			r.logger.Warn("could not persist the device session after the copy", "session", r.id, "device", peer, "error", err)
-		}
-		r.logger.Info("own-device copy sent", "session", r.id, "id", copyID, "device", peer)
-		sent++
-	}
-	if sent == 0 {
-		r.logger.Debug("no other-device session; own-device copy skipped", "session", r.id)
-	}
-}
-
-// ownDevicePeers lists the account's other devices among the stored peer
-// sessions, minus this device and the chat being sent to. Device 0 (the bare
-// LID) is the primary phone.
-func ownDevicePeers(ownLID string, peers []string, exclude string) []string {
-	user := jidUser(ownLID)
-	if user == "" {
-		return nil
-	}
-	var out []string
-	for _, peer := range peers {
-		if jidUser(peer) != user || peer == ownLID || peer == exclude {
-			continue
-		}
-		out = append(out, peer)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // MarkRead sends a read receipt for the given message ids in a chat — the

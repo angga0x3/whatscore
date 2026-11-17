@@ -49,6 +49,7 @@ type State struct {
 	receiverChains map[[KeySize]byte]*receiverChain
 	skipped        map[skippedKey]MessageKeys
 	pendingPreKey  *PendingPreKey
+	bootstrapBase  *[KeySize]byte
 }
 
 // PendingPreKey is the bootstrap envelope repeated until an authenticated
@@ -66,6 +67,16 @@ func (s *State) SetPendingPreKey(p PendingPreKey) { s.pendingPreKey = &p }
 
 // HasPendingPreKey reports whether sends still require the bootstrap envelope.
 func (s *State) HasPendingPreKey() bool { return s.pendingPreKey != nil }
+
+// ClearPendingPreKey ends the bootstrap phase. Only an authenticated inbound
+// message justifies it; a server acknowledgement does not.
+func (s *State) ClearPendingPreKey() { s.pendingPreKey = nil }
+
+// MatchesBootstrap identifies retransmitted prekey envelopes for the same
+// session, without consulting an already consumed one-time prekey again.
+func (s *State) MatchesBootstrap(base [KeySize]byte) bool {
+	return s.bootstrapBase != nil && *s.bootstrapBase == base
+}
 
 // HasReceived reports whether this session has authenticated an inbound chain.
 func (s *State) HasReceived() bool {

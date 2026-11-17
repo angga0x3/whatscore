@@ -32,6 +32,22 @@ func (r *Receiver) bootstrapPeer(ctx context.Context, envelope *stanza.Encrypted
 	if err != nil {
 		return nil, nil, err
 	}
+	if existing := r.peers[peer.String()]; existing != nil && existing.State.MatchesBootstrap(prekeyMessage.BaseKey) {
+		if existing.PeerIdentity != prekeyMessage.IdentityKey {
+			return nil, nil, fmt.Errorf("%w: changed identity in repeated prekey message", ErrInvalidMessage)
+		}
+		attempt, err := existing.State.Clone()
+		if err != nil {
+			return nil, nil, err
+		}
+		plaintext, err := attempt.Decrypt(prekeyMessage.Message, existing.PeerIdentity, r.identity)
+		if err != nil {
+			return nil, nil, err
+		}
+		existing.State = attempt
+		r.observe(peer.String(), existing)
+		return existing, plaintext, nil
+	}
 	signed, err := source.SignedPreKey(prekeyMessage.SignedPreKeyID)
 	if err != nil || signed == nil {
 		return nil, nil, fmt.Errorf("%w: signed prekey %d: %w", ErrNoPreKey, prekeyMessage.SignedPreKeyID, err)

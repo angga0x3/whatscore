@@ -47,54 +47,11 @@ func (s *Sender) SendEncryptedText(ctx context.Context, to, text string) (string
 // recipient copy and the own-device copy of a 1:1 send carry the same id, so
 // the phone shows one message rather than two, and receipts name one id.
 func (s *Sender) SendEncryptedTextWithID(ctx context.Context, to, id, text string) (string, *PeerSession, error) {
-	if err := ctx.Err(); err != nil {
-		return "", nil, err
-	}
-	jid, err := stanza.ParseJID(strings.TrimSpace(to))
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: to: %w", ErrInvalidMessage, err)
-	}
-	if jid.User == "" {
-		return "", nil, fmt.Errorf("%w: to %q has no user", ErrInvalidMessage, to)
-	}
-	session := s.peers[jid.String()]
-	if session == nil {
-		return "", nil, ErrNoSession
-	}
-
-	if id == "" {
-		id, err = s.newID()
-		if err != nil {
-			return "", nil, fmt.Errorf("%w: generate id: %w", ErrInvalidMessage, err)
-		}
-	}
-	// The plaintext inside <enc> is a protobuf Message on both carriers (PF-083)
-	// — the msg carrier after a bootstrap carries it exactly like the pkmsg one
-	// — and it is padded like whatsmeow pads, because a compliant receiver
-	// validates the padding and refuses unpadded plaintexts.
 	payload, err := stanza.EncodeTextMessage(text)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
 	}
-	ciphertext, err := session.State.Encrypt(stanza.PadMessage(payload), s.identity, session.PeerIdentity)
-	if err != nil {
-		return "", nil, fmt.Errorf("core/messaging: encrypt: %w", err)
-	}
-	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
-		ID: id, To: jid, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
-		Peer: jid.Device > 0,
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
-	}
-	frame, err := s.codec.Encode(node)
-	if err != nil {
-		return "", nil, fmt.Errorf("core/messaging: encode: %w", err)
-	}
-	if err := s.write.WriteFrame(ctx, frame); err != nil {
-		return "", nil, fmt.Errorf("core/messaging: write: %w", err)
-	}
-	return id, session, nil
+	return s.SendEncryptedPayloadAs(ctx, to, id, stanza.MessageTypeText, payload)
 }
 
 // SetIdentity sets only the public identity, which is enough to encrypt with
@@ -177,8 +134,16 @@ func (s *Sender) sendPayload(ctx context.Context, to, id, msgType string, payloa
 	if err != nil {
 		return "", nil, fmt.Errorf("core/messaging: encrypt: %w", err)
 	}
+	ciphertext, pending, err := session.State.WrapPendingPreKey(ciphertext, s.identity)
+	if err != nil {
+		return "", nil, err
+	}
+	carrier := stanza.CarrierMsg
+	if pending {
+		carrier = stanza.CarrierPKMsg
+	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
-		ID: id, To: jid, Type: msgType, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
+		ID: id, To: jid, Type: msgType, Carrier: carrier, Ciphertext: ciphertext,
 		Peer:           peer || jid.Device > 0,
 		DeviceIdentity: s.deviceIdentity,
 	})

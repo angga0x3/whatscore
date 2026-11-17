@@ -14,6 +14,7 @@ import (
 //	<chatstate to="chat"><composing/></chatstate>
 //	<chatstate to="chat"><paused/></chatstate>
 
+// Chat-state tags and children.
 const (
 	TagChatState  = "chatstate"
 	ChatComposing = "composing"

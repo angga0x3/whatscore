@@ -175,3 +175,148 @@ func mutate(raw []byte, change func([]byte)) []byte {
 	change(out)
 	return out
 }
+
+// TestStateSerializationKeepsPendingPreKey pins the metadata that keeps a
+// first-contact send recoverable across a restart: the bootstrap envelope must
+// survive until a reply proves the remote device installed the session.
+func TestStateSerializationKeepsPendingPreKey(t *testing.T) {
+	state := newStateFixture(t, 0).alice
+	pending := PendingPreKey{
+		RegistrationID: 4242, SignedPreKeyID: 7, PreKeyID: 9,
+		BaseKey: [KeySize]byte{0xA1, 0xB2},
+	}
+	state.SetPendingPreKey(pending)
+	if !state.HasPendingPreKey() {
+		t.Fatal("pending was not set")
+	}
+
+	raw, err := state.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.HasPendingPreKey() {
+		t.Fatal("pending prekey lost in serialization")
+	}
+	wrapped, pendingApplied, err := parsed.WrapPendingPreKey([]byte{0x33, 0x01}, [KeySize]byte{0x11})
+	if err != nil || !pendingApplied {
+		t.Fatalf("wrap = %v, %v", pendingApplied, err)
+	}
+	if len(wrapped) == 0 || wrapped[0] != WireVersion {
+		t.Fatalf("wrapped = %x", wrapped)
+	}
+	message, err := ParsePreKeyMessage(wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.RegistrationID != 4242 || message.SignedPreKeyID != 7 || message.PreKeyID != 9 || message.BaseKey != pending.BaseKey {
+		t.Fatalf("envelope = %#v", message)
+	}
+
+	// Clearing it is what an authenticated reply does, and it must persist too.
+	parsed.ClearPendingPreKey()
+	raw, err = parsed.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := ParseState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.HasPendingPreKey() {
+		t.Fatal("cleared pending prekey came back after a round trip")
+	}
+}
+
+// TestStateSerializationKeepsBootstrapBase pins the identifier that lets a
+// receiver recognise a retransmitted prekey envelope without touching an
+// already consumed one-time prekey.
+func TestStateSerializationKeepsBootstrapBase(t *testing.T) {
+	peerIdentity, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ourIdentity, err := GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := GenerateSignedPreKey(1, XEdDSASigner{Private: ourIdentity.Private})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oneTime, err := GeneratePreKey(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initiated, err := Initiate(peerIdentity, PreKeyBundle{
+		IdentityKey:           ourIdentity.Public,
+		SignedPreKeyID:        signed.ID,
+		SignedPreKey:          signed.Pair.Public,
+		SignedPreKeySignature: signed.Signature,
+		OneTimePreKeyID:       oneTime.ID,
+		OneTimePreKey:         &oneTime.Pair.Public,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	senderState, err := NewInitiator(initiated.Keys.RootKey, signed.Pair.Public, initiated.Keys.ChainKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ciphertext, err := senderState.Encrypt([]byte{0x0a, 0x02, 'h', 'i'}, peerIdentity.Public, ourIdentity.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := initiated.BuildPreKeyMessage(peerIdentity.Public, 4242, ciphertext)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, _, err := AcceptPreKeyMessage(wire, ourIdentity, signed, &oneTime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !state.MatchesBootstrap(initiated.EphemeralPublic) {
+		t.Fatal("bootstrap base not recorded")
+	}
+	raw, err := state.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := ParseState(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !parsed.MatchesBootstrap(initiated.EphemeralPublic) {
+		t.Fatal("bootstrap base lost in serialization")
+	}
+	if parsed.MatchesBootstrap([KeySize]byte{0x99}) {
+		t.Fatal("unrelated base matched")
+	}
+}
+
+// TestStateSerializationReadsLegacyV1 keeps sessions written before pending
+// bootstrap metadata existed readable: a snapshot from the older build has no
+// trailing flags, and treating them as required would orphan every stored peer.
+func TestStateSerializationReadsLegacyV1(t *testing.T) {
+	state := newStateFixture(t, 1).bob
+	raw, err := state.MarshalBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Version 2 appends two flag bytes; drop them and mark the blob version 1.
+	if len(raw) < 3 {
+		t.Fatal("unexpectedly short state")
+	}
+	legacy := append([]byte(nil), raw[:len(raw)-2]...)
+	legacy[0] = 1
+	parsed, err := ParseState(legacy)
+	if err != nil {
+		t.Fatalf("legacy state: %v", err)
+	}
+	if parsed.HasPendingPreKey() {
+		t.Fatal("legacy state grew pending metadata")
+	}
+}

@@ -99,6 +99,18 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Fixed
 
+- A sent message no longer shows "Waiting for this message. Check your phone."
+  on the sender's other devices. Direct sends were one account-addressed
+  ciphertext; the server fanned it out to devices whose sessions could not
+  open it. They now carry one ciphertext per device (a `usync` device query,
+  `DeviceSentMessage` for the account's own devices), in the shape whatsmeow
+  uses, and no frame leaves until every advanced ratchet is persisted
+  (PF-095).
+- A first-contact session keeps sending `pkmsg` until an inbound message
+  authenticates it. Switching to `msg` after the first send stranded devices
+  that never received the bootstrap, and a server ACK does not count as
+  proof. Session snapshots without this metadata are treated as unproven and
+  re-bootstrap (PF-095).
 - `ProtocolMessage.type` was declared as field 1; the reference puts the
   revoke/edit key there and the enum at field 2. Every inbound protocol
   message therefore decoded as `REVOKE` (the zero value) and the outbound key

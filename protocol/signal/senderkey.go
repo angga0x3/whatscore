@@ -193,7 +193,7 @@ func SerializeSenderKeyDistribution(d SenderKeyDistribution) ([]byte, error) {
 
 // appendProtoVarint writes one varint-tagged field.
 func appendProtoVarint(out []byte, field int, value uint64) []byte {
-	out = append(out, byte(field<<3)|0x00)
+	out = append(out, byte(field<<3))
 	return protoAppendVarint(out, value)
 }
 

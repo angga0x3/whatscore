@@ -10,7 +10,7 @@ import (
 
 // Serialization bounds and layout.
 const (
-	stateVersion        = 1
+	stateVersion        = 2
 	MaxSerializedChains = 64
 	maxStateBytes       = 256 << 10
 	stateHeaderSize     = 1 + 4*KeySize + 4 + 4 + 2 + 2
@@ -79,6 +79,22 @@ func (s *State) MarshalBinary() ([]byte, error) {
 		out = append(out, keys.MACKey[:]...)
 		out = append(out, keys.IV[:]...)
 	}
+	if s.pendingPreKey == nil {
+		out = append(out, 0)
+	} else {
+		p := s.pendingPreKey
+		out = append(out, 1)
+		out = binary.BigEndian.AppendUint32(out, p.RegistrationID)
+		out = binary.BigEndian.AppendUint32(out, p.SignedPreKeyID)
+		out = binary.BigEndian.AppendUint32(out, p.PreKeyID)
+		out = append(out, p.BaseKey[:]...)
+	}
+	if s.bootstrapBase == nil {
+		out = append(out, 0)
+	} else {
+		out = append(out, 1)
+		out = append(out, s.bootstrapBase[:]...)
+	}
 	return out, nil
 }
 
@@ -90,7 +106,7 @@ func (s *State) UnmarshalBinary(raw []byte) error {
 	if len(raw) < stateHeaderSize {
 		return fmt.Errorf("%w: %d bytes", ErrInvalidState, len(raw))
 	}
-	if raw[0] != stateVersion {
+	if raw[0] != 1 && raw[0] != stateVersion {
 		return fmt.Errorf("%w: version %d", ErrInvalidState, raw[0])
 	}
 	reader := stateReader{raw: raw[1:]}
@@ -135,6 +151,34 @@ func (s *State) UnmarshalBinary(raw []byte) error {
 		}
 		next.skipped[key] = keys
 	}
+	if raw[0] >= 2 {
+		flag := reader.bytes(1)
+		if reader.err != nil {
+			return fmt.Errorf("%w: missing pending prekey flag", ErrInvalidState)
+		}
+		switch flag[0] {
+		case 0:
+		case 1:
+			next.pendingPreKey = &PendingPreKey{
+				RegistrationID: reader.uint32(), SignedPreKeyID: reader.uint32(),
+				PreKeyID: reader.uint32(), BaseKey: reader.key(),
+			}
+		default:
+			return fmt.Errorf("%w: invalid pending prekey flag", ErrInvalidState)
+		}
+		flag = reader.bytes(1)
+		if reader.err != nil {
+			return fmt.Errorf("%w: missing bootstrap flag", ErrInvalidState)
+		}
+		switch flag[0] {
+		case 0:
+		case 1:
+			base := reader.key()
+			next.bootstrapBase = &base
+		default:
+			return fmt.Errorf("%w: invalid bootstrap flag", ErrInvalidState)
+		}
+	}
 	if reader.err != nil {
 		return fmt.Errorf("%w: %w", ErrInvalidState, reader.err)
 	}
@@ -157,6 +201,8 @@ func ParseState(raw []byte) (*State, error) {
 
 // Clear zeroes the state's key material.
 func (s *State) Clear() {
+	s.pendingPreKey = nil
+	s.bootstrapBase = nil
 	s.root = RootKey{}
 	s.senderRatchet = KeyPair{}
 	s.senderChain = ChainKey{}

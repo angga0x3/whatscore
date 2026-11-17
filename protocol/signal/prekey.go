@@ -162,5 +162,6 @@ func AcceptPreKeyMessage(wire []byte, ourIdentity KeyPair, signedPreKey SignedPr
 	if err != nil {
 		return nil, nil, err
 	}
+	state.bootstrapBase = &message.BaseKey
 	return state, plaintext, nil
 }

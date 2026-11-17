@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	gosignal "os/signal"
 	"strconv"
@@ -123,9 +122,12 @@ func runSend(cfg sendConfig) error {
 		return err
 	}
 	sender.SetIdentityPair(identityPair)
-	if blob, blobErr := deviceIdentityBytes(record); blobErr == nil {
-		sender.SetDeviceIdentity(blob)
+	blob, err := deviceIdentityBytes(record)
+	if err != nil {
+		return fmt.Errorf("paired device identity: %w", err)
 	}
+	sender.SetDeviceIdentity(blob)
+	sender.SetPreKeyBundleSource(directBundles{d})
 	if n, err := sessions.installSender(sender); err != nil {
 		return err
 	} else if n > 0 {
@@ -141,11 +143,6 @@ func runSend(cfg sendConfig) error {
 		fmt.Println("upload-only: nothing was sent")
 		return nil
 	}
-	payload, err := proto.Marshal(inner)
-	if err != nil {
-		return fmt.Errorf("marshal payload: %w", err)
-	}
-
 	// Group destinations take the sender-key path: one skmsg for the group
 	// content, the SKDM pairwise to every member device, phash for the
 	// fanout. The sender key is ephemeral (v1).
@@ -165,48 +162,17 @@ func runSend(cfg sendConfig) error {
 	if err != nil {
 		return err
 	}
-	id, session, err := sender.SendEncryptedPayloadAs(ctx, peerJID.String(), id, msgType, payload)
-	if errors.Is(err, messaging.ErrNoSession) {
-		// First contact: the bundle is a server round trip through the same
-		// loop, so an inbound message arriving mid-fetch is not discarded.
-		bundle, fetchErr := fetchPreKeyBundle(ctx, d, peerJID.String())
-		if fetchErr != nil {
-			return fmt.Errorf("prekey bundle for %s: %w", peerJID.String(), fetchErr)
-		}
-		if verifyErr := signal.ParsePreKeyBundle(*bundle); verifyErr != nil {
-			return fmt.Errorf("peer bundle for %s does not verify: %w", peerJID.String(), verifyErr)
-		}
-		fmt.Printf("bundle: fetched and signature verified (signed prekey %d)\n", bundle.SignedPreKeyID)
-		id, session, err = sender.SendPreKeyPayloadAs(ctx, peerJID.String(), id, msgType, payload, bundle, record.RegistrationID)
-	}
+	id, deviceSessions, err := sender.SendDirect(ctx, directDevices{d}, messaging.DirectMessage{
+		To: peerJID.String(), ID: id, Type: msgType, Message: inner,
+		OwnJID: record.JID, OwnLID: record.LID, RegistrationID: record.RegistrationID,
+		Persist: func(_ context.Context, peer string, session *messaging.PeerSession) error {
+			return sessions.persist(sessionsPath, peer, session)
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("send: %w", err)
 	}
-	if session == nil {
-		return fmt.Errorf("send returned no session")
-	}
-	fmt.Printf("\nSENT: id=%s to=%s\n", id, peerJID.String())
-
-	// The ratchet moved. The receiver's observer never fires for a send, so a
-	// run that does not write the state here leaves the store one step behind
-	// and the next run encrypts from a chain the peer has already left.
-	if err := sessions.persist(sessionsPath, peerJID.String(), session); err != nil {
-		fmt.Printf("could not persist the %s session: %v\n", peerJID.String(), err)
-	}
-
-	// The own-device copy: whatsmeow's marshalMessage builds two plaintexts
-	// for every 1:1 send — the recipient copy above, and this one wrapped in
-	// DeviceSentMessage for the account's own devices. Without it the message
-	// delivers to the recipient but never appears on the sender's phone.
-	//
-	// A send to the account itself is the exception: the recipient copy is
-	// already addressed to our own devices, so a second copy would show the
-	// message twice in the self chat.
-	if isOwnAccount(peerJID.String(), record) {
-		fmt.Println("own-device copy skipped: the destination is this account")
-	} else if err := sendOwnDeviceCopy(ctx, frameWriter{sc: sc}, codec, sessions, sessionsPath, record, peerJID.String(), id, inner); err != nil {
-		fmt.Printf("own-device copy failed: %v\n", err)
-	}
+	fmt.Printf("\nSENT: id=%s to=%s (%d device ciphertexts, one stanza)\n", id, peerJID.String(), len(deviceSessions))
 
 	// Writing the frame only proves the bytes left. The server answers with an
 	// ack, an error, or silence, and only the first two mean anything.

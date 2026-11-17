@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -59,8 +58,10 @@ func (m *lidMapping) save() {
 	if err != nil {
 		return
 	}
-	os.MkdirAll(filepath.Dir(m.path), 0o700)
-	os.WriteFile(m.path, blob, 0o600)
+	if err := os.MkdirAll(filepath.Dir(m.path), 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(m.path, blob, 0o600)
 }
 
 // record stores a LID→PN pair from an incoming message.
@@ -79,47 +80,4 @@ func (m *lidMapping) record(lid, pn string) {
 	if changed {
 		m.save()
 	}
-}
-
-// pnForLID returns the phone-number JID for a LID user, or empty if no
-// mapping is known.
-func (m *lidMapping) pnForLID(lid string) string {
-	lidUser := jidUser(lid)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if pn, ok := m.pairs[lidUser]; ok {
-		return pn + "@s.whatsapp.net"
-	}
-	return ""
-}
-
-// lidForPN returns the LID JID for a phone-number user, or empty if no
-// mapping is known.
-func (m *lidMapping) lidForPN(pn string) string {
-	pnUser := jidUser(pn)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for lidUser, mappedPN := range m.pairs {
-		if mappedPN == pnUser {
-			return lidUser + "@lid"
-		}
-	}
-	return ""
-}
-
-// sendAddress returns the JID to use for an outbound send: the LID JID when
-// a mapping is known, the PN JID otherwise. WhatsApp modern routing prefers
-// LID addressing; sending to the PN JID when the LID is known can produce a
-// message that the recipient cannot decrypt (Baileys issue 1701).
-func (m *lidMapping) sendAddress(jid string) string {
-	// Already LID-addressed — use as-is.
-	if strings.Contains(jid, "@lid") {
-		return jid
-	}
-	// Try the mapping.
-	if lid := m.lidForPN(jid); lid != "" {
-		return lid
-	}
-	// No mapping: use the PN JID.
-	return jid
 }

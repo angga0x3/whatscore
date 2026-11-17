@@ -85,7 +85,8 @@ func TestSendPreKeyText(t *testing.T) {
 		t.Fatalf("text = %q", gotText)
 	}
 
-	// The sender can continue with a msg carrier using the new session.
+	// Until an authenticated reply arrives, every send must still carry the
+	// bootstrap envelope. The remote device may not have received the first.
 	second, _, err := sender.SendEncryptedText(context.Background(), peer, "kedua")
 	if err != nil {
 		t.Fatalf("follow-up: %v", err)
@@ -103,7 +104,11 @@ func TestSendPreKeyText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	plaintext, err = state.Decrypt(secondEnvelope.Ciphertext, senderPair.Public, prekeys.identity.Public)
+	if secondEnvelope.Carrier != stanza.CarrierPKMsg {
+		t.Fatalf("unconfirmed session used %s instead of pkmsg", secondEnvelope.Carrier)
+	}
+	_, plaintext, err = signal.AcceptPreKeyMessage(secondEnvelope.Ciphertext,
+		prekeys.identity, *prekeys.signed, prekeys.oneTime)
 	if err != nil {
 		t.Fatalf("decrypt follow-up: %v", err)
 	}
@@ -117,6 +122,18 @@ func TestSendPreKeyText(t *testing.T) {
 	}
 	if text != "kedua" {
 		t.Fatalf("follow-up plaintext = %q", text)
+	}
+	// Receiving a valid reply clears pending metadata; subsequent sends can
+	// use msg. Server ACKs never take this branch.
+	reply, err := state.Encrypt([]byte("reply"), prekeys.identity.Public, senderPair.Public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := session.State.Decrypt(reply, prekeys.identity.Public, senderPair.Public); err != nil {
+		t.Fatal(err)
+	}
+	if session.State.HasPendingPreKey() {
+		t.Fatal("authenticated reply did not clear pending prekey")
 	}
 }
 

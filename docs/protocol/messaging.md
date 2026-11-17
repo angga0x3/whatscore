@@ -358,3 +358,18 @@ A real client must:
 | **Proving test** | `TestProtocolMessageTypeIsFieldTwo`, `TestProtocolMessageTypeDecodesFromFieldTwo` |
 | **Related findings** | PF-093, PF-087 |
 | **Notes** | A live group message decrypted to `62 0d 10 1e da 01 08 0a 00 10 af a9 e9 d7 06` (after unpadding): field 12 carries a `ProtocolMessage` whose field 2 is varint 30 (`GROUP_MEMBER_LABEL_CHANGE`). The project's minimal proto declared `type = 1`, so the decoder ignored field 2 and reported `REVOKE` — a wrong answer that looked like a valid one. The outbound app state key request set field 1 as well; the phone answered anyway (it keys on the request field's presence), which is why the mistake survived. Both directions now use field 2, matching the reference. Open observation: after the change the phone did not answer an app state key request within 100 s (two runs), while the older field-1 shape was answered once. The phone also pushes key shares unprompted at provisioning, so a silent phone is not evidence either way; the request path needs a deliberate re-observation before its live status is raised. |
+
+## PF-095: A 1:1 send is encrypted per device, and a bootstrap stays until a reply
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-095 |
+| **Title** | A direct message must carry one ciphertext per recipient device; an account-addressed ciphertext is fanned out by the server to devices whose sessions cannot open it, and each of them shows "Waiting for this message. Check your phone." The same placeholder appears when a sender switches from `pkmsg` to `msg` before any inbound message proved the bootstrap arrived |
+| **Layer** | messaging |
+| **Source** | direct observation of own devices (WhatsApp Web placeholder on 2026-11-17) plus reference study of whatsmeow `sendDM`/`prepareMessageNode` |
+| **Observed date** | 2026-11-17 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `TestSendDirectFansOutPerDevice`, `TestSendDirectBootstrapsAndKeepsPending`, `TestSendDirectRefusesWithoutRecipientDevices`, `TestBuildDeviceQuery`, `TestParseDeviceQuery`, `TestStateSerializationKeepsPendingPreKey`, `TestStateSerializationKeepsBootstrapBase`, `TestRuntimeSendsTheOwnDeviceCopy` |
+| **Related findings** | PF-090, PF-093, PF-094, PF-087 |
+| **Notes** | The old send wrote `<message to="{chat}"><enc type=msg>…` with a single ciphertext and no participant list. The server delivered that ciphertext to every device of the chat and the sender's account; only the device whose session produced it could decrypt, so the rest rendered the "waiting" placeholder. Whatsmeow's `sendDM` instead builds one `<to jid="{device}"><enc>` per device from a `usync` device query, uses the `DeviceSentMessage` plaintext for the sender's own devices, and repeats the `pkmsg` bootstrap until an inbound message authenticates the session (`HasUnacknowledgedPreKeyMessage`). A server `<ack class="message">` proves only that the stanza arrived, never that a device opened it. This project now does the same: `core/messaging.SendDirect` resolves devices with `protocol/messaging.BuildDeviceQuery`, encrypts per device, persists every advanced ratchet before the frame is written, and keeps `PendingPreKey` metadata in the ratchet state (serialization version 2) until an authenticated inbound message clears it. Older session snapshots (version 1) without that metadata are treated as unproven, so the next send re-bootstraps instead of silently using a bare `msg`. |

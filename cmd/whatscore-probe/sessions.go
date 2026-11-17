@@ -7,9 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
-
-	"golang.org/x/crypto/curve25519"
 
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/protocol/signal"
@@ -137,6 +134,9 @@ func (s *sessionsFile) persist(path, peer string, session *coremessaging.PeerSes
 	return s.save(path)
 }
 
+// senderKeyKey is the in-file identity of one group ratchet.
+func senderKeyKey(group, sender string) string { return group + "|" + sender }
+
 // recordSenderKey stores one group ratchet in memory, keyed by group and
 // member. The file is written by the caller, once per change.
 func (s *sessionsFile) recordSenderKey(group, sender string, key *coremessaging.SenderKey) error {
@@ -175,64 +175,6 @@ func (s *sessionsFile) installSenderKeys(r *coremessaging.Receiver) error {
 	}
 	return nil
 }
-
-// senderKeyKey is the in-file identity of one group ratchet.
-// ownSenderKeyKey names the group's own sender key state: the chain the
-// device encrypts group messages with.
-func ownSenderKeyKey(group string) string { return "own/" + group }
-
-// recordOwnSenderKey persists the group's own sender key state. The caller
-// saves the file after the record lands.
-func (s *sessionsFile) recordOwnSenderKey(group string, state signal.SenderKeySenderState) {
-	s.SenderKeys[ownSenderKeyKey(group)] = storedSenderKey{
-		Group:      group,
-		Sender:     "self",
-		ID:         state.ID,
-		Iteration:  state.Iteration,
-		ChainKey:   append([]byte(nil), state.ChainKey[:]...),
-		SigningKey: append([]byte(nil), state.Signing.Private[:]...),
-	}
-}
-
-// loadOwnSenderKey returns the group's own sender key state, generating and
-// persisting it on first use. The signing public is derived from the stored
-// private through X25519 against the basepoint.
-func (s *sessionsFile) loadOwnSenderKey(group string) (signal.SenderKeySenderState, signal.SenderKeyDistribution, error) {
-	key := s.SenderKeys[ownSenderKeyKey(group)]
-	if len(key.ChainKey) == 32 && len(key.SigningKey) == 32 {
-		var chainKey, signingPriv [32]byte
-		copy(chainKey[:], key.ChainKey)
-		copy(signingPriv[:], key.SigningKey)
-		pub, err := curve25519.X25519(signingPriv[:], curve25519.Basepoint)
-		if err != nil {
-			return signal.SenderKeySenderState{}, signal.SenderKeyDistribution{}, fmt.Errorf("app state signing public: %w", err)
-		}
-		var pubFixed [32]byte
-		copy(pubFixed[:], pub)
-		state := signal.SenderKeySenderState{
-			ID:        key.ID,
-			Iteration: key.Iteration,
-			ChainKey:  chainKey,
-			Signing:   signal.SenderKeySigningPair{Private: signingPriv, Public: pubFixed},
-		}
-		dist := signal.SenderKeyDistribution{
-			Version:    signal.SenderKeyMessageVersion,
-			ID:         state.ID,
-			Iteration:  state.Iteration,
-			ChainKey:   chainKey,
-			SigningKey: pubFixed,
-		}
-		return state, dist, nil
-	}
-	dist, state, err := signal.CreateSenderKeyDistribution(uint32(time.Now().Unix() & 0x7fffffff))
-	if err != nil {
-		return state, dist, err
-	}
-	s.recordOwnSenderKey(group, state)
-	return state, dist, nil
-}
-
-func senderKeyKey(group, sender string) string { return group + "|" + sender }
 
 // installSender restores every stored session into a sender, for callers that
 // send but never receive. A session -listen bootstrapped is one -send must
