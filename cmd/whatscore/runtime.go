@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,10 +17,12 @@ import (
 	"github.com/angga0x3/whatscore/core/events"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/core/prekeys"
+	"github.com/angga0x3/whatscore/core/signalsession"
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
 	"github.com/angga0x3/whatscore/protocol/signal"
 	syncpkg "github.com/angga0x3/whatscore/protocol/sync"
+	storagecredentials "github.com/angga0x3/whatscore/storage/credentials"
 )
 
 // ServerJID is the WhatsApp service address client-facing stanzas address.
@@ -68,7 +69,11 @@ type sessionRuntime struct {
 	// patches cannot be verified.
 	appStateKeysMu sync.Mutex
 	appStateKeys   map[string][]byte
-	appStatePath   string
+	// appStateKey names the vault record the keys live under. They are
+	// secrets like any other: a file beside the process is not the vault.
+	appStateKey string
+	// secrets is the encrypted store every persisted record goes through.
+	secrets signalsession.Store
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
@@ -91,7 +96,7 @@ type sessionRuntime struct {
 
 // newSessionRuntime wires the receiver with the session's key material and
 // starts the bus loop that answers message events with delivery receipts.
-func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, account pairedAccount, media mediaSaver, bus *events.Bus, appStatePath string, signals *signalStore) (*sessionRuntime, error) {
+func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, identity signal.KeyPair, preKeys *prekeys.Manager, registrationID uint32, account pairedAccount, media mediaSaver, bus *events.Bus, appStateKey string, signals *signalStore, secrets signalsession.Store) (*sessionRuntime, error) {
 	receiver, err := coremessaging.NewReceiver(bus, id, coremessaging.WithReceiverCodec(codec))
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: receiver: %w", id, err)
@@ -121,6 +126,8 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		ownLID:         account.LID,
 		mediaSaver:     media,
 		signals:        signals,
+		appStateKey:    appStateKey,
+		secrets:        secrets,
 		stop:           make(chan struct{}),
 	}
 	r.loadAppStateKeys()
@@ -674,9 +681,11 @@ func (r *sessionRuntime) storeAppStateKeys(keys map[string][]byte) {
 	}
 }
 
-// persistAppStateKeys writes the key map with owner-only permissions.
+// persistAppStateKeys writes the key map into the encrypted vault. These are
+// keys the phone shared so this device can verify patches; a plaintext file
+// beside the process would undo the vault every other secret goes through.
 func (r *sessionRuntime) persistAppStateKeys() error {
-	if r.appStatePath == "" {
+	if r.appStateKey == "" || r.secrets == nil {
 		return nil
 	}
 	r.appStateKeysMu.Lock()
@@ -685,16 +694,20 @@ func (r *sessionRuntime) persistAppStateKeys() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(r.appStatePath, blob, 0o600)
+	return r.secrets.Put(context.Background(), r.appStateKey, blob)
 }
 
 // loadAppStateKeys restores persisted keys at construction time.
 func (r *sessionRuntime) loadAppStateKeys() {
-	if r.appStatePath == "" {
+	if r.appStateKey == "" || r.secrets == nil {
 		return
 	}
-	blob, err := os.ReadFile(r.appStatePath)
+	blob, err := r.secrets.Get(context.Background(), r.appStateKey)
 	if err != nil {
+		// Nothing stored yet is the normal first-run case.
+		if !errors.Is(err, storagecredentials.ErrNotFound) {
+			r.logger.Warn("app state keys unreadable", "session", r.id, "error", err)
+		}
 		return
 	}
 	var keys map[string][]byte

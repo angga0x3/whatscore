@@ -316,7 +316,7 @@ func (f *sessionFactory) newSession(id string) (*session.Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: signal store: %w", id, err)
 	}
-	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, account, f.media, f.bus, keys.appStatePath, signals)
+	runtime, err := newSessionRuntime(id, f.codec, f.logger, keys.identity, keys.preKeys, keys.registrationID, account, f.media, f.bus, keys.appStatePath, signals, f.vault)
 	if err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: runtime: %w", id, err)
 	}

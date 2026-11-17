@@ -50,7 +50,7 @@ func newVaultBackedRuntime(t *testing.T, id string, identity signal.KeyPair, vau
 	bus := events.NewBus()
 	t.Cleanup(bus.Close)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	runtime, err := newSessionRuntime(id, binary.NewCodec(nil), logger, identity, nil, 4242, pairedAccount{}, nil, bus, "", signals)
+	runtime, err := newSessionRuntime(id, binary.NewCodec(nil), logger, identity, nil, 4242, pairedAccount{}, nil, bus, appStateKeyPath(id), signals, vault)
 	if err != nil {
 		t.Fatalf("runtime: %v", err)
 	}
@@ -313,5 +313,33 @@ func TestRuntimeSkipsTheCopyForSelfSend(t *testing.T) {
 	}
 	if len(writer.frames) != 1 {
 		t.Fatalf("frames = %d, want the recipient copy only", len(writer.frames))
+	}
+}
+
+// TestAppStateKeysSurviveARestart pins the vault: the phone shares app state
+// sync keys once, and a restart that lost them cannot verify a single patch
+// until the phone cooperates again. A plaintext file beside the process is not
+// the vault, so the keys travel through it like every other secret.
+func TestAppStateKeysSurviveARestart(t *testing.T) {
+	identity, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	vault := newTestVault(t)
+
+	first, _ := newVaultBackedRuntime(t, "session-1", identity, vault)
+	first.storeAppStateKeys(map[string][]byte{
+		"aa": {0x01, 0x02},
+		"bb": {0x03, 0x04},
+	})
+
+	second, _ := newVaultBackedRuntime(t, "session-1", identity, vault)
+	second.appStateKeysMu.Lock()
+	defer second.appStateKeysMu.Unlock()
+	if len(second.appStateKeys) != 2 {
+		t.Fatalf("restored keys = %d, want 2", len(second.appStateKeys))
+	}
+	if string(second.appStateKeys["aa"]) != string([]byte{0x01, 0x02}) {
+		t.Fatalf("key aa = %x", second.appStateKeys["aa"])
 	}
 }

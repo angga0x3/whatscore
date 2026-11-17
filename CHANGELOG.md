@@ -49,6 +49,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Fixed
 
+- App state sync keys are stored in the credential vault. The runtime wrote
+  them to a filesystem path derived from the vault key name
+  (`sessions/<id>/appstate.keys.json`), so they either failed to persist — the
+  directory does not exist — or, worse, landed in plaintext outside the vault.
+  They now travel through the same encrypted store as every other secret and
+  are restored at construction.
 - Media arriving on an established session is published. The msg carrier —
   every message after the first in a conversation — decoded text only, so an
   image, sticker or voice note that decrypted cleanly was dropped as "no text
