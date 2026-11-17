@@ -45,6 +45,12 @@ type EncryptedText struct {
 	// carries device_fanout="false", because there is nothing left to fan
 	// out.
 	Peer bool
+	// DeviceIdentity carries this device's self-signed ADVSignedDeviceIdentity
+	// blob. A pkmsg carrier (first contact) must carry it: without it the
+	// recipient cannot verify the sender's identity key and the message shows
+	// "Waiting for this message" on their phone forever. Msg-carrier sends
+	// over an existing session do not need it.
+	DeviceIdentity []byte
 }
 
 // BuildEncryptedText builds `<message id to type="text"><enc v=... type=...>`
@@ -97,14 +103,24 @@ func BuildEncryptedText(message EncryptedText) (*binary.Node, error) {
 		// message".
 		attrs["device_fanout"] = "false"
 	}
+	children := []binary.Node{{
+		Tag:   tagEnc,
+		Attrs: binary.Attrs{attrVersion: message.Version, attrCarrier: message.Carrier},
+		Bytes: append([]byte(nil), message.Ciphertext...),
+	}}
+	// PF-094: a pkmsg carrier must carry this device's self-signed identity
+	// blob. Without it the recipient cannot verify the sender's identity key,
+	// and the message shows "Waiting for this message" on their phone.
+	if message.Carrier == CarrierPKMsg && len(message.DeviceIdentity) > 0 {
+		children = append(children, binary.Node{
+			Tag:   "device-identity",
+			Bytes: append([]byte(nil), message.DeviceIdentity...),
+		})
+	}
 	return &binary.Node{
-		Tag:   tagMessage,
-		Attrs: attrs,
-		Children: []binary.Node{{
-			Tag:   tagEnc,
-			Attrs: binary.Attrs{attrVersion: message.Version, attrCarrier: message.Carrier},
-			Bytes: append([]byte(nil), message.Ciphertext...),
-		}},
+		Tag:      tagMessage,
+		Attrs:    attrs,
+		Children: children,
 	}, nil
 }
 

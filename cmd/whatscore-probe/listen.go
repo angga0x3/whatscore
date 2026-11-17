@@ -142,6 +142,9 @@ func runListen(cfg sendConfig) error {
 		return senderErr
 	}
 	sender.SetIdentityPair(identityPair)
+	if blob, blobErr := deviceIdentityBytes(record); blobErr == nil {
+		sender.SetDeviceIdentity(blob)
+	}
 	if err := sessions.install(receiver, sender); err != nil {
 		return err
 	}

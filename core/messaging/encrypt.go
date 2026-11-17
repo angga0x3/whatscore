@@ -101,6 +101,12 @@ func (s *Sender) SendEncryptedTextWithID(ctx context.Context, to, id, text strin
 // an existing session.
 func (s *Sender) SetIdentity(identity [32]byte) { s.identity = identity }
 
+// SetDeviceIdentity installs this device's self-signed identity blob. Every
+// pkmsg send carries it so the recipient can verify the sender's identity.
+func (s *Sender) SetDeviceIdentity(blob []byte) {
+	s.deviceIdentity = append([]byte(nil), blob...)
+}
+
 // SetIdentityPair sets the identity key pair, which is required to initiate a
 // session from a peer bundle.
 func (s *Sender) SetIdentityPair(pair signal.KeyPair) {
@@ -173,7 +179,8 @@ func (s *Sender) sendPayload(ctx context.Context, to, id, msgType string, payloa
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
 		ID: id, To: jid, Type: msgType, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
-		Peer: peer || jid.Device > 0,
+		Peer:           peer || jid.Device > 0,
+		DeviceIdentity: s.deviceIdentity,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)

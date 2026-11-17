@@ -163,6 +163,9 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		return nil, fmt.Errorf("cmd/whatscore: session %s: sender: %w", id, err)
 	}
 	sender.SetIdentityPair(identity)
+	if len(r.deviceIdentity) > 0 {
+		sender.SetDeviceIdentity(r.deviceIdentity)
+	}
 	sender.SetPreKeyBundleSource(&runtimeBundles{r: r})
 	r.sender = sender
 	receiver.SetSessionObserver(func(peer string, ps *coremessaging.PeerSession) {

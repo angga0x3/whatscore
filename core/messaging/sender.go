@@ -34,6 +34,11 @@ type Sender struct {
 	idPair   signal.KeyPair
 	peers    map[string]*PeerSession
 	bundles  PreKeyBundleSource
+	// deviceIdentity is this device's self-signed ADVSignedDeviceIdentity
+	// blob. A pkmsg carrier must carry it: without it the recipient cannot
+	// verify the sender's identity key and shows "Waiting for this message"
+	// (PF-094).
+	deviceIdentity []byte
 }
 
 // Option configures a Sender.

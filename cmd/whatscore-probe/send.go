@@ -123,6 +123,9 @@ func runSend(cfg sendConfig) error {
 		return err
 	}
 	sender.SetIdentityPair(identityPair)
+	if blob, blobErr := deviceIdentityBytes(record); blobErr == nil {
+		sender.SetDeviceIdentity(blob)
+	}
 	if n, err := sessions.installSender(sender); err != nil {
 		return err
 	} else if n > 0 {

@@ -141,7 +141,8 @@ func (s *Sender) sendPreKeyPayload(ctx context.Context, jid stanza.JID, id, msgT
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
 		ID: id, To: jid, Type: msgType, Carrier: stanza.CarrierPKMsg, Ciphertext: wire,
-		Peer: jid.Device > 0,
+		Peer:           jid.Device > 0,
+		DeviceIdentity: s.deviceIdentity,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)
