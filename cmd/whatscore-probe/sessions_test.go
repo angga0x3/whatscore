@@ -258,3 +258,12 @@ func TestInstallSenderKeysRejectsShortKeys(t *testing.T) {
 		t.Fatal("short keys accepted")
 	}
 }
+
+// TestSessionsPathNeedsAKeyFile keeps an unset -keys from inventing a file in
+// the working directory: that is how -send silently started from an empty
+// store.
+func TestSessionsPathNeedsAKeyFile(t *testing.T) {
+	if got := sessionsPathFor(""); got != "" {
+		t.Fatalf("sessionsPathFor(\"\") = %q, want empty", got)
+	}
+}

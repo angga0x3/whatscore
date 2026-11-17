@@ -48,6 +48,12 @@ type storedSession struct {
 // sessionsPathFor derives the sessions file from the key file path:
 // paired.keys.json -> paired.sessions.json.
 func sessionsPathFor(keysPath string) string {
+	if keysPath == "" {
+		// No key file means no session file. Returning a derived name here
+		// once produced "..sessions.json" in the working directory, and every
+		// send started from an empty store without saying so.
+		return ""
+	}
 	return filepath.Join(filepath.Dir(keysPath),
 		string(strings.TrimSuffix(filepath.Base(keysPath), filepath.Ext(keysPath)))+".sessions.json")
 }

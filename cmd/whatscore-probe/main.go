@@ -117,6 +117,13 @@ func main() {
 	}
 
 	if *sendFlag {
+		// The send path shares -listen's session file: that is where the
+		// peer and phone ratchets live, and a send that starts from an empty
+		// store re-initiates every session. Resolve the same default.
+		resolvedKeys := *keyPath
+		if resolvedKeys == "" && *credPath != "" {
+			resolvedKeys = strings.TrimSuffix(*credPath, filepath.Ext(*credPath)) + ".keys.json"
+		}
 		err := runSend(sendConfig{
 			Endpoint:   *endpoint,
 			CredPath:   *credPath,
@@ -128,6 +135,7 @@ func main() {
 			Caption:    *sendCaption,
 			UploadOnly: *uploadOnly,
 			Timeout:    *timeout,
+			KeyPath:    resolvedKeys,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "send: %v\n", err)
