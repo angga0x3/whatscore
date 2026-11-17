@@ -27,9 +27,10 @@ import (
 
 // sendAppStateKeyRequest asks the phone for the missing app state keys. The
 // request rides the existing ratchet with the phone's device (bootstrapped
-// from its messages, persisted across runs) — no bundle fetch needed, and
-// none is served for the own account anyway. The phone answers with an
-// APP_STATE_SYNC_KEY_SHARE, whose storage triggers the patch re-request.
+// from its messages, persisted across runs) — no bundle fetch needed: what
+// the phone will accept is the chain its own messages created. The phone
+// answers with an APP_STATE_SYNC_KEY_SHARE, whose storage triggers the patch
+// re-request.
 func sendAppStateKeyRequest(ctx context.Context, sender *coremessaging.Sender, sessions *sessionsFile, sessionsPath, phonePeer string, keyIDs [][]byte) error {
 	if len(keyIDs) == 0 {
 		return nil
@@ -78,6 +79,17 @@ func phonePeerFor(lid string, sessions map[string]storedSession) string {
 		}
 	}
 	return ""
+}
+
+// isOwnAccount reports whether dest addresses this account, by either of its
+// two identities: the phone number and the LID are the same account under
+// different addressing, and a self-send must not also produce a copy.
+func isOwnAccount(dest string, record *credentialRecord) bool {
+	user := jidUserFor(dest)
+	if user == "" {
+		return false
+	}
+	return user == jidUserFor(record.JID) || user == jidUserFor(record.LID)
 }
 
 // jidUserFor returns the user part of a JID, without the device or the

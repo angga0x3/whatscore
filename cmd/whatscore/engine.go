@@ -443,7 +443,10 @@ func (f *sessionFactory) saveAccountCredentials(ctx context.Context, id string, 
 // carries, and the account LID the own-device copy is addressed by.
 type pairedAccount struct {
 	SignedIdentity []byte
-	LID            string
+	// JID is the account's phone-number address; LID is the same account
+	// under the hidden identity. A self-send is addressed by either.
+	JID string
+	LID string
 }
 
 // loadAccountCredentials returns the stored login credentials plus the
@@ -465,7 +468,7 @@ func (f *sessionFactory) loadAccountCredentials(ctx context.Context, id string) 
 		return nil, pairedAccount{}, fmt.Errorf("%w: session %s account record has no username", ErrCredentialState, id)
 	}
 	return &engine.Credentials{Username: rec.Username, Device: rec.Device},
-		pairedAccount{SignedIdentity: rec.SignedIdentity, LID: rec.LID}, nil
+		pairedAccount{SignedIdentity: rec.SignedIdentity, JID: rec.JID, LID: rec.LID}, nil
 }
 
 // sessionKeys is the engine-ready key material for one session.

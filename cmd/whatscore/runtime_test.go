@@ -302,17 +302,22 @@ func TestRuntimeSkipsTheCopyForSelfSend(t *testing.T) {
 	}
 	ownLID := "266988689592415:39@lid"
 	_, selfSession, _ := peerConversation(t, identity)
+	_, selfSessionPN, _ := peerConversation(t, identity)
 
 	vault := newTestVault(t)
 	seedPeerSession(t, vault, "session-1", ownLID, selfSession)
+	seedPeerSession(t, vault, "session-1", "628994340905@s.whatsapp.net", selfSessionPN)
 
 	runtime, writer := newVaultBackedRuntime(t, "session-1", identity, vault)
 	runtime.ownLID = ownLID
-	if _, err := runtime.DeliverText(context.Background(), ownLID, "catatan"); err != nil {
-		t.Fatalf("deliver: %v", err)
+	runtime.ownJID = "628994340905:39@s.whatsapp.net"
+	for _, dest := range []string{ownLID, "628994340905@s.whatsapp.net"} {
+		if _, err := runtime.DeliverText(context.Background(), dest, "catatan"); err != nil {
+			t.Fatalf("deliver to %s: %v", dest, err)
+		}
 	}
-	if len(writer.frames) != 1 {
-		t.Fatalf("frames = %d, want the recipient copy only", len(writer.frames))
+	if len(writer.frames) != 2 {
+		t.Fatalf("frames = %d, want one recipient copy per send and no own-device copy", len(writer.frames))
 	}
 }
 

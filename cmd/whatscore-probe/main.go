@@ -75,6 +75,7 @@ func main() {
 	sendFile := flag.String("file", "", "file to send as media with -send (encrypted, uploaded, then messaged)")
 	sendMime := flag.String("mime", "", "MIME type for -file (default: from the extension)")
 	sendCaption := flag.String("caption", "", "caption for -file")
+	uploadOnly := flag.Bool("upload-only", false, "with -file, upload to the CDN and stop without sending")
 	listenFlag := flag.Bool("listen", false, "log in, publish prekeys, and decrypt inbound messages")
 	keyPath := flag.String("keys", "", "key file for -listen (default: <creds>.keys.json)")
 	mediaDir := flag.String("media", "media", "directory inbound media is written to")
@@ -117,15 +118,16 @@ func main() {
 
 	if *sendFlag {
 		err := runSend(sendConfig{
-			Endpoint: *endpoint,
-			CredPath: *credPath,
-			DictPath: *pairDict,
-			To:       *sendTo,
-			Text:     *sendText,
-			FilePath: *sendFile,
-			MimeType: *sendMime,
-			Caption:  *sendCaption,
-			Timeout:  *timeout,
+			Endpoint:   *endpoint,
+			CredPath:   *credPath,
+			DictPath:   *pairDict,
+			To:         *sendTo,
+			Text:       *sendText,
+			FilePath:   *sendFile,
+			MimeType:   *sendMime,
+			Caption:    *sendCaption,
+			UploadOnly: *uploadOnly,
+			Timeout:    *timeout,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "send: %v\n", err)

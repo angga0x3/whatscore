@@ -77,9 +77,11 @@ type sessionRuntime struct {
 	// deviceIdentity is the self-signed blob pairing produced; the retry
 	// receipt's inline keys block carries it. Empty until paired.
 	deviceIdentity []byte
-	// ownLID is the account's LID: the own-device copy of a send is addressed
-	// to the phone's session, which is the one whose user matches it.
+	// ownLID is the account's LID and ownJID its phone-number address: the
+	// own-device copy is addressed to the phone's session, whose user matches
+	// the LID, and a self-send can name either form.
 	ownLID string
+	ownJID string
 	// signals persists every peer ratchet this session installs or advances.
 	// A restart without it is a one-way door: the peer continues the chain
 	// with msg carriers and this device has no state to open them (PF-087).
@@ -124,6 +126,7 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 		identity:       identity,
 		deviceIdentity: append([]byte(nil), account.SignedIdentity...),
 		ownLID:         account.LID,
+		ownJID:         account.JID,
 		mediaSaver:     media,
 		signals:        signals,
 		appStateKey:    appStateKey,
@@ -881,8 +884,10 @@ func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id, text str
 	}
 	// A send to the account itself already reaches the phone as the
 	// recipient's copy; a second copy would show the same message twice in
-	// the self chat.
-	if jidUser(to) == jidUser(r.ownLID) {
+	// the self chat. The account has two identities — phone number and LID —
+	// and either one addresses it.
+	user := jidUser(to)
+	if user != "" && (user == jidUser(r.ownLID) || user == jidUser(r.ownJID)) {
 		return
 	}
 	peers, err := r.signals.peers(ctx)

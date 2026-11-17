@@ -238,3 +238,32 @@ func textInner(text string) *protobuf.Message {
 }
 
 var _ = coremessaging.ErrNoSession
+
+// TestIsOwnAccountMatchesBothIdentities pins the self-send guard: the account
+// has a phone-number address and a LID, and a send to either one already
+// reaches the phone as the recipient's copy.
+func TestIsOwnAccountMatchesBothIdentities(t *testing.T) {
+	record := &credentialRecord{
+		JID: "628994340905:39@s.whatsapp.net",
+		LID: "266988689592415:39@lid",
+	}
+	for _, dest := range []string{
+		"628994340905@s.whatsapp.net",
+		"628994340905:39@s.whatsapp.net",
+		"266988689592415@lid",
+		"266988689592415:12@lid",
+	} {
+		if !isOwnAccount(dest, record) {
+			t.Fatalf("%s not recognised as this account", dest)
+		}
+	}
+	for _, dest := range []string{
+		"628555@s.whatsapp.net",
+		"999999999999999@lid",
+		"",
+	} {
+		if isOwnAccount(dest, record) {
+			t.Fatalf("%s wrongly recognised as this account", dest)
+		}
+	}
+}

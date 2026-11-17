@@ -34,9 +34,13 @@ type sendConfig struct {
 	FilePath string
 	MimeType string
 	Caption  string
-	Timeout  time.Duration
-	KeyPath  string
-	MediaDir string
+	// UploadOnly stops after the media upload, before anything is sent. It
+	// exists so the CDN half of PF-092 can be proven without putting a
+	// message on anyone's phone.
+	UploadOnly bool
+	Timeout    time.Duration
+	KeyPath    string
+	MediaDir   string
 }
 
 // runSend logs in with stored credentials and sends one text message.
@@ -126,6 +130,10 @@ func runSend(cfg sendConfig) error {
 	if err != nil {
 		return err
 	}
+	if cfg.UploadOnly {
+		fmt.Println("upload-only: nothing was sent")
+		return nil
+	}
 	payload, err := proto.Marshal(inner)
 	if err != nil {
 		return fmt.Errorf("marshal payload: %w", err)
@@ -175,7 +183,7 @@ func runSend(cfg sendConfig) error {
 	// A send to the account itself is the exception: the recipient copy is
 	// already addressed to our own devices, so a second copy would show the
 	// message twice in the self chat.
-	if jidUserFor(peerJID.String()) == jidUserFor(record.LID) {
+	if isOwnAccount(peerJID.String(), record) {
 		fmt.Println("own-device copy skipped: the destination is this account")
 	} else if err := sendOwnDeviceCopy(ctx, frameWriter{sc: sc}, codec, sessions, sessionsPath, record, peerJID.String(), id, inner); err != nil {
 		fmt.Printf("own-device copy failed: %v\n", err)

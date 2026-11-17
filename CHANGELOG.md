@@ -189,6 +189,16 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Proven live
 
+- Media upload and a media-class message. On 2026-11-17 the probe queried the
+  media connection, uploaded a 166-byte PNG to the CDN host the server named
+  (HTTP 200 with `url` and `direct_path`), and sent an image message naming it
+  under `type="media"` — the server answered `ack class="message"`. Whether
+  the phone renders the attachment was not observed, so PF-092 stops at "the
+  server accepted the stanza".
+- A note-to-self send to the account's phone number fetched the account's own
+  prekey bundle (`signed prekey 6886917`) and was acknowledged — the bundle is
+  served for the account by PN, which the copy still cannot use because it
+  addresses the phone's device.
 - Live receive, end to end, including a third party: with the token table
   completed, two queued text messages from a real contact bootstrapped pkmsg
   sessions, decrypted, rendered their text ("uy", "nng kamar", "ngpo", …) and
