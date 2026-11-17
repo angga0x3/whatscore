@@ -4,6 +4,14 @@ All notable changes, newest first. Releases follow Semantic Versioning; the
 project is pre-1.0, so breaking changes happen in minor versions.
 
 ## [Unreleased]
+### Fixed
+
+- Outbound pkmsg messages never carried a `<device-identity>` child. The
+  official clients always include it on first contact: without it the
+  recipient cannot verify the sender's identity key, and the message shows
+  "Waiting for this message" on their phone forever (PF-094, Baileys issue
+  1701). Every pkmsg send now carries the blob.
+
 
 ### Added
 
