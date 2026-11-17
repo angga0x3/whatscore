@@ -49,6 +49,14 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- Group messages decrypt: sender-key distribution parse (`Message` field 2,
+  libsignal's `SenderKeyDistributionMessage`), `SenderKeyMessage` parse and
+  XEdDSA verification, the `HMAC(chain,0x01)` → `HKDF("WhisperGroup",48)`
+  message-key derivation, `HMAC(chain,0x02)` chain advance, and per-(group,
+  member) state. Vectors are generated with libsignal v0.2.2, the same
+  reference the project's other Signal primitives use; the probe and the
+  server both persist the chains (`sender_keys` in the sessions file; one
+  vault record on the server). PF-093.
 - `-listen` keeps the app state sync keys the phone shares. They are written
   next to the credential files (`paired.appstate.keys.json`, mode 0600) and
   restored at startup, so a later run does not wake the phone to ask for keys
@@ -83,6 +91,10 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Fixed
 
+- `ProtocolMessage.type` was declared as field 1; the reference puts the
+  revoke/edit key there and the enum at field 2. Every inbound protocol
+  message therefore decoded as `REVOKE` (the zero value) and the outbound key
+  request set the wrong field. Both directions now use field 2 (PF-094).
 - App state sync keys are stored in the credential vault. The runtime wrote
   them to a filesystem path derived from the vault key name
   (`sessions/<id>/appstate.keys.json`), so they either failed to persist — the
@@ -206,6 +218,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Proven live
 
+- Group sender keys decrypt live (2026-11-17). The queue's group stanza
+  carried a `pkmsg` distribution for this device and an `skmsg` ciphertext;
+  the distribution installed the member's key, the XEdDSA signature verified,
+  the chain derived the iteration's message key, and the ciphertext opened to
+  a valid `ProtocolMessage` (type `GROUP_MEMBER_LABEL_CHANGE`). Group text has
+  not been observed yet.
 - Group stanzas decode live with their real shape (2026-11-17): `from` is the
   group, `participant` is the member's device, and the stanza carries both the
   sender-key distribution (`enc type=pkmsg`) and the group ciphertext

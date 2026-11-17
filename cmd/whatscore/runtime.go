@@ -175,6 +175,14 @@ func newSessionRuntime(id string, codec binary.Codec, logger *slog.Logger, ident
 	if err := r.restoreSessions(); err != nil {
 		return nil, fmt.Errorf("cmd/whatscore: session %s: restore sessions: %w", id, err)
 	}
+	receiver.SetSenderKeyObserver(func(group, sender string, key *coremessaging.SenderKey) {
+		if err := r.persistSenderKey(group, sender, key); err != nil {
+			logger.Warn("could not persist sender key", "session", id, "group", group, "sender", sender, "error", err)
+		}
+	})
+	if err := r.restoreSenderKeys(); err != nil {
+		return nil, fmt.Errorf("cmd/whatscore: session %s: restore sender keys: %w", id, err)
+	}
 
 	// Delivery receipts follow the decrypt, not the stanza: the server keeps
 	// a message it has no receipt for, so a failed decrypt can be recovered
@@ -914,6 +922,36 @@ func (r *sessionRuntime) restoreSessions() error {
 		r.logger.Info("peer sessions restored", "session", r.id, "count", restored)
 	}
 	return nil
+}
+
+// restoreSenderKeys loads every group ratchet the vault holds, so a restart
+// keeps reading the groups it could read before it.
+func (r *sessionRuntime) restoreSenderKeys() error {
+	if r.signals == nil {
+		return nil
+	}
+	entries, err := r.signals.loadSenderKeys(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		key := entry.Key
+		if err := r.receiver.SetSenderKey(entry.Group, entry.Sender, &key); err != nil {
+			return fmt.Errorf("install sender key for %s in %s: %w", entry.Sender, entry.Group, err)
+		}
+	}
+	if len(entries) > 0 {
+		r.logger.Info("sender keys restored", "session", r.id, "count", len(entries))
+	}
+	return nil
+}
+
+// persistSenderKey writes one group ratchet to the encrypted store.
+func (r *sessionRuntime) persistSenderKey(group, sender string, key *coremessaging.SenderKey) error {
+	if r.signals == nil || key == nil {
+		return nil
+	}
+	return r.signals.saveSenderKey(context.Background(), group, sender, key)
 }
 
 // persistSession writes one peer ratchet to the encrypted store.

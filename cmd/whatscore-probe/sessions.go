@@ -22,6 +22,20 @@ import (
 // goes through the receiver's session observer into this file.
 type sessionsFile struct {
 	Sessions map[string]storedSession `json:"sessions"`
+	// SenderKeys are the group ratchets, one per (group, member). They are
+	// as load-bearing as a 1:1 session: a group message the phone sends
+	// after a restart is only readable if the chain survived (PF-093).
+	SenderKeys map[string]storedSenderKey `json:"sender_keys,omitempty"`
+}
+
+// storedSenderKey is one member's group ratchet on disk.
+type storedSenderKey struct {
+	Group      string `json:"group"`
+	Sender     string `json:"sender"`
+	ID         uint32 `json:"id"`
+	Iteration  uint32 `json:"iteration"`
+	ChainKey   []byte `json:"chain_key"`
+	SigningKey []byte `json:"signing_key"`
 }
 
 // storedSession holds one peer's identity key (the sender's Signal identity,
@@ -55,6 +69,9 @@ func loadSessionsFile(path string) (*sessionsFile, error) {
 	}
 	if file.Sessions == nil {
 		file.Sessions = map[string]storedSession{}
+	}
+	if file.SenderKeys == nil {
+		file.SenderKeys = map[string]storedSenderKey{}
 	}
 	return &file, nil
 }
@@ -110,6 +127,48 @@ func (s *sessionsFile) persist(path, peer string, session *coremessaging.PeerSes
 	}
 	return s.save(path)
 }
+
+// recordSenderKey stores one group ratchet in memory, keyed by group and
+// member. The file is written by the caller, once per change.
+func (s *sessionsFile) recordSenderKey(group, sender string, key *coremessaging.SenderKey) error {
+	if key == nil {
+		return nil
+	}
+	if s.SenderKeys == nil {
+		s.SenderKeys = map[string]storedSenderKey{}
+	}
+	s.SenderKeys[senderKeyKey(group, sender)] = storedSenderKey{
+		Group:      group,
+		Sender:     sender,
+		ID:         key.ID,
+		Iteration:  key.Iteration,
+		ChainKey:   append([]byte(nil), key.ChainKey[:]...),
+		SigningKey: append([]byte(nil), key.SigningKey[:]...),
+	}
+	return nil
+}
+
+// installSenderKeys loads every stored group ratchet into the receiver.
+func (s *sessionsFile) installSenderKeys(r *coremessaging.Receiver) error {
+	for _, rec := range s.SenderKeys {
+		if rec.Group == "" || rec.Sender == "" {
+			continue
+		}
+		if len(rec.ChainKey) != 32 || len(rec.SigningKey) != 32 {
+			return fmt.Errorf("sender key for %s in %s has %d/%d byte keys", rec.Sender, rec.Group, len(rec.ChainKey), len(rec.SigningKey))
+		}
+		key := &coremessaging.SenderKey{ID: rec.ID, Iteration: rec.Iteration}
+		copy(key.ChainKey[:], rec.ChainKey)
+		copy(key.SigningKey[:], rec.SigningKey)
+		if err := r.SetSenderKey(rec.Group, rec.Sender, key); err != nil {
+			return fmt.Errorf("install sender key for %s in %s: %w", rec.Sender, rec.Group, err)
+		}
+	}
+	return nil
+}
+
+// senderKeyKey is the in-file identity of one group ratchet.
+func senderKeyKey(group, sender string) string { return group + "|" + sender }
 
 // installSender restores every stored session into a sender, for callers that
 // send but never receive. A session -listen bootstrapped is one -send must

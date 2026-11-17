@@ -134,6 +134,12 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node, peer sta
 		r.logger.InfoContext(ctx, "decrypted a prekey message with no usable payload", "peer", peer, "error", err)
 		return
 	}
+	if payload.SenderKey != nil {
+		r.storeSenderKey(ctx, peer, payload.SenderKey)
+	}
+	if payload.Kind == stanza.PayloadSenderKey {
+		return
+	}
 
 	timestamp := timestampOf(node)
 	r.publishIncoming(ctx, envelope.ID, peer, envelope.From, timestamp, payload)

@@ -58,7 +58,7 @@ Confidence and Status are deliberately separate axes:
   test proves it; update Confidence and Status in the same PR.
 - **Exception — Probable wire/payload work (PF-010…PF-017,
   PF-020…PF-025, PF-030…PF-036, PF-040…PF-048, PF-057…PF-059,
-  PF-064, PF-065, PF-066, PF-070…PF-072, PF-074, PF-076, PF-090, PF-092, PF-093).** Framing, binary encoding,
+  PF-064, PF-065, PF-066, PF-070…PF-072, PF-074, PF-076, PF-090, PF-092, PF-093, PF-094).** Framing, binary encoding,
   pairing payloads, auth/messaging stanza shapes, and the media envelope are
   necessarily implemented before a live connection exists. They may be coded
   while **Probable** because our own codec, synthetic vectors, independent

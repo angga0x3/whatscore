@@ -339,7 +339,22 @@ A real client must:
 | **Source** | direct observation of own session (2026-11-17, queue drain) |
 | **Observed date** | 2026-11-17 |
 | **Confidence** | Confirmed for the stanza shape; sender-key decryption not implemented |
-| **Status** | Observed-only (shape); the group ciphertext is deliberately skipped |
+| **Status** | Verified live on receive (2026-11-17): a group ciphertext decrypted after its sender key arrived |
 | **Proving test** | `TestGroupPreKeyUsesTheParticipant`, `TestGroupSenderKeyMessageIsSkipped`, `TestParseEncryptedTextReadsTheParticipant` |
 | **Related findings** | PF-036, PF-083, PF-087 |
-| **Notes** | Live stanza: `<message id=… from=120363046767601853@g.us type=text notify=Zenero participant=200506840473775@lid><enc type=pkmsg>…</enc><reporting/><meta/><enc type=skmsg>…</enc></message>`. Keying the 1:1 session by `from` — which the receiver did — installed a peer named after the group and lost the real sender; the fix uses `participant` and publishes the message in the group chat with the participant as sender. The `skmsg` ciphertext is a libsignal SenderKeyMessage: version byte, protobuf (id, iteration, ciphertext), 64-byte XEdDSA signature; its key comes from a SenderKeyDistributionMessage (`Message.senderKeyDistributionMessage`, field 2) carried in the `pkmsg` payload, with chain derivation `HMAC-SHA256(chainKey, 0x01)` → `HKDF(info="WhisperGroup", 48)` (iv 16 ‖ cipher key 32) and `HMAC-SHA256(chainKey, 0x02)` for the next chain key. Implementing that is the next milestone; until then the group ciphertext is logged and skipped, and no session is invented for it. |
+| **Notes** | Live stanza: `<message id=… from=120363046767601853@g.us type=text notify=Zenero participant=200506840473775@lid><enc type=pkmsg>…</enc><reporting/><meta/><enc type=skmsg>…</enc></message>`. Keying the 1:1 session by `from` — which the receiver did — installed a peer named after the group and lost the real sender; the fix uses `participant` and publishes the message in the group chat with the participant as sender. The `skmsg` ciphertext is a libsignal SenderKeyMessage: version byte, protobuf (id, iteration, ciphertext), 64-byte XEdDSA signature; its key comes from a SenderKeyDistributionMessage (`Message.senderKeyDistributionMessage`, field 2) carried in the `pkmsg` payload, with chain derivation `HMAC-SHA256(chainKey, 0x01)` → `HKDF(info="WhisperGroup", 48)` (iv 16 ‖ cipher key 32) and `HMAC-SHA256(chainKey, 0x02)` for the next chain key. Sender-key decryption is implemented (`protocol/signal/senderkey.go`, vectors from libsignal v0.2.2) and proven live on 2026-11-17: the queue's group stanza carried a `pkmsg` distribution for this device followed by an `skmsg` ciphertext, the distribution installed the member's key, the signature verified, the chain derived the iteration's keys, and the ciphertext opened to a `ProtocolMessage` of type `GROUP_MEMBER_LABEL_CHANGE` (PF-094). Group *text* has not been observed yet; the group ciphertext is no longer skipped. |
+
+## PF-094: `ProtocolMessage.type` is field 2, not field 1
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-094 |
+| **Title** | In `ProtocolMessage`, field 1 is the revoke/edit key (`WACommon.MessageKey`) and field 2 is the `Type` enum; declaring `type` as field 1 hides every type on the wire and makes every protocol message decode as `REVOKE` (the enum's zero value) |
+| **Layer** | messaging |
+| **Source** | direct observation of own session (2026-11-17) plus reference study of whatsmeow `WAWebProtobufsE2E.proto` |
+| **Observed date** | 2026-11-17 |
+| **Confidence** | Confirmed |
+| **Status** | Verified-by-test |
+| **Proving test** | `TestProtocolMessageTypeIsFieldTwo`, `TestProtocolMessageTypeDecodesFromFieldTwo` |
+| **Related findings** | PF-093, PF-087 |
+| **Notes** | A live group message decrypted to `62 0d 10 1e da 01 08 0a 00 10 af a9 e9 d7 06` (after unpadding): field 12 carries a `ProtocolMessage` whose field 2 is varint 30 (`GROUP_MEMBER_LABEL_CHANGE`). The project's minimal proto declared `type = 1`, so the decoder ignored field 2 and reported `REVOKE` — a wrong answer that looked like a valid one. The outbound app state key request set field 1 as well; the phone answered anyway (it keys on the request field's presence), which is why the mistake survived. Both directions now use field 2, matching the reference. Open observation: after the change the phone did not answer an app state key request within 100 s (two runs), while the older field-1 shape was answered once. The phone also pushes key shares unprompted at provisioning, so a silent phone is not evidence either way; the request path needs a deliberate re-observation before its live status is raised. |

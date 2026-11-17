@@ -145,9 +145,24 @@ func runListen(cfg sendConfig) error {
 	if err := sessions.install(receiver, sender); err != nil {
 		return err
 	}
+	if err := sessions.installSenderKeys(receiver); err != nil {
+		return err
+	}
 	if n := len(sessions.Sessions); n > 0 {
 		fmt.Printf("sessions: %d restored from %s\n", n, sessionsPath)
 	}
+	if n := len(sessions.SenderKeys); n > 0 {
+		fmt.Printf("sender keys: %d restored from %s\n", n, sessionsPath)
+	}
+	receiver.SetSenderKeyObserver(func(group, member string, key *coremessaging.SenderKey) {
+		if err := sessions.recordSenderKey(group, member, key); err != nil {
+			fmt.Printf("could not record sender key for %s in %s: %v\n", member, group, err)
+			return
+		}
+		if err := sessions.save(sessionsPath); err != nil {
+			fmt.Printf("could not save sender keys: %v\n", err)
+		}
+	})
 	receiver.SetSessionObserver(func(peer string, session *coremessaging.PeerSession) {
 		if err := sessions.record(peer, session); err != nil {
 			fmt.Printf("could not record session for %s: %v\n", peer, err)
@@ -285,6 +300,13 @@ func runListen(cfg sendConfig) error {
 						// for: history messages take type=hist_sync, not the
 						// delivery receipt (Baileys getHistoryMsg).
 						sendHistSyncReceipt(ctx, sc, codec, ev.Message.ID, ev.Message.Sender)
+					} else if len(ev.Message.Protocol.AppKeys) == 0 {
+						// A decrypted protocol message with nothing to apply:
+						// a revoke, a label change, an ephemeral setting. It
+						// proves the carrier opened (group included), which is
+						// otherwise invisible for content this layer does not
+						// render.
+						fmt.Printf("PROTOCOL %s from=%s id=%s\n", ev.Message.Protocol.Type, ev.Message.Sender, ev.Message.ID)
 					}
 					continue
 				}

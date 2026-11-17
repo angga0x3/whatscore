@@ -40,12 +40,8 @@ func (r *Receiver) SetReceiverIdentity(identity [32]byte) { r.identity = identit
 func (r *Receiver) handleEnc(ctx context.Context, node *binary.Node) {
 	// A group stanza can carry more than one <enc>: the sender-key
 	// distribution for this device (pkmsg/msg) and the group ciphertext
-	// (skmsg, PF-093). The distribution rides a 1:1 session and is worth
-	// opening — it is what a later sender-key implementation builds on —
-	// while the group ciphertext is not decryptable without sender keys.
-	if hasEncCarrier(node, stanza.CarrierSKMsg) {
-		r.logger.DebugContext(ctx, "group sender-key message: sender keys are not implemented, skipping", "from", node.Attrs["from"], "id", node.Attrs["id"])
-	}
+	// (skmsg, PF-093). The distribution rides a 1:1 session; the group
+	// ciphertext is handled after it, once its key is installed.
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed encrypted message", "error", err)
@@ -64,14 +60,26 @@ func (r *Receiver) handleEnc(ctx context.Context, node *binary.Node) {
 		}
 		peer = envelope.Participant
 	}
-	if envelope.Carrier == stanza.CarrierSKMsg {
-		return
-	}
-	if envelope.Carrier == stanza.CarrierPKMsg {
+	switch envelope.Carrier {
+	case stanza.CarrierSKMsg:
+		// The first child is the group ciphertext itself; nothing to do here.
+	case stanza.CarrierPKMsg:
 		r.handlePreKey(ctx, node, peer)
-		return
+	default:
+		r.decryptWithSession(ctx, node, envelope, peer)
 	}
-	r.decryptWithSession(ctx, node, envelope, peer)
+	// The group ciphertext is the last child of the same stanza. It needs the
+	// key the distribution child may just have installed, so it is handled
+	// after the 1:1 envelope.
+	if peer.Server == stanza.GroupServer || envelope.From.Server == stanza.GroupServer {
+		if hasEncCarrier(node, stanza.CarrierSKMsg) {
+			group := envelope.From
+			if group.Server != stanza.GroupServer {
+				group = peer
+			}
+			r.handleSenderKeyMessage(ctx, node, group, peer)
+		}
+	}
 }
 
 // hasEncCarrier reports whether any <enc> child of node carries the given
@@ -124,6 +132,12 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 	payload, err := stanza.DecodePayload(plaintext)
 	if err != nil {
 		r.logger.InfoContext(ctx, "decrypted a message with no usable payload", "peer", peer, "error", err)
+		return
+	}
+	if payload.SenderKey != nil {
+		r.storeSenderKey(ctx, peer, payload.SenderKey)
+	}
+	if payload.Kind == stanza.PayloadSenderKey {
 		return
 	}
 	r.publishIncoming(ctx, envelope.ID, peer, envelope.From, timestampOf(node), payload)

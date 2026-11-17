@@ -12,6 +12,8 @@
 
 # Runtime data
 /storage/media/
+# The probe writes decrypted attachments here (private, large).
+/media/
 # Raw frames captured during a pairing attempt: they carry the account JID
 /undecoded/
 # Paired credentials: private keys and the account JID. Never commit.

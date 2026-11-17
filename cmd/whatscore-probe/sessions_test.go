@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/angga0x3/whatscore/core/events"
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
 	"github.com/angga0x3/whatscore/protocol/signal"
 )
@@ -183,4 +184,77 @@ func newTestPeerSession(t *testing.T) *coremessaging.PeerSession {
 		t.Fatalf("state: %v", err)
 	}
 	return &coremessaging.PeerSession{PeerIdentity: peer.Public, State: state}
+}
+
+// TestSenderKeysPersistAcrossRuns pins the group ratchet file: a group
+// message the phone sends after a restart is only readable if the chain
+// survived.
+func TestSenderKeysPersistAcrossRuns(t *testing.T) {
+	t.Chdir(t.TempDir())
+	path := sessionsPathFor("paired.keys.json")
+	store, err := loadSessionsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var key coremessaging.SenderKey
+	key.ID = 123456
+	key.Iteration = 7
+	for i := range key.ChainKey {
+		key.ChainKey[i] = byte(i)
+		key.SigningKey[i] = byte(0xff - i)
+	}
+	group := "120363046767601853@g.us"
+	sender := "200506840473775@lid"
+	if err := store.recordSenderKey(group, sender, &key); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	if err := store.save(path); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	restored, err := loadSessionsFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry, ok := restored.SenderKeys[senderKeyKey(group, sender)]
+	if !ok {
+		t.Fatal("sender key missing after reload")
+	}
+	if entry.ID != key.ID || entry.Iteration != key.Iteration ||
+		string(entry.ChainKey) != string(key.ChainKey[:]) ||
+		string(entry.SigningKey) != string(key.SigningKey[:]) {
+		t.Fatalf("entry = %+v", entry)
+	}
+
+	// And it installs into a receiver, which is what a run does at startup.
+	bus := events.NewBus()
+	defer bus.Close()
+	receiver, err := coremessaging.NewReceiver(bus, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := restored.installSenderKeys(receiver); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	installed, ok := receiver.SenderKey(group, sender)
+	if !ok || installed.Iteration != key.Iteration {
+		t.Fatalf("installed = %+v, %v", installed, ok)
+	}
+}
+
+// TestInstallSenderKeysRejectsShortKeys keeps a truncated file loud instead
+// of installing a key that can never verify.
+func TestInstallSenderKeysRejectsShortKeys(t *testing.T) {
+	store := &sessionsFile{Sessions: map[string]storedSession{}, SenderKeys: map[string]storedSenderKey{
+		"a|b": {Group: "a@g.us", Sender: "b@lid", ChainKey: []byte{1}, SigningKey: []byte{2}},
+	}}
+	bus := events.NewBus()
+	defer bus.Close()
+	receiver, err := coremessaging.NewReceiver(bus, "s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.installSenderKeys(receiver); err == nil {
+		t.Fatal("short keys accepted")
+	}
 }

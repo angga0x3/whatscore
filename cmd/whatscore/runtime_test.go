@@ -459,3 +459,39 @@ func mustUnpad(t *testing.T, plaintext []byte) []byte {
 	}
 	return out
 }
+
+// TestSenderKeysSurviveARestart pins the group half of persistence: a chain
+// the runtime stored must come back, or every group message after a restart
+// is unreadable even though its key was distributed once.
+func TestSenderKeysSurviveARestart(t *testing.T) {
+	identity, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vault := newTestVault(t)
+	group := "120363046767601853@g.us"
+	sender := "200506840473775@lid"
+
+	var key coremessaging.SenderKey
+	key.ID = 123456
+	key.Iteration = 3
+	for i := range key.ChainKey {
+		key.ChainKey[i] = byte(i + 1)
+		key.SigningKey[i] = byte(0x80 + i)
+	}
+
+	first, _ := newVaultBackedRuntime(t, "session-1", identity, vault)
+	if err := first.persistSenderKey(group, sender, &key); err != nil {
+		t.Fatalf("persist: %v", err)
+	}
+
+	second, _ := newVaultBackedRuntime(t, "session-1", identity, vault)
+	restored, ok := second.receiver.SenderKey(group, sender)
+	if !ok {
+		t.Fatal("sender key was not restored")
+	}
+	if restored.ID != key.ID || restored.Iteration != key.Iteration ||
+		restored.ChainKey != key.ChainKey || restored.SigningKey != key.SigningKey {
+		t.Fatalf("restored = %+v", restored)
+	}
+}

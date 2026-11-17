@@ -108,7 +108,10 @@ const (
 	PayloadAudio    PayloadKind = "audio"
 	PayloadDocument PayloadKind = "document"
 	PayloadProtocol PayloadKind = "protocol"
-	PayloadUnknown  PayloadKind = "unknown"
+	// PayloadSenderKey carries a group sender key distribution: no user
+	// content, but the state that makes later group messages readable.
+	PayloadSenderKey PayloadKind = "sender-key"
+	PayloadUnknown   PayloadKind = "unknown"
 )
 
 // ProtocolInfo describes a decrypted protocol message. History sync
@@ -140,15 +143,24 @@ type MediaAttachment struct {
 	KeysType          string
 }
 
+// SenderKeyShare is one member's group sender key as it arrives: the group
+// it belongs to plus the opaque libsignal SenderKeyDistributionMessage bytes.
+// Parsing those is protocol/signal's job; this layer only carries them.
+type SenderKeyShare struct {
+	GroupID string
+	Raw     []byte
+}
+
 // Payload is the decoded content of one decrypted Message: either text or one
 // media attachment. A payload with neither — protocol messages, reactions,
 // ephemeral settings — decodes to PayloadUnknown without error, because
 // "unsupported but valid" is a normal thing to receive.
 type Payload struct {
-	Kind     PayloadKind
-	Text     string
-	Media    *MediaAttachment
-	Protocol *ProtocolInfo
+	Kind      PayloadKind
+	Text      string
+	Media     *MediaAttachment
+	Protocol  *ProtocolInfo
+	SenderKey *SenderKeyShare
 	// Destination is the chat a device-sent copy belongs to. The account's own
 	// devices receive the wrapped form, whose outer message carries no chat of
 	// its own; an empty Destination means the payload was not wrapped and the
@@ -176,6 +188,19 @@ func DecodePayload(raw []byte) (*Payload, error) {
 	inner, destination := unwrapDeviceSent(&message)
 	payload := decodeInner(inner)
 	payload.Destination = destination
+	// A sender key distribution can ride inside a payload that also carries
+	// content (some clients bundle it), so it is lifted out before the kind
+	// decides what to render. A payload that is only a distribution is its
+	// own kind: state, not a message.
+	if skdm := inner.GetSenderKeyDistributionMessage(); skdm != nil {
+		payload.SenderKey = &SenderKeyShare{
+			GroupID: skdm.GetGroupID(),
+			Raw:     append([]byte(nil), skdm.GetAxolotlSenderKeyDistributionMessage()...),
+		}
+		if payload.Kind == PayloadUnknown {
+			payload.Kind = PayloadSenderKey
+		}
+	}
 	return payload, nil
 }
 

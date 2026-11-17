@@ -75,9 +75,10 @@ func TestDecodePayloadStickerUsesImageKeys(t *testing.T) {
 // protocol message (reaction, ephemeral setting) is valid content this layer
 // has nothing to render — not a failure.
 func TestDecodePayloadUnknownIsNotAnError(t *testing.T) {
-	// Field 2 is senderKeyDistributionMessage, undeclared here: an undeclared
-	// but well-formed field must decode as unknown content, not an error.
-	raw := []byte{0x12, 0x00}
+	// Field 10 is "call" in the reference proto and undeclared here: an
+	// undeclared but well-formed field must decode as unknown content, not an
+	// error.
+	raw := []byte{0x52, 0x00}
 	got, err := DecodePayload(raw)
 	if err != nil {
 		t.Fatalf("decode: %v", err)

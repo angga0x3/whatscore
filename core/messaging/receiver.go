@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/angga0x3/whatscore/core/events"
@@ -38,6 +39,13 @@ type Receiver struct {
 	// sender a retry receipt and receive the message re-encrypted to a
 	// session this device can actually open (whatsmeow SendRetryReceipt).
 	onDecryptFailure func(node *binary.Node)
+
+	// senderKeys are the group ratchets: one per (group, member) pair. They
+	// are guarded because a persistence observer and the frame path can both
+	// touch them.
+	senderKeyMu      sync.Mutex
+	senderKeys       map[string]*SenderKey
+	observeSenderKey func(group, sender string, key *SenderKey)
 }
 
 // ReceiverOption configures a Receiver.

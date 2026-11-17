@@ -21,6 +21,10 @@ option go_package = "github.com/angga0x3/whatscore/protocol/protobuf";
 message Message {
   // Plain text, used when no richer form is needed.
   optional string conversation = 1;
+  // The group sender key distribution a member sends (field 2 per the
+  // reference proto). It rides a 1:1 carrier; the bytes inside are libsignal's
+  // SenderKeyDistributionMessage.
+  optional SenderKeyDistributionMessage senderKeyDistributionMessage = 2;
   // Image (photos, screenshots).
   optional ImageMessage imageMessage = 3;
   // Document (PDF, archive, ...).
@@ -40,6 +44,13 @@ message Message {
   optional DeviceSentMessage deviceSentMessage = 31;
   // Text with metadata; the plain text is in `text`.
   optional ExtendedTextMessage extendedTextMessage = 6;
+}
+
+// SenderKeyDistributionMessage names one member's group sender key. Field
+// numbers per the reference proto.
+message SenderKeyDistributionMessage {
+  optional string groupID = 1;
+  optional bytes axolotlSenderKeyDistributionMessage = 2;
 }
 
 // DeviceSentMessage wraps a message a companion device sent, so the account's
@@ -63,7 +74,10 @@ message ProtocolMessage {
     APP_STATE_SYNC_KEY_SHARE = 6;
     APP_STATE_SYNC_KEY_REQUEST = 7;
   }
-  optional Type type = 1;
+  // Field 2 per the reference proto: field 1 is the revoke/edit key
+  // (WACommon.MessageKey). This project declared 1 until a live group message
+  // decoded its type as unknown and the reference was checked (PF-094).
+  optional Type type = 2;
   // Field 6 per the reference proto.
   optional HistorySyncNotification historySyncNotification = 6;
   // Field 7 per the reference proto. The phone shares the app state keys
