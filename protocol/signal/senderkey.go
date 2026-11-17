@@ -25,12 +25,14 @@ package signal
 import (
 	"crypto/hkdf"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
 
 	"github.com/angga0x3/whatscore/internal/cbc"
 	"github.com/angga0x3/whatscore/internal/xeddsa"
+	"golang.org/x/crypto/curve25519"
 )
 
 const (
@@ -62,6 +64,153 @@ type SenderKeyDistribution struct {
 	Iteration  uint32
 	ChainKey   [KeySize]byte
 	SigningKey [KeySize]byte
+}
+
+// SenderKeyMessageVersion is the version nibble group messages carry (the
+// vectors libsignal generated all use 3).
+const SenderKeyMessageVersion = 3
+
+// CreateSenderKeyDistribution generates a group member's sender key: a fresh
+// chain and signing pair, serialized into the wire form the distribution
+// message carries. The returned state is what EncryptSenderKeyMessage uses;
+// persist it, because every send advances the chain.
+func CreateSenderKeyDistribution(id uint32) (SenderKeyDistribution, SenderKeySenderState, error) {
+	pair, err := GenerateSenderKeyPair()
+	if err != nil {
+		return SenderKeyDistribution{}, SenderKeySenderState{}, err
+	}
+	var chainKey [KeySize]byte
+	if _, err := rand.Read(chainKey[:]); err != nil {
+		return SenderKeyDistribution{}, SenderKeySenderState{}, fmt.Errorf("signal: chain key: %w", err)
+	}
+	dist := SenderKeyDistribution{
+		Version:    SenderKeyMessageVersion,
+		ID:         id,
+		Iteration:  0,
+		ChainKey:   chainKey,
+		SigningKey: pair.Public,
+	}
+	state := SenderKeySenderState{ID: id, ChainKey: chainKey, Signing: pair}
+	return dist, state, nil
+}
+
+// EncryptSenderKeyMessage encrypts one padded plaintext under the sender
+// chain, signs the wire form under the member's signing key, and returns the
+// next state with the chain advanced. The plaintext is padded like every
+// other message this project sends (whatsmeow padMessage).
+func EncryptSenderKeyMessage(state SenderKeySenderState, plaintext []byte) (wire []byte, next SenderKeySenderState, err error) {
+	chain := SenderChain{Iteration: state.Iteration, Key: state.ChainKey}
+	iv, cipherKey, err := chain.MessageKey()
+	if err != nil {
+		return nil, next, err
+	}
+	ciphertext, err := cbc.Encrypt(cipherKey[:], iv[:], plaintext)
+	if err != nil {
+		return nil, next, fmt.Errorf("signal: group encrypt: %w", err)
+	}
+	out := []byte{SenderKeyMessageVersion<<4 | SenderKeyMessageVersion}
+	out = appendProtoVarint(out, 1, uint64(state.ID))
+	out = appendProtoVarint(out, 2, uint64(state.Iteration))
+	out = appendProtoBytes(out, 3, ciphertext)
+	randomness := make([]byte, 64)
+	if _, err := rand.Read(randomness); err != nil {
+		return nil, next, fmt.Errorf("signal: xeddsa randomness: %w", err)
+	}
+	signature, err := xeddsa.Sign(state.Signing.Private, out, randomness)
+	if err != nil {
+		return nil, next, fmt.Errorf("signal: sender key sign: %w", err)
+	}
+	wire = append(out, signature...)
+	next = SenderKeySenderState{
+		ID:        state.ID,
+		Iteration: state.Iteration + 1,
+		ChainKey:  chain.Next().Key,
+		Signing:   state.Signing,
+	}
+	return wire, next, nil
+}
+
+// SenderKeySigningPair is the signing key pair a group member creates for
+// its own sender key: the private half signs every SenderKeyMessage it
+// sends, the public half travels inside the distribution message.
+type SenderKeySigningPair struct {
+	Private [KeySize]byte
+	Public  [KeySize]byte
+}
+
+// SenderKeySenderState is the sender-side chain state: the material needed
+// to encrypt the next group message. Iteration and ChainKey advance after
+// every send; the signing pair and id stay fixed until a rotation.
+type SenderKeySenderState struct {
+	ID        uint32
+	Iteration uint32
+	ChainKey  [KeySize]byte
+	Signing   SenderKeySigningPair
+}
+
+// GenerateSenderKeyPair returns a fresh 32-byte Curve25519 key pair for the
+// sender key's signing half.
+func GenerateSenderKeyPair() (SenderKeySigningPair, error) {
+	var priv [KeySize]byte
+	if _, err := rand.Read(priv[:]); err != nil {
+		return SenderKeySigningPair{}, fmt.Errorf("signal: signing key: %w", err)
+	}
+	// The Curve25519 public scalar: basepoint ‧ priv. libsignal's sender-key
+	// wire carries the Montgomery public, exactly what this multiplication
+	// yields.
+	var base [KeySize]byte
+	base[31] = 9
+	pub, err := curve25519.X25519(priv[:], base[:])
+	if err != nil {
+		return SenderKeySigningPair{}, fmt.Errorf("signal: signing public: %w", err)
+	}
+	var pubFixed [KeySize]byte
+	copy(pubFixed[:], pub)
+	return SenderKeySigningPair{Private: priv, Public: pubFixed}, nil
+}
+
+// serializeSenderKeyDistribution encodes the wire form the parse side reads:
+// version || {id=1, iteration=2, chainKey=3, signingKey=4}.
+func serializeSenderKeyDistribution(d SenderKeyDistribution) ([]byte, error) {
+	if d.ChainKey == ([KeySize]byte{}) {
+		return nil, fmt.Errorf("%w: empty chain key", ErrInvalidSenderKey)
+	}
+	// The wire byte splits into two nibbles: outer version high, inner low.
+	// The parse side keeps only the high nibble, so the serializer rebuilds
+	// the byte the reference form carries (0x33 for version 3).
+	out := []byte{d.Version<<4 | d.Version}
+	out = appendProtoVarint(out, 1, uint64(d.ID))
+	out = appendProtoVarint(out, 2, uint64(d.Iteration))
+	out = appendProtoBytes(out, 3, d.ChainKey[:])
+	// The signing key rides with libsignal's 0x05 type prefix, exactly as the
+	// wire carries it and the parse side strips it.
+	prefixed := make([]byte, 0, KeySize+1)
+	prefixed = append(prefixed, 0x05)
+	prefixed = append(prefixed, d.SigningKey[:]...)
+	out = appendProtoBytes(out, 4, prefixed)
+	return out, nil
+}
+
+// appendProtoVarint writes one varint-tagged field.
+func appendProtoVarint(out []byte, field int, value uint64) []byte {
+	out = append(out, byte(field<<3)|0x00)
+	return protoAppendVarint(out, value)
+}
+
+// appendProtoBytes writes one length-delimited field.
+func appendProtoBytes(out []byte, field int, value []byte) []byte {
+	out = append(out, byte(field<<3)|0x02)
+	out = protoAppendVarint(out, uint64(len(value)))
+	return append(out, value...)
+}
+
+// protoAppendVarint appends a varint-encoded value.
+func protoAppendVarint(out []byte, value uint64) []byte {
+	for value >= 0x80 {
+		out = append(out, byte(value)|0x80)
+		value >>= 7
+	}
+	return append(out, byte(value))
 }
 
 // ParseSenderKeyDistribution decodes the axolotlSenderKeyDistributionMessage

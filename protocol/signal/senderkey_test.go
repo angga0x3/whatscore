@@ -207,3 +207,108 @@ func bytesTo32(t *testing.T, raw []byte) [KeySize]byte {
 	copy(out[:], raw)
 	return out
 }
+
+// TestSerializeSenderKeyDistributionMatchesTheReference drives the sender
+// side through the same wire the vectors came from: the distribution built
+// from the vector's material must serialize byte-for-byte to the reference
+// SKDM (without the version byte differing — both use nibble 3).
+func TestSerializeSenderKeyDistributionMatchesTheReference(t *testing.T) {
+	parsed, err := ParseSenderKeyDistribution(mustHex(t, vectorSKDM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, err := serializeSenderKeyDistribution(*parsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(wire, mustHex(t, vectorSKDM)) {
+		t.Fatalf("wire = %x, want %x", wire, mustHex(t, vectorSKDM))
+	}
+}
+
+// TestEncryptSenderKeyMessageMatchesTheReference proves the send side: a
+// sender chain advanced to the vector's iteration encrypts the vector's
+// plaintext into the vector's exact SenderKeyMessage wire — signed under the
+// vector's signing key (the XEdDSA randomness is fixed by the vector test
+// helper through the deterministic path below). The wire must then parse and
+// verify under the vector's signing PUBLIC key, and decrypt back to the
+// plaintext.
+func TestEncryptSenderKeyMessageMatchesTheReference(t *testing.T) {
+	chain := SenderChain{Key: bytesTo32(t, mustHex(t, vectorChainKey))}
+	advanced, err := chain.Advance(vectorSKMIteration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := SenderKeySenderState{
+		ID:        123456,
+		Iteration: advanced.Iteration,
+		ChainKey:  advanced.Key,
+		Signing: SenderKeySigningPair{
+			Private: bytesTo32(t, mustHex(t, vectorSigningPriv)),
+			Public:  bytesTo32(t, mustHex(t, vectorSigningPub[2:])),
+		},
+	}
+	// The vector's plaintext: the protobuf Message (conversation) padded
+	// with five 0x05 bytes, exactly what libsignal encrypted.
+	inner := append([]byte{0x0a, byte(len(vectorPlaintext))}, vectorPlaintext...)
+	plaintext := append(inner, 5, 5, 5, 5, 5)
+
+	wire, next, err := EncryptSenderKeyMessage(state, plaintext)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if next.Iteration != state.Iteration+1 {
+		t.Fatalf("iteration = %d, want %d", next.Iteration, state.Iteration+1)
+	}
+
+	// The signature is XEdDSA-randomized, so byte-for-byte equality with the
+	// reference wire stops at the ciphertext field; the signature is checked
+	// by Verify under the vector's public key instead.
+	message, err := ParseSenderKeyMessage(wire)
+	if err != nil {
+		t.Fatalf("parse our wire: %v", err)
+	}
+	reference, err := ParseSenderKeyMessage(mustHex(t, vectorSKM))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if message.Version != reference.Version || message.ID != reference.ID ||
+		message.Iteration != reference.Iteration {
+		t.Fatalf("header = %+v vs %+v", message, reference)
+	}
+	if !bytes.Equal(message.Ciphertext, reference.Ciphertext) {
+		t.Fatalf("ciphertext = %x, want %x", message.Ciphertext, reference.Ciphertext)
+	}
+	if err := message.Verify(state.Signing.Public); err != nil {
+		t.Fatalf("signature under the vector's public key: %v", err)
+	}
+	plaintextBack, err := message.Decrypt(ivFor(t, state), keyFor(t, state))
+	if err != nil {
+		t.Fatalf("decrypt: %v", err)
+	}
+	if !bytes.Equal(plaintextBack, plaintext) {
+		t.Fatalf("decrypt round trip = %x", plaintextBack)
+	}
+}
+
+// ivFor derives the message keys for the state's chain.
+func ivFor(t *testing.T, state SenderKeySenderState) [16]byte {
+	t.Helper()
+	chain := SenderChain{Iteration: state.Iteration, Key: state.ChainKey}
+	iv, _, err := chain.MessageKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return iv
+}
+
+// keyFor derives the cipher key for the state's chain.
+func keyFor(t *testing.T, state SenderKeySenderState) [32]byte {
+	t.Helper()
+	chain := SenderChain{Iteration: state.Iteration, Key: state.ChainKey}
+	_, key, err := chain.MessageKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
