@@ -49,6 +49,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Added
 
+- `-listen` keeps the app state sync keys the phone shares. They are written
+  next to the credential files (`paired.appstate.keys.json`, mode 0600) and
+  restored at startup, so a later run does not wake the phone to ask for keys
+  it already has. Live: the first run stored 11 keys and the second restored
+  them (`app state keys: 11 restored`) with 24 patches and 70 mutations
+  decoded in both.
 - The REST media routes deliver. `POST /sessions/{id}/messages/image` and
   `/document` now encrypt, upload to the CDN and send over the session
   connection when the server runs, under the same media class the probe uses;

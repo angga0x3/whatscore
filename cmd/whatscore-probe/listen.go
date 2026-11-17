@@ -241,7 +241,14 @@ func runListen(cfg sendConfig) error {
 	// verified, and the phone holds the "keep both apps open" banner until
 	// provisioning completes.
 	var mu sync.Mutex
-	appStateKeys := make(map[string][]byte)
+	appStatePath := appStatePathFor(cfg.KeyPath)
+	appStateKeys, err := loadAppStateKeys(appStatePath)
+	if err != nil {
+		fmt.Printf("app state keys unreadable: %v\n", err)
+		appStateKeys = make(map[string][]byte)
+	} else if len(appStateKeys) > 0 {
+		fmt.Printf("app state keys: %d restored from %s\n", len(appStateKeys), appStatePath)
+	}
 
 	go func() {
 		for {
@@ -262,6 +269,9 @@ func runListen(cfg sendConfig) error {
 							appStateKeys[keyID] = append([]byte(nil), data...)
 						}
 						count := len(appStateKeys)
+						if saveErr := saveAppStateKeys(appStatePath, appStateKeys); saveErr != nil {
+							fmt.Printf("could not persist app state keys: %v\n", saveErr)
+						}
 						mu.Unlock()
 						fmt.Printf("app state keys stored (total %d)\n", count)
 						// Baileys: "app state sync key arrived, re-syncing
