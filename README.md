@@ -56,7 +56,8 @@ Not proven, and not claimed:
 - [ ] Media **send** — implemented in the probe, no live upload recorded
 - [ ] The own-device copy of a send (`PF-090`) — implemented, not yet seen on the phone
 - [ ] The REST server and SDK against the live service (they are tested against the fake server)
-- [ ] Group messaging, sender keys, and newsletters beyond plaintext notifications
+- [ ] Group **sending** — group receive decrypts (sender keys, PF-093); enumeration of a group's devices and the send side are not implemented
+- [ ] Newsletters beyond plaintext notifications
 
 Two things still gate a general-purpose deployment, and neither is protocol
 code: the **token table** is operator data (spec §10.2, validator in
