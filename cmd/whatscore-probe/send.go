@@ -6,6 +6,7 @@ import (
 	"fmt"
 	gosignal "os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -202,8 +203,17 @@ func awaitAck(ctx context.Context, d *dispatcher, id string, timeout time.Durati
 	d.onNode = func(ctx context.Context, node *wabinary.Node) {
 		switch {
 		case node.Tag == "ack" && node.Attrs["id"] == id:
+			// An ack names more than its class: error/code/phash say whether
+			// the server accepted the message or just the stanza. Dropping
+			// them made a refusal look like success.
+			summary := "class=" + node.Attrs["class"]
+			for _, key := range []string{"error", "code", "reason", "phash", "t"} {
+				if value := node.Attrs[key]; value != "" {
+					summary += " " + key + "=" + value
+				}
+			}
 			select {
-			case verdict <- node.Attrs["class"]:
+			case verdict <- summary:
 			default:
 			}
 			return
@@ -230,6 +240,9 @@ func awaitAck(ctx context.Context, d *dispatcher, id string, timeout time.Durati
 	case class := <-verdict:
 		if len(class) > 6 && class[:6] == "ERROR:" {
 			return fmt.Errorf("server rejected the message: %s", class[7:])
+		}
+		if strings.Contains(class, " error=") || strings.Contains(class, " code=") {
+			return fmt.Errorf("server refused the message: %s", class)
 		}
 		fmt.Printf("ACK: the server accepted the message (%s)\n", class)
 		return nil

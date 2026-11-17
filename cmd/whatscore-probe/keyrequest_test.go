@@ -57,7 +57,7 @@ func TestSendOwnDeviceCopyWrapsForThePhoneAndPersists(t *testing.T) {
 	t.Chdir(t.TempDir())
 	sessionsPath := sessionsPathFor("paired.keys.json")
 
-	phonePeer := "266988689592415:39@lid"
+	phonePeer := "266988689592415:35@lid"
 	session, _, identity, _ := newCopyFixture(t)
 	store := &sessionsFile{Sessions: map[string]storedSession{}}
 	if err := store.persist(sessionsPath, phonePeer, session); err != nil {
@@ -128,7 +128,7 @@ func TestSendOwnDeviceCopyPlaintextNamesTheDestination(t *testing.T) {
 	t.Chdir(t.TempDir())
 	sessionsPath := sessionsPathFor("paired.keys.json")
 
-	phonePeer := "266988689592415:39@lid"
+	phonePeer := "266988689592415:35@lid"
 	session, phone, identity, phoneIdentity := newCopyFixture(t)
 	// The phone's state must be a copy: the send advances our side only, and
 	// decrypting with the object we also read from would prove nothing.
@@ -265,5 +265,56 @@ func TestIsOwnAccountMatchesBothIdentities(t *testing.T) {
 		if isOwnAccount(dest, record) {
 			t.Fatalf("%s wrongly recognised as this account", dest)
 		}
+	}
+}
+
+// TestOwnDeviceCopyFansOutPerDevice pins the delivery rule the live "waiting
+// for this message" placeholder exposed: a copy for the account is not a copy
+// for its devices. Each device gets its own ciphertext, addressed to it alone.
+func TestOwnDeviceCopyFansOutPerDevice(t *testing.T) {
+	t.Chdir(t.TempDir())
+	sessionsPath := sessionsPathFor("paired.keys.json")
+	record := &credentialRecord{LID: "266988689592415:39@lid", JID: "628994340905:39@s.whatsapp.net"}
+	identity, err := signal.GenerateKeyPair()
+	if err != nil {
+		t.Fatalf("identity: %v", err)
+	}
+	record.IdentityPriv, record.IdentityPub = identity.Private, identity.Public
+
+	store := &sessionsFile{Sessions: map[string]storedSession{}}
+	// Device 0 (the primary phone, bare LID) and a linked device (:35). This
+	// device is :39 and must not receive its own copy.
+	for _, peer := range []string{"266988689592415@lid", "266988689592415:35@lid"} {
+		if err := store.persist(sessionsPath, peer, newTestPeerSession(t)); err != nil {
+			t.Fatalf("seed %s: %v", peer, err)
+		}
+	}
+	writer := &captureWriter{}
+	codec := wabinary.NewCodec(nil)
+	if err := sendOwnDeviceCopy(context.Background(), writer, codec, store, sessionsPath, record, "628555@s.whatsapp.net", "SAMEID", textInner("halo")); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	if len(writer.frames) != 2 {
+		t.Fatalf("frames = %d, want one per other device", len(writer.frames))
+	}
+	got := map[string]bool{}
+	for _, frame := range writer.frames {
+		node, err := codec.Decode(bytes.NewReader(frame))
+		if err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if node.Attrs["id"] != "SAMEID" {
+			t.Fatalf("id = %q", node.Attrs["id"])
+		}
+		if node.Attrs["device_fanout"] != "false" {
+			t.Fatalf("device_fanout = %q on a device copy", node.Attrs["device_fanout"])
+		}
+		got[node.Attrs["to"]] = true
+	}
+	if !got["266988689592415@lid"] || !got["266988689592415:35@lid"] {
+		t.Fatalf("copies went to %v", got)
+	}
+	if got["266988689592415:39@lid"] {
+		t.Fatal("the sending device received its own copy")
 	}
 }

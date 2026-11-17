@@ -132,6 +132,20 @@ func (s *Sender) SendEncryptedPayloadWithID(ctx context.Context, to, id string, 
 // attachment kinds (PF-089). The class is what the live service stamps on the
 // stanza; the payload itself decides what a client renders.
 func (s *Sender) SendEncryptedPayloadAs(ctx context.Context, to, id, msgType string, payload []byte) (string, *PeerSession, error) {
+	return s.sendPayload(ctx, to, id, msgType, payload, false)
+}
+
+// SendPeerPayload sends a payload to exactly one device of an account — the
+// shape the own-device copy needs. A device-less destination is device 0 (the
+// primary phone) and is honoured too: the stanza carries device_fanout="false"
+// so the server does not hand the same ciphertext to devices whose sessions
+// it cannot open.
+func (s *Sender) SendPeerPayload(ctx context.Context, to, id, msgType string, payload []byte) (string, *PeerSession, error) {
+	return s.sendPayload(ctx, to, id, msgType, payload, true)
+}
+
+// sendPayload is the shared body; peer permits and marks a peer address.
+func (s *Sender) sendPayload(ctx context.Context, to, id, msgType string, payload []byte, peer bool) (string, *PeerSession, error) {
 	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
@@ -159,7 +173,7 @@ func (s *Sender) SendEncryptedPayloadAs(ctx context.Context, to, id, msgType str
 	}
 	node, err := stanza.BuildEncryptedText(stanza.EncryptedText{
 		ID: id, To: jid, Type: msgType, Carrier: stanza.CarrierMsg, Ciphertext: ciphertext,
-		Peer: jid.Device > 0,
+		Peer: peer || jid.Device > 0,
 	})
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)

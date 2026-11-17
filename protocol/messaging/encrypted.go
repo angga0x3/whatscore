@@ -89,9 +89,12 @@ func BuildEncryptedText(message EncryptedText) (*binary.Node, error) {
 		"to":   message.To.String(),
 		"type": msgType,
 	}
-	if message.To.Device > 0 {
-		// A device-addressed stanza goes to that device alone; the attribute
-		// is what tells the server not to fan it out to the account's others.
+	if message.Peer {
+		// A peer-addressed stanza goes to exactly the device named — device 0
+		// (the bare user JID) included. Without this the server hands the same
+		// ciphertext to every device of the account, and only the one whose
+		// session produced it can open it; the rest show "waiting for this
+		// message".
 		attrs["device_fanout"] = "false"
 	}
 	return &binary.Node{

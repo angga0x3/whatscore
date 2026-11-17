@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -962,26 +963,6 @@ func (r *sessionRuntime) persistSession(peer string, ps *coremessaging.PeerSessi
 	return r.signals.save(context.Background(), peer, ps)
 }
 
-// phonePeerFor finds the stored peer that belongs to the phone: its JID user
-// matches the account's LID user, because the LID is account-scoped while the
-// device suffix differs per device. An empty result means the phone has never
-// written to this device, so no ratchet exists to carry the own-device copy.
-func phonePeerFor(ownLID string, peers []string) string {
-	if ownLID == "" {
-		return ""
-	}
-	want := jidUser(ownLID)
-	if want == "" {
-		return ""
-	}
-	for _, peer := range peers {
-		if jidUser(peer) == want {
-			return peer
-		}
-	}
-	return ""
-}
-
 // jidUser returns the user part of a JID, without the device or the server.
 func jidUser(jid string) string {
 	user := jid
@@ -994,19 +975,22 @@ func jidUser(jid string) string {
 	return user
 }
 
-// sendOwnDeviceCopy sends the DeviceSentMessage copy of a 1:1 send to the
-// phone, over the ratchet the phone's own messages bootstrapped. The copy
-// carries the recipient copy's id — one logical message, two ciphertexts —
-// so the phone renders one message in the destination chat as outgoing.
+// sendOwnDeviceCopy sends the DeviceSentMessage copy of a 1:1 send to every
+// other device of the account whose ratchet this session holds. Each copy is
+// addressed to exactly one device (device_fanout="false"): a stanza left to
+// fan out is handed to devices whose sessions cannot open it, and those show
+// "waiting for this message".
 //
-// A device that has never heard from the phone has no ratchet to ride, and the
-// server serves no bundle for the account's own devices: the copy is skipped,
-// not failed, and the recipient's copy has already gone out.
+// The copy carries the recipient copy's id — one logical message, several
+// ciphertexts — so each device renders one message in the destination chat as
+// outgoing. Devices that never wrote to this one have no ratchet to ride; the
+// recipient's copy has already gone out, so a missing copy is skipped, not
+// failed.
 func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id string, inner *protobuf.Message) {
 	if r.signals == nil || r.ownLID == "" {
 		return
 	}
-	// A send to the account itself already reaches the phone as the
+	// A send to the account itself already reaches the other devices as the
 	// recipient's copy; a second copy would show the same message twice in
 	// the self chat. The account has two identities — phone number and LID —
 	// and either one addresses it.
@@ -1019,26 +1003,44 @@ func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id string, i
 		r.logger.Warn("could not list peers for the own-device copy", "session", r.id, "error", err)
 		return
 	}
-	phone := phonePeerFor(r.ownLID, peers)
-	if phone == "" {
-		r.logger.Debug("no phone session; own-device copy skipped", "session", r.id)
-		return
-	}
-	if phone == to {
-		return
-	}
 	payload, err := stanza.EncodeDeviceSentPayload(to, inner)
 	if err != nil {
 		r.logger.Warn("could not build the own-device copy", "session", r.id, "error", err)
 		return
 	}
-	copyID, session, err := r.sender.SendEncryptedPayloadWithID(ctx, phone, id, payload)
-	if err != nil {
-		r.logger.Warn("own-device copy failed", "session", r.id, "phone", phone, "error", err)
-		return
+	sent := 0
+	for _, peer := range ownDevicePeers(r.ownLID, peers, to) {
+		copyID, session, err := r.sender.SendPeerPayload(ctx, peer, id, stanza.MessageTypeText, payload)
+		if err != nil {
+			r.logger.Warn("own-device copy failed", "session", r.id, "device", peer, "error", err)
+			continue
+		}
+		if err := r.persistSession(peer, session); err != nil {
+			r.logger.Warn("could not persist the device session after the copy", "session", r.id, "device", peer, "error", err)
+		}
+		r.logger.Info("own-device copy sent", "session", r.id, "id", copyID, "device", peer)
+		sent++
 	}
-	if err := r.persistSession(phone, session); err != nil {
-		r.logger.Warn("could not persist the phone session after the copy", "session", r.id, "error", err)
+	if sent == 0 {
+		r.logger.Debug("no other-device session; own-device copy skipped", "session", r.id)
 	}
-	r.logger.Info("own-device copy sent", "session", r.id, "id", copyID, "phone", phone)
+}
+
+// ownDevicePeers lists the account's other devices among the stored peer
+// sessions, minus this device and the chat being sent to. Device 0 (the bare
+// LID) is the primary phone.
+func ownDevicePeers(ownLID string, peers []string, exclude string) []string {
+	user := jidUser(ownLID)
+	if user == "" {
+		return nil
+	}
+	var out []string
+	for _, peer := range peers {
+		if jidUser(peer) != user || peer == ownLID || peer == exclude {
+			continue
+		}
+		out = append(out, peer)
+	}
+	sort.Strings(out)
+	return out
 }

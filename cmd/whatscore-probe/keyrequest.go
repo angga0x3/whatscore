@@ -14,7 +14,9 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	coremessaging "github.com/angga0x3/whatscore/core/messaging"
@@ -106,63 +108,93 @@ func jidUserFor(jid string) string {
 	return user
 }
 
-// sendOwnDeviceCopy delivers the DeviceSentMessage copy of a 1:1 send to the
-// account's own device — the phone's, over the ratchet its messages
-// bootstrapped (persisted in the sessions file). The phone renders the
-// wrapped message in the destination chat as outgoing, which is how a linked
-// device's send appears on the sender's phone. whatsmeow marshalMessage
-// builds this second plaintext for every 1:1 send.
-func sendOwnDeviceCopy(ctx context.Context, w coremessaging.FrameWriter, codec wabinary.Codec, sessions *sessionsFile, sessionsPath string, record *credentialRecord, destJID, messageID string, inner *protobuf.Message) error {
-	phonePeer := phonePeerFor(record.LID, sessions.Sessions)
-	if phonePeer == "" {
-		return fmt.Errorf("no session with the phone's device; the copy cannot ride an existing ratchet")
+// ownDevicePeers lists the account's other devices: every stored session
+// whose JID user matches the account LID user, minus this device itself.
+//
+// The copies are per device, not per account: a stanza addressed to the
+// account without device_fanout is handed to every device, and only the one
+// whose session produced the ciphertext can open it — the rest show "waiting
+// for this message". Device 0 (the bare LID) is the primary phone.
+func ownDevicePeers(record *credentialRecord, sessions map[string]storedSession) []string {
+	if record == nil {
+		return nil
 	}
-	if phonePeer == destJID {
-		return fmt.Errorf("the destination is the phone's own device; the copy would duplicate the recipient copy")
+	user := jidUserFor(record.LID)
+	if user == "" {
+		return nil
 	}
-	rec, ok := sessions.Sessions[phonePeer]
-	if !ok {
-		return fmt.Errorf("phone session vanished")
+	var peers []string
+	for peer := range sessions {
+		if jidUserFor(peer) != user {
+			continue
+		}
+		if peer == record.LID || peer == record.JID {
+			continue
+		}
+		peers = append(peers, peer)
 	}
-	state := &signal.State{}
-	raw, err := base64.StdEncoding.DecodeString(rec.State)
-	if err != nil {
-		return err
-	}
-	if err := state.UnmarshalBinary(raw); err != nil {
-		return err
-	}
-	var peerIdentity [32]byte
-	copy(peerIdentity[:], rec.PeerIdentity)
+	sort.Strings(peers)
+	return peers
+}
 
-	identityPair := signal.KeyPair{Private: record.IdentityPriv, Public: record.IdentityPub}
-	sender, err := coremessaging.NewSender(w, coremessaging.WithCodec(codec))
-	if err != nil {
-		return err
-	}
-	sender.SetIdentityPair(identityPair)
-	if err := sender.SetPeer(phonePeer, &coremessaging.PeerSession{
-		PeerIdentity: peerIdentity,
-		State:        state,
-	}); err != nil {
-		return err
+// sendOwnDeviceCopy delivers the DeviceSentMessage copy of a 1:1 send to the
+// account's other devices — the phone and any linked device whose ratchet the
+// session file holds. Each copy is addressed to exactly one device
+// (device_fanout="false"), which is what makes it readable there.
+func sendOwnDeviceCopy(ctx context.Context, w coremessaging.FrameWriter, codec wabinary.Codec, sessions *sessionsFile, sessionsPath string, record *credentialRecord, destJID, messageID string, inner *protobuf.Message) error {
+	peers := ownDevicePeers(record, sessions.Sessions)
+	if len(peers) == 0 {
+		return fmt.Errorf("no session with another device of this account; the copy cannot ride an existing ratchet")
 	}
 	payload, err := stanza.EncodeDeviceSentPayload(destJID, inner)
 	if err != nil {
 		return err
 	}
-	// The copy rides the recipient copy's id: one logical message, two
-	// ciphertexts. A fresh id would make the phone render the send twice.
-	id, updated, err := sender.SendEncryptedPayloadWithID(ctx, phonePeer, messageID, payload)
-	if err != nil {
-		return err
+	identityPair := signal.KeyPair{Private: record.IdentityPriv, Public: record.IdentityPub}
+	var errs []error
+	for _, peer := range peers {
+		if peer == destJID {
+			continue
+		}
+		rec, ok := sessions.Sessions[peer]
+		if !ok {
+			continue
+		}
+		state := &signal.State{}
+		raw, err := base64.StdEncoding.DecodeString(rec.State)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", peer, err))
+			continue
+		}
+		if err := state.UnmarshalBinary(raw); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", peer, err))
+			continue
+		}
+		var peerIdentity [32]byte
+		copy(peerIdentity[:], rec.PeerIdentity)
+
+		sender, err := coremessaging.NewSender(w, coremessaging.WithCodec(codec))
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		sender.SetIdentityPair(identityPair)
+		if err := sender.SetPeer(peer, &coremessaging.PeerSession{PeerIdentity: peerIdentity, State: state}); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", peer, err))
+			continue
+		}
+		// The copy rides the recipient copy's id: one logical message, two
+		// ciphertexts. A fresh id would make the device render the send twice.
+		id, updated, err := sender.SendPeerPayload(ctx, peer, messageID, stanza.MessageTypeText, payload)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", peer, err))
+			continue
+		}
+		if err := sessions.persist(sessionsPath, peer, updated); err != nil {
+			errs = append(errs, fmt.Errorf("%s: persist: %w", peer, err))
+			continue
+		}
+		fmt.Printf("own-device copy sent as %s via %s\n", id, peer)
 	}
-	// The copy advanced the phone ratchet. Persist it before anything else
-	// touches the store, or the next run continues from a chain the phone has
-	// already moved past.
-	if err := sessions.persist(sessionsPath, phonePeer, updated); err != nil {
-		return fmt.Errorf("persist phone session after the own-device copy: %w", err)
-	}
-	fmt.Printf("own-device copy sent as %s via %s\n", id, phonePeer)
-	return nil
+	return errors.Join(errs...)
 }

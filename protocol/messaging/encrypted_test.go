@@ -179,6 +179,20 @@ func TestBuildEncryptedTextPeerAddressing(t *testing.T) {
 	if _, ok := node.Attrs["device_fanout"]; ok {
 		t.Fatal("account-addressed stanza carries device_fanout")
 	}
+
+	// Device 0 is the bare user JID (the primary phone). Peer addressing on
+	// it must also stop the fan-out: the ciphertext belongs to that device's
+	// session only.
+	node, err = BuildEncryptedText(EncryptedText{
+		ID: "P3", To: JID{User: "266988689592415", Server: "lid"}, Carrier: CarrierMsg,
+		Ciphertext: []byte{1}, Peer: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := node.Attrs["device_fanout"]; got != "false" {
+		t.Fatalf("device 0 peer addressing: device_fanout = %q, want false", got)
+	}
 }
 
 // TestParseEncryptedTextReadsTheParticipant pins the group shape: "from" is
