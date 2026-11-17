@@ -79,6 +79,7 @@ func main() {
 	listenFlag := flag.Bool("listen", false, "log in, publish prekeys, and decrypt inbound messages")
 	keyPath := flag.String("keys", "", "key file for -listen (default: <creds>.keys.json)")
 	mediaDir := flag.String("media", "media", "directory inbound media is written to")
+	autoread := flag.Bool("autoread", false, "mark inbound messages as read (blue ticks on the sender's phone)")
 	dumpPath := flag.String("dump", "", "decode one saved undecoded/*.bin frame with -dict and print its tree")
 	printRoot := flag.Bool("root", false, "print the pinned root key and exit")
 	flag.Parse()
@@ -108,6 +109,7 @@ func main() {
 			Timeout:  *timeout,
 			KeyPath:  resolvedKeys,
 			MediaDir: *mediaDir,
+			AutoRead: *autoread,
 		})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "listen: %v\n", err)

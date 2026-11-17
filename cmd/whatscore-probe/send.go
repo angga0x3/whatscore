@@ -42,6 +42,9 @@ type sendConfig struct {
 	Timeout    time.Duration
 	KeyPath    string
 	MediaDir   string
+	// AutoRead marks every decrypted inbound message as read — the blue
+	// ticks on the sender's phone. Off by default: reading is a choice.
+	AutoRead bool
 }
 
 // runSend logs in with stored credentials and sends one text message.

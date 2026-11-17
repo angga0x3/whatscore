@@ -320,6 +320,16 @@ func runListen(cfg sendConfig) error {
 					if err := sendDeliveryReceipt(context.Background(), sc, codec, ev.Message.ID, ev.Message.Sender); err != nil {
 						fmt.Printf("delivery receipt: %v\n", err)
 					}
+					if cfg.AutoRead {
+						// The blue ticks: reading is a choice, so this rides
+						// an explicit flag rather than firing on every
+						// receipt.
+						if err := sendReadReceipt(context.Background(), sc, codec, ev.Message.Sender, ev.Message.ID); err != nil {
+							fmt.Printf("read receipt: %v\n", err)
+						} else {
+							fmt.Printf("read receipt sent for %s\n", ev.Message.ID)
+						}
+					}
 				}
 				if m := ev.Message.Media; m != nil {
 					path, err := DownloadMedia(context.Background(), d, m, cfg.MediaDir)
@@ -963,4 +973,22 @@ func diagPreKeyCount(ctx context.Context, d *dispatcher) (int, error) {
 		n = n*10 + int(r-'0')
 	}
 	return n, nil
+}
+
+// sendReadReceipt marks one inbound message as read: <receipt type=read
+// to=chat id=...>. Receipts are transport stanzas, not end-to-end encrypted
+// payloads, so this needs no session with the sender.
+func sendReadReceipt(ctx context.Context, sc noise.SecureConn, codec wabinary.Codec, chat, id string) error {
+	if chat == "" || id == "" {
+		return fmt.Errorf("read receipt needs a chat and an id")
+	}
+	receipt := &wabinary.Node{
+		Tag:   "receipt",
+		Attrs: wabinary.Attrs{"id": id, "to": chat, "type": "read"},
+	}
+	frame, err := codec.Encode(receipt)
+	if err != nil {
+		return err
+	}
+	return sc.WriteFrame(ctx, frame)
 }
