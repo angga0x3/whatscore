@@ -189,6 +189,13 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Proven live
 
+- A live queue drain on 2026-11-17 exercised the two receive-path fixes. The
+  device-sent copies the phone fanned out were unwrapped and published as
+  outgoing in their destination chats, and drew no delivery receipt (the
+  "one of ours" decision worked on live traffic). Media on continued
+  sessions came through too: a 7.2 MB video and a 93 KB image downloaded,
+  verified, and landed in `media/` — the msg carrier carries attachments,
+  not just text (PF-091).
 - Media upload and a media-class message. On 2026-11-17 the probe queried the
   media connection, uploaded a 166-byte PNG to the CDN host the server named
   (HTTP 200 with `url` and `direct_path`), and sent an image message naming it
