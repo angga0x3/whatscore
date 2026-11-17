@@ -743,11 +743,11 @@ func attrSummary(node *wabinary.Node) string {
 	return out
 }
 
-func truncate(s string, max int) string {
-	if len(s) <= max {
+func truncate(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	return s[:max] + "…"
+	return s[:limit] + "…"
 }
 
 // appStateCollections is the full patch list WhatsApp Web syncs
@@ -785,7 +785,7 @@ func sendHistSyncReceipt(ctx context.Context, sc noise.SecureConn, codec wabinar
 // requestAppStateSync fetches the app state patches for every collection.
 // A fresh device has no stored versions, so every collection asks for a
 // snapshot; mutations verify against the keys the phone shared.
-func requestAppStateSync(ctx context.Context, d *dispatcher, sc noise.SecureConn, codec wabinary.Codec, record *credentialRecord, source *preKeyStore, mu *sync.Mutex, appStateKeys map[string][]byte, sender *coremessaging.Sender, sessions *sessionsFile, sessionsPath string) {
+func requestAppStateSync(ctx context.Context, d *dispatcher, _ noise.SecureConn, _ wabinary.Codec, record *credentialRecord, _ *preKeyStore, mu *sync.Mutex, appStateKeys map[string][]byte, sender *coremessaging.Sender, sessions *sessionsFile, sessionsPath string) {
 	mu.Lock()
 	keyCount := len(appStateKeys)
 	mu.Unlock()
@@ -877,7 +877,7 @@ func requestAppStateSync(ctx context.Context, d *dispatcher, sc noise.SecureConn
 
 // mustRequestID builds a request id; on randomness failure it falls back to
 // the clock, which is unique enough for one process.
-func mustRequestID(ctx context.Context) string {
+func mustRequestID(_ context.Context) string {
 	var buf [4]byte
 	if _, err := rand.Read(buf[:]); err != nil {
 		return strconv.FormatInt(time.Now().UnixNano(), 10)

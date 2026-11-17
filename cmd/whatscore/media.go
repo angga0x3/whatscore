@@ -85,21 +85,6 @@ func mmsTypeFor(kind string) string {
 	}
 }
 
-// keysTypeFor maps a media kind to the HKDF info string its CDN blob expands
-// under (whatsmeow classToMediaType): stickers ride the image keys.
-func keysTypeFor(kind string) string {
-	switch kind {
-	case "video":
-		return protocolmedia.TypeVideo
-	case "audio":
-		return protocolmedia.TypeAudio
-	case "document":
-		return protocolmedia.TypeDocument
-	default:
-		return protocolmedia.TypeImage
-	}
-}
-
 // downloadMedia fetches, decrypts and verifies one CDN blob. Every failure is
 // a hard error: a blob that does not hash to fileSHA256 must not be stored.
 func (r *sessionRuntime) downloadMedia(ctx context.Context, m *events.MediaAttachment) ([]byte, error) {

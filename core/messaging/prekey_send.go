@@ -76,7 +76,7 @@ func (s *Sender) SendPreKeyTextWithBundleID(ctx context.Context, to, id, text st
 }
 
 // sendPreKeyTextWithBundle is the shared body of both public entry points.
-func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, peer, id, text string, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
+func (s *Sender) sendPreKeyTextWithBundle(ctx context.Context, jid stanza.JID, _, id, text string, registrationID uint32, bundle *signal.PreKeyBundle) (string, *PeerSession, error) {
 	payload, err := stanza.EncodeTextMessage(text)
 	if err != nil {
 		return "", nil, fmt.Errorf("%w: %w", ErrInvalidMessage, err)

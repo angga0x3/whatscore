@@ -339,7 +339,7 @@ func (c *feedConn) ReadFrame(ctx context.Context) ([]byte, error) {
 	}
 }
 
-func (c *feedConn) WriteFrame(ctx context.Context, frame []byte) error { return nil }
+func (c *feedConn) WriteFrame(_ context.Context, _ []byte) error { return nil }
 
 func (c *feedConn) Close() error { return nil }
 
@@ -369,7 +369,7 @@ func runDispatcherOnce(t *testing.T, frame []byte, strict, hole *wabinary.Dictio
 	d.holeCodec = wabinary.NewCodec(hole)
 
 	fired := make(chan *wabinary.Node, 1)
-	d.onNode = func(ctx context.Context, n *wabinary.Node) {
+	d.onNode = func(_ context.Context, n *wabinary.Node) {
 		select {
 		case fired <- n:
 		default:
@@ -741,7 +741,7 @@ func (c *mediaConnStub) ReadFrame(ctx context.Context) ([]byte, error) {
 
 // WriteFrame captures the media_conn request, reuses its id, and queues the
 // reply so the read loop resolves the waiting iq.
-func (c *mediaConnStub) WriteFrame(ctx context.Context, frame []byte) error {
+func (c *mediaConnStub) WriteFrame(_ context.Context, frame []byte) error {
 	req, err := c.codec.Decode(bytes.NewReader(frame))
 	if err != nil {
 		return err
@@ -789,17 +789,17 @@ func TestDownloadMediaEndToEnd(t *testing.T) {
 	fileSHA := sha256.Sum256(plaintext)
 
 	var sawOrigin bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		sawOrigin = r.Header.Get("Origin") == mediaOrigin
-		if !strings.HasPrefix(r.URL.Path, "/v/t62.7118-24/") {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		sawOrigin = req.Header.Get("Origin") == mediaOrigin
+		if !strings.HasPrefix(req.URL.Path, "/v/t62.7118-24/") {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		if got := r.URL.Query().Get("hash"); got != base64.URLEncoding.EncodeToString(encSHA[:]) {
+		if got := req.URL.Query().Get("hash"); got != base64.URLEncoding.EncodeToString(encSHA[:]) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if got := r.URL.Query().Get("mms-type"); got != "image" {
+		if got := req.URL.Query().Get("mms-type"); got != "image" {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
@@ -873,7 +873,7 @@ func TestDownloadMediaRejectsDigestMismatch(t *testing.T) {
 	encSHA := sha256.Sum256(blob)
 	fileSHA := sha256.Sum256(plaintext) // claims the original, serves the tampered one
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write(blob)
 	}))
 	defer srv.Close()

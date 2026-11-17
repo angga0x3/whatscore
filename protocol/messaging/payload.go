@@ -98,6 +98,8 @@ func UnpadMessage(plaintext []byte, version string) ([]byte, error) {
 // PayloadKind names the content a decrypted Message carries.
 type PayloadKind string
 
+// The kinds DecodePayload can classify. PayloadUnknown is "valid but not
+// rendered here"; the rest name a renderable payload.
 const (
 	PayloadText     PayloadKind = "text"
 	PayloadImage    PayloadKind = "image"

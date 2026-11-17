@@ -32,16 +32,6 @@ import (
 // socket deadline.
 var mediaHTTP = &http.Client{Timeout: 90 * time.Second}
 
-// mediaConnTTL bounds how long one media connection answer is reused. The
-// server reports its own ttl; this is only the fallback.
-const mediaConnTTL = 5 * time.Minute
-
-// mediaConnection is the parsed <media_conn> answer, cached for one run.
-type mediaConnection struct {
-	conn      *mediaupload.Conn
-	fetchedAt time.Time
-}
-
 // queryMediaConn asks the server where uploads should go. It rides the same
 // dispatcher as every other iq, so an inbound message arriving mid-query is
 // not discarded.

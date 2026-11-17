@@ -74,15 +74,15 @@ func (h *Handler) SetMessages(messages MessageLister) {
 	h.messages = messages
 }
 
-// SetMedia installs the media store after construction. Mount must be called
-// afterwards for the media routes to be registered. A nil store leaves the
-// routes unmounted, so they keep answering 501.
 // SetTextDeliverer installs the send boundary. Nil keeps the record-only
 // behavior.
 func (h *Handler) SetTextDeliverer(d TextDeliverer) {
 	h.textDeliverer = d
 }
 
+// SetMedia installs the media store after construction. Mount must be called
+// afterwards for the media routes to be registered. A nil store leaves the
+// routes unmounted, so they keep answering 501.
 func (h *Handler) SetMedia(store MediaStore) {
 	h.media = store
 }

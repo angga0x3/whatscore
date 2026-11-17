@@ -34,16 +34,10 @@ import (
 	"crypto/sha512"
 	"errors"
 	"fmt"
-	"math/big"
 
 	"filippo.io/edwards25519"
 	"filippo.io/edwards25519/field"
 )
-
-var p25519 = func() *big.Int {
-	p := new(big.Int).Lsh(big.NewInt(1), 255)
-	return p.Sub(p, big.NewInt(19))
-}()
 
 // diversifier is the prefix libsignal hashes into the nonce (PF-067).
 var diversifier = [32]byte{
@@ -145,4 +139,3 @@ func Sign(priv [32]byte, msg, randomness []byte) ([]byte, error) {
 	signature[63] |= publicKey[31] & 0x80
 	return signature, nil
 }
-

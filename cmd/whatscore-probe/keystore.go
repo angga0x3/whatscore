@@ -243,7 +243,7 @@ func (k *keyFile) generate(count int, signer signal.Signer) ([]signal.PreKey, er
 
 // generateFresh creates count new one-time prekeys regardless of how many the
 // file already holds, for a top-up upload when the server's count hits zero.
-func (k *keyFile) generateFresh(count int, signer signal.Signer) ([]signal.PreKey, error) {
+func (k *keyFile) generateFresh(count int, _ signal.Signer) ([]signal.PreKey, error) {
 	var added []signal.PreKey
 	for i := 0; i < count; i++ {
 		key, err := signal.GeneratePreKey(k.NextOneTimeID)
