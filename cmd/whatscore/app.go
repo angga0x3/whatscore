@@ -135,6 +135,9 @@ func newApp(ctx context.Context, cfg *config.Config, build buildinfo.Info) (*App
 	apiHandler.SetTextDeliverer(textDelivererFunc(func(ctx context.Context, sessionID, to, text string) (string, error) {
 		return factory.deliverText(ctx, sessionID, to, text)
 	}))
+	apiHandler.SetChatActions(chatActionsRuntime{
+		factory: factory,
+	})
 	apiHandler.SetMediaDeliverer(mediaDelivererFunc(func(ctx context.Context, sessionID, to, fileName, mimeType, caption string, data []byte) (string, error) {
 		return factory.deliverMedia(ctx, sessionID, to, fileName, mimeType, caption, data)
 	}))
@@ -173,6 +176,20 @@ type textDelivererFunc func(ctx context.Context, sessionID, to, text string) (st
 
 func (f textDelivererFunc) DeliverText(ctx context.Context, sessionID, to, text string) (string, error) {
 	return f(ctx, sessionID, to, text)
+}
+
+// chatActionsRuntime adapts the factory's runtimes to the API chat-action
+// boundary: read receipts and typing indicators.
+type chatActionsRuntime struct {
+	factory *sessionFactory
+}
+
+func (c chatActionsRuntime) MarkRead(ctx context.Context, sessionID, chat string, ids []string) error {
+	return c.factory.markRead(ctx, sessionID, chat, ids)
+}
+
+func (c chatActionsRuntime) SendTyping(ctx context.Context, sessionID, chat string, composing bool) error {
+	return c.factory.setTyping(ctx, sessionID, chat, composing)
 }
 
 // mediaDelivererFunc adapts the factory's attachment delivery to the API

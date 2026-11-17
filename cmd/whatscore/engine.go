@@ -233,6 +233,24 @@ func (f *sessionFactory) deliverMedia(ctx context.Context, sessionID, to, fileNa
 	return rt.DeliverMedia(ctx, to, fileName, mimeType, caption, data)
 }
 
+// markRead implements the REST read-receipt boundary.
+func (f *sessionFactory) markRead(ctx context.Context, sessionID, chat string, ids []string) error {
+	rt := f.runtimeFor(sessionID)
+	if rt == nil {
+		return fmt.Errorf("cmd/whatscore: session %s is not running", sessionID)
+	}
+	return rt.MarkRead(ctx, chat, ids)
+}
+
+// setTyping implements the REST typing-indicator boundary.
+func (f *sessionFactory) setTyping(ctx context.Context, sessionID, chat string, composing bool) error {
+	rt := f.runtimeFor(sessionID)
+	if rt == nil {
+		return fmt.Errorf("cmd/whatscore: session %s is not running", sessionID)
+	}
+	return rt.SetTyping(ctx, chat, composing)
+}
+
 // deliverText implements the REST text-delivery boundary.
 func (f *sessionFactory) deliverText(ctx context.Context, sessionID, to, text string) (string, error) {
 	rt := f.runtimeFor(sessionID)

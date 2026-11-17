@@ -156,3 +156,27 @@ func TestReceiptTypeVocabulary(t *testing.T) {
 		}
 	}
 }
+
+// TestBuildReceiptList pins the multi-id read receipt wire form (whatsmeow
+// MarkRead): the first id rides the attrs, the rest under <list><item id>.
+func TestBuildReceiptList(t *testing.T) {
+	node, err := BuildReceipt(Receipt{
+		ID:       "FIRST",
+		To:       JID{User: "62817408010", Server: UserServer},
+		Type:     "read",
+		ExtraIDs: []string{"SECOND", "THIRD"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node.Attrs["id"] != "FIRST" || node.Attrs["type"] != "read" {
+		t.Fatalf("attrs = %#v", node.Attrs)
+	}
+	list := node.Children[0]
+	if list.Tag != "list" || len(list.Children) != 2 {
+		t.Fatalf("list = %#v", list)
+	}
+	if list.Children[0].Attrs["id"] != "SECOND" || list.Children[1].Attrs["id"] != "THIRD" {
+		t.Fatalf("items = %#v", list.Children)
+	}
+}

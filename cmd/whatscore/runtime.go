@@ -1044,3 +1044,21 @@ func ownDevicePeers(ownLID string, peers []string, exclude string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// MarkRead sends a read receipt for the given message ids in a chat — the
+// blue ticks. The first id rides the receipt attrs, the rest under <list>.
+func (r *sessionRuntime) MarkRead(ctx context.Context, chat string, ids []string) error {
+	if r.write == nil {
+		return fmt.Errorf("session %s: runtime not attached", r.id)
+	}
+	return r.sender.SendReadReceipt(ctx, chat, ids)
+}
+
+// SetTyping sends the typing indicator for a chat: composing while on, paused
+// to clear it.
+func (r *sessionRuntime) SetTyping(ctx context.Context, chat string, composing bool) error {
+	if r.write == nil {
+		return fmt.Errorf("session %s: runtime not attached", r.id)
+	}
+	return r.sender.SendTyping(ctx, chat, composing)
+}

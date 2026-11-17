@@ -45,6 +45,11 @@ type Receipt struct {
 	Type        string
 	Participant JID
 	Timestamp   time.Time
+	// ExtraIDs carries the additional message ids a read receipt covers. The
+	// wire form puts the first id in the receipt attrs and the rest under a
+	// <list> of <item> children (whatsmeow MarkRead); a read receipt naming
+	// one id needs no list at all.
+	ExtraIDs []string
 }
 
 // BuildReceipt builds the outbound receipt stanza. ID and To are required;
@@ -70,7 +75,15 @@ func BuildReceipt(r Receipt) (*binary.Node, error) {
 	if !r.Timestamp.IsZero() {
 		attrs[attrT] = strconv.FormatInt(r.Timestamp.Unix(), 10)
 	}
-	return &binary.Node{Tag: tagReceipt, Attrs: attrs}, nil
+	node := &binary.Node{Tag: tagReceipt, Attrs: attrs}
+	if len(r.ExtraIDs) > 0 {
+		items := make([]binary.Node, 0, len(r.ExtraIDs))
+		for _, extra := range r.ExtraIDs {
+			items = append(items, binary.Node{Tag: "item", Attrs: binary.Attrs{"id": extra}})
+		}
+		node.Children = []binary.Node{{Tag: "list", Children: items}}
+	}
+	return node, nil
 }
 
 // ParseReceipt reads a receipt stanza produced by BuildReceipt.

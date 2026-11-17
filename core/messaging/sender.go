@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
@@ -148,4 +149,60 @@ func randomID() (string, error) {
 		return "", err
 	}
 	return strings.ToUpper(hex.EncodeToString(raw[:])), nil
+}
+
+// SendReadReceipt tells a chat that the given messages were read: the first
+// id rides the receipt attrs, the rest under a <list> (whatsmeow MarkRead).
+// The blue ticks.
+func (s *Sender) SendReadReceipt(ctx context.Context, chat string, ids []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("%w: read receipt without ids", stanza.ErrInvalidReceipt)
+	}
+	jid, err := stanza.ParseJID(strings.TrimSpace(chat))
+	if err != nil {
+		return fmt.Errorf("%w: to: %w", stanza.ErrInvalidReceipt, err)
+	}
+	node, err := stanza.BuildReceipt(stanza.Receipt{
+		ID: ids[0], To: jid, Type: "read", ExtraIDs: ids[1:],
+		Timestamp: time.Now(),
+	})
+	if err != nil {
+		return fmt.Errorf("%w: %w", stanza.ErrInvalidReceipt, err)
+	}
+	frame, err := s.codec.Encode(node)
+	if err != nil {
+		return fmt.Errorf("core/messaging: encode: %w", err)
+	}
+	if err := s.write.WriteFrame(ctx, frame); err != nil {
+		return fmt.Errorf("core/messaging: write: %w", err)
+	}
+	return nil
+}
+
+// SendTyping sends the typing indicator for a chat: composing while the user
+// types, paused when they stop. Clients send composing periodically while the
+// indicator should stay up; a single paused clears it.
+func (s *Sender) SendTyping(ctx context.Context, chat string, composing bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	jid, err := stanza.ParseJID(strings.TrimSpace(chat))
+	if err != nil {
+		return fmt.Errorf("%w: to: %w", stanza.ErrInvalidChatState, err)
+	}
+	node, err := stanza.BuildChatState(jid, composing)
+	if err != nil {
+		return fmt.Errorf("%w: %w", stanza.ErrInvalidChatState, err)
+	}
+	frame, err := s.codec.Encode(node)
+	if err != nil {
+		return fmt.Errorf("core/messaging: encode: %w", err)
+	}
+	if err := s.write.WriteFrame(ctx, frame); err != nil {
+		return fmt.Errorf("core/messaging: write: %w", err)
+	}
+	return nil
 }

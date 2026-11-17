@@ -24,6 +24,9 @@ type Handler struct {
 	messages MessageLister
 	// textDeliverer is the optional send boundary; nil records only.
 	textDeliverer TextDeliverer
+	// chatActions is the optional read-receipt/typing boundary; nil answers
+	// 501 on those routes.
+	chatActions ChatActions
 	// mediaDeliverer is the optional attachment send boundary; nil stores
 	// the encrypted blob only.
 	mediaDeliverer MediaDeliverer
@@ -132,6 +135,8 @@ func (h *Handler) Mount(v1 chi.Router) {
 		r.Post("/disconnect", h.disconnectSession)
 		if h.messages != nil {
 			r.Post("/messages/text", h.sendText)
+			r.Post("/messages/read", h.markRead)
+			r.Post("/typing", h.sendTyping)
 			r.Get("/messages", h.listMessages)
 			r.Get("/messages/{messageId}", h.getMessage)
 		}

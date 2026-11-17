@@ -40,6 +40,7 @@ type messagingFixture struct {
 	store    *MemoryMessageStore
 	webhooks *MemoryWebhookStore
 	session  SessionView
+	handler  *Handler
 }
 
 func newMessagingFixture(t *testing.T) *messagingFixture {
@@ -67,6 +68,7 @@ func newMessagingFixture(t *testing.T) *messagingFixture {
 		store:    store,
 		webhooks: webhooks,
 		session:  session,
+		handler:  handler,
 	}
 }
 
@@ -76,6 +78,16 @@ func (f *messagingFixture) connect(t *testing.T) {
 	if err := f.manager.ConnectSession(t.Context(), f.session.ID); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// postJSON posts a JSON body to a session-scoped path.
+func (f *messagingFixture) postJSON(t *testing.T, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/sessions/"+f.session.ID+"/"+path, strings.NewReader(body))
+	f.router.ServeHTTP(rec, req)
+	return rec
 }
 
 func (f *messagingFixture) sendText(t *testing.T, sessionID, body, key string) *httptest.ResponseRecorder {
@@ -705,5 +717,91 @@ func TestMessageCursorRoundTrip(t *testing.T) {
 		if _, err := decodeMessageCursor(bad); err == nil {
 			t.Fatalf("cursor %q decoded, want error", bad)
 		}
+	}
+}
+
+// recordingChatActions captures chat actions for assertions.
+type recordingChatActions struct {
+	markReadCalls []struct {
+		sessionID, chat string
+		ids             []string
+	}
+	typingCalls []struct {
+		sessionID, chat string
+		composing       bool
+	}
+	markReadErr error
+	typingErr   error
+}
+
+func (r *recordingChatActions) MarkRead(ctx context.Context, sessionID, chat string, ids []string) error {
+	r.markReadCalls = append(r.markReadCalls, struct {
+		sessionID, chat string
+		ids             []string
+	}{sessionID, chat, ids})
+	return r.markReadErr
+}
+
+func (r *recordingChatActions) SendTyping(ctx context.Context, sessionID, chat string, composing bool) error {
+	r.typingCalls = append(r.typingCalls, struct {
+		sessionID, chat string
+		composing       bool
+	}{sessionID, chat, composing})
+	return r.typingErr
+}
+
+// TestMarkReadAndTypingRunTheBoundary pins the chat-action routes: a
+// connected session routes both actions through the boundary with the
+// caller's arguments intact, and a boundary failure surfaces as 502.
+func TestMarkReadAndTypingRunTheBoundary(t *testing.T) {
+	f := newMessagingFixture(t)
+	f.connect(t)
+	actions := &recordingChatActions{}
+	f.handler.SetChatActions(actions)
+
+	rec := f.postJSON(t, "messages/read",
+		`{"chat":"62817408010@s.whatsapp.net","ids":["M1","M2"]}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("mark read status = %d, body %s", rec.Code, rec.Body)
+	}
+	if len(actions.markReadCalls) != 1 {
+		t.Fatalf("mark read calls = %d", len(actions.markReadCalls))
+	}
+	call := actions.markReadCalls[0]
+	if call.sessionID != f.session.ID || call.chat != "62817408010@s.whatsapp.net" {
+		t.Fatalf("call = %#v", call)
+	}
+	if len(call.ids) != 2 || call.ids[0] != "M1" || call.ids[1] != "M2" {
+		t.Fatalf("ids = %#v", call.ids)
+	}
+
+	rec = f.postJSON(t, "typing", `{"chat":"62817408010@s.whatsapp.net","composing":true}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("typing status = %d, body %s", rec.Code, rec.Body)
+	}
+	if len(actions.typingCalls) != 1 || !actions.typingCalls[0].composing {
+		t.Fatalf("typing calls = %#v", actions.typingCalls)
+	}
+
+	actions.typingErr = errors.New("synthetic typing failure")
+	rec = f.postJSON(t, "typing", `{"chat":"62817408010@s.whatsapp.net","composing":false}`)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("failure status = %d, body %s", rec.Code, rec.Body)
+	}
+}
+
+// TestChatActionsWithoutBoundaryAnswer501 keeps the optional-boundary
+// contract: no deliverer configured means the routes exist and answer 501.
+func TestChatActionsWithoutBoundaryAnswer501(t *testing.T) {
+	f := newMessagingFixture(t)
+	f.connect(t)
+
+	rec := f.postJSON(t, "messages/read", `{"chat":"62817408010@s.whatsapp.net","ids":["M1"]}`)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("mark read status = %d", rec.Code)
+	}
+	rec = f.postJSON(t, "typing", `{"chat":"62817408010@s.whatsapp.net","composing":true}`)
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("typing status = %d", rec.Code)
 	}
 }
