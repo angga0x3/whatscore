@@ -17,9 +17,10 @@ pure Go. It owns its own protocol engine — transport, Noise, binary codec,
 pairing, Signal — plus an idiomatic **Go SDK** and a **self-hosted REST API**.
 
 The transport and Noise layers are verified against the live service, and so is
-the rest of the core path: pairing, login, sending, receiving, media receive,
-and app-state sync have all run against WhatsApp with a real phone. What has
-not been proven is named in [Status](#status) rather than implied. No port of an
+the rest of the core path: pairing, login, text send and receive, media send
+(upload included) and receive, group message decryption (sender keys), and
+app-state sync have all run against WhatsApp with a real phone. What has not
+been proven is named in [Status](#status) rather than implied. No port of an
 existing library, no CGo, one static binary.
 
 ## Status
@@ -36,8 +37,9 @@ the operator, which this repository does not ship.
 | Pairing | **Live-verified** — QR → `pair-success` → `pair-device-sign` → credentials (PF-073…PF-079) |
 | Auth payloads | **Live-verified** — registration and login accepted (PF-068, PF-077) |
 | Signal | **Live-verified** — pkmsg bootstrap, ratchet continuation, persistence (PF-065, PF-087) |
-| Media | **Receive live-verified**; send implemented in the probe, not yet live |
+| Media | **Receive live-verified**; **send upload live-verified** and the media-class message accepted (PF-092) — the phone's rendering is not claimed |
 | App-state sync | **Live-verified** — 11 key shares, 15 patches, 39/39 mutations decoded |
+| Groups | **Receive live-verified** — sender-key distribution installed, `skmsg` decrypted (PF-093); sending is not implemented |
 | REST + SDK | Implemented and tested against the fake server; not yet run live |
 
 Proven against the live service:
@@ -48,15 +50,19 @@ Proven against the live service:
 - [x] Login with paired credentials
 - [x] Sending a text message, acknowledged by the server and delivered to the phone
 - [x] Receiving: offline queue drain, pkmsg bootstrap, decrypt, delivery receipts
-- [x] Receiving media: a sticker decrypted, downloaded, SHA-256 verified, written to disk
+- [x] Receiving media: a sticker, images and a 7.2 MB video decrypted, downloaded, SHA-256 verified
+- [x] Sending media: the encrypted blob uploaded to the CDN (`url` + `direct_path` returned) and a `type="media"` message acknowledged
+- [x] Device-sent copies from the phone unwrapped and published as outgoing in their destination chats (`PF-090`)
+- [x] Group sender keys: a group distribution installed, the signature verified, the `skmsg` ciphertext opened (`PF-093`)
 - [x] App-state sync, history chunks acknowledged, provisioning banner released
+- [x] App-state keys and Signal sessions/sender keys persisted across probe runs
 
 Not proven, and not claimed:
 
-- [ ] Media **send** — implemented in the probe, no live upload recorded
-- [ ] The own-device copy of a send (`PF-090`) — implemented, not yet seen on the phone
+- [ ] A sent media attachment rendering on the phone (the server accepted the stanza; no device observation)
+- [ ] The own-device copy of a send appearing on the phone (`PF-090`); its receive half is live-proven
 - [ ] The REST server and SDK against the live service (they are tested against the fake server)
-- [ ] Group **sending** — group receive decrypts (sender keys, PF-093); enumeration of a group's devices and the send side are not implemented
+- [ ] Group **sending** — receiving works; enumerating a group's devices and the send side do not exist yet
 - [ ] Newsletters beyond plaintext notifications
 
 Two things still gate a general-purpose deployment, and neither is protocol
@@ -77,7 +83,7 @@ state.
 | 4 | Messaging (Signal) | **Complete** — live send and receive verified |
 | 5 | Public SDK | **Complete** pending live interop |
 | 6 | API server | **Complete** pending live interop |
-| 7 | Release v0.1.0 | **Next** — media send, own-device copy on the phone, live SDK interop |
+| 7 | Release v0.1.0 | **Next** — group send (device enumeration + sender-key encrypt), phone-side rendering checks, live SDK interop |
 
 **v0.0.1 — released 2026-11-15.** A protocol foundation preview. Everything
 above landed after it and is recorded in the [changelog](CHANGELOG.md).
@@ -155,6 +161,26 @@ curl -s http://localhost:8080/version
 
 Every environment variable is documented in
 [docs/architecture/configuration.md](docs/architecture/configuration.md).
+
+With a session connected, the message routes deliver over it: `POST
+/sessions/{id}/messages/text` sends text, and `/messages/image` and
+`/messages/document` encrypt, upload to the CDN, and send the attachment
+(`status: "sent"` with the wire id). The probe owns the interactive live path:
+
+```bash
+# Log in with a pairing run's credentials and log every stanza + decrypt.
+whatscore-probe -listen -creds paired.json -dict <table> -timeout 90s
+
+# Send text, or one image/document (encrypted and uploaded first).
+whatscore-probe -send -creds paired.json -dict <table> \
+  -to 628123456789@s.whatsapp.net -text "halo"
+whatscore-probe -send -creds paired.json -dict <table> \
+  -to 628123456789@s.whatsapp.net -file ./photo.png -caption "pantai"
+```
+
+`-listen` keeps its Signal sessions, group sender keys and app-state keys
+beside the credentials, so a later run continues the conversations the earlier
+one opened instead of re-asking the phone.
 
 ## Documentation
 
