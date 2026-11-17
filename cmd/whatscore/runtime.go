@@ -237,7 +237,10 @@ func (r *sessionRuntime) receiptLoop(sub *events.Subscription) {
 				// history messages are acknowledged with type=hist_sync
 				// (Baileys messages-recv.ts), not the delivery receipt.
 				r.sendHistSyncReceipt(ev.Message.ID, ev.Message.Sender)
-			} else if ev.Message.Media == nil {
+			} else if ev.Message.Media == nil && ev.Message.Direction != events.DirectionOutgoing {
+				// A device-sent copy is this account's own message mirrored
+				// from another device: there is nobody to receipt but
+				// ourselves.
 				r.sendDeliveryReceipt(ev.Message.ID, ev.Message.Sender)
 			}
 			if m := ev.Message.Media; m != nil {
@@ -890,6 +893,9 @@ func (r *sessionRuntime) sendOwnDeviceCopy(ctx context.Context, to, id, text str
 	phone := phonePeerFor(r.ownLID, peers)
 	if phone == "" {
 		r.logger.Debug("no phone session; own-device copy skipped", "session", r.id)
+		return
+	}
+	if phone == to {
 		return
 	}
 	payload, err := stanza.EncodeDeviceSentMessage(to, text)

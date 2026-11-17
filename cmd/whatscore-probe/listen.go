@@ -282,9 +282,12 @@ func runListen(cfg sendConfig) error {
 					ev.Message.Sender, ev.Message.ID, ev.Message.Timestamp.Format(time.RFC3339), ev.Message.Text)
 				// The receipt follows the decrypt, not the stanza: the server
 				// keeps a message it has no receipt for, so a failed decrypt
-				// can be recovered instead of erased.
-				if err := sendDeliveryReceipt(context.Background(), sc, codec, ev.Message.ID, ev.Message.Sender); err != nil {
-					fmt.Printf("delivery receipt: %v\n", err)
+				// can be recovered instead of erased. A device-sent copy is
+				// this account's own message: there is nobody to receipt.
+				if ev.Message.Direction != events.DirectionOutgoing {
+					if err := sendDeliveryReceipt(context.Background(), sc, codec, ev.Message.ID, ev.Message.Sender); err != nil {
+						fmt.Printf("delivery receipt: %v\n", err)
+					}
 				}
 				if m := ev.Message.Media; m != nil {
 					path, err := DownloadMedia(context.Background(), d, m, cfg.MediaDir)

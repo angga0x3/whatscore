@@ -105,6 +105,9 @@ func sendOwnDeviceCopy(ctx context.Context, w coremessaging.FrameWriter, codec w
 	if phonePeer == "" {
 		return fmt.Errorf("no session with the phone's device; the copy cannot ride an existing ratchet")
 	}
+	if phonePeer == destJID {
+		return fmt.Errorf("the destination is the phone's own device; the copy would duplicate the recipient copy")
+	}
 	rec, ok := sessions.Sessions[phonePeer]
 	if !ok {
 		return fmt.Errorf("phone session vanished")
