@@ -105,17 +105,13 @@ func (r *Receiver) observe(peer string, session *PeerSession) {
 
 // handlePreKey decrypts a pkmsg carrier, bootstrapping the session when
 // needed, and publishes the carried text.
-func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
+func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node, peer stanza.JID) {
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed prekey message", "error", err)
 		r.decryptFailed(node)
 		return
 	}
-	// The session belongs to whoever encrypted to us: the sender. Keying by
-	// "to" — our own address — only ever worked against a fake node that
-	// happened to be symmetric, and the live service does not even send "to".
-	peer := envelope.From
 	_, plaintext, err := r.bootstrapPeer(ctx, envelope, r.prekeys, peer)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping prekey message", "error", err)
@@ -140,5 +136,5 @@ func (r *Receiver) handlePreKey(ctx context.Context, node *binary.Node) {
 	}
 
 	timestamp := timestampOf(node)
-	r.publishIncoming(ctx, envelope.ID, peer, timestamp, payload)
+	r.publishIncoming(ctx, envelope.ID, peer, envelope.From, timestamp, payload)
 }

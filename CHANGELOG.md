@@ -206,6 +206,12 @@ project is pre-1.0, so breaking changes happen in minor versions.
 
 ### Proven live
 
+- Group stanzas decode live with their real shape (2026-11-17): `from` is the
+  group, `participant` is the member's device, and the stanza carries both the
+  sender-key distribution (`enc type=pkmsg`) and the group ciphertext
+  (`enc type=skmsg`). The receiver no longer keys a 1:1 session by the group
+  JID — it bootstraps under the participant (live: `200506840473775@lid`) and
+  logs the group ciphertext as skipped until sender keys exist (PF-093).
 - A live queue drain on 2026-11-17 exercised the two receive-path fixes. The
   device-sent copies the phone fanned out were unwrapped and published as
   outgoing in their destination chats, and drew no delivery receipt (the

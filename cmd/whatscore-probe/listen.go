@@ -737,7 +737,7 @@ func sendDeliveryReceipt(ctx context.Context, sc noise.SecureConn, codec wabinar
 // attrSummary renders the attributes that matter for routing, truncated so a
 // long stanza cannot flood the terminal.
 func attrSummary(node *wabinary.Node) string {
-	keys := []string{"id", "from", "to", "type", "t", "notify", "xmlns", "class"}
+	keys := []string{"id", "from", "to", "type", "t", "notify", "xmlns", "class", "participant", "recipient"}
 	out := ""
 	for _, k := range keys {
 		if v := node.Attrs[k]; v != "" {
@@ -747,7 +747,15 @@ func attrSummary(node *wabinary.Node) string {
 	if children := len(node.Children); children > 0 {
 		out += fmt.Sprintf(" children=%d", children)
 		for i := range node.Children {
-			out += " <" + node.Children[i].Tag + ">"
+			child := node.Children[i]
+			out += " <" + child.Tag
+			if carrier := child.Attrs["type"]; carrier != "" {
+				out += ":" + carrier
+			}
+			if jid := child.Attrs["jid"]; jid != "" {
+				out += ":" + truncate(jid, 40)
+			}
+			out += ">"
 		}
 	}
 	return out

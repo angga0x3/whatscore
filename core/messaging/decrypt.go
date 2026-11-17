@@ -38,25 +38,56 @@ func (r *Receiver) SetReceiverIdentity(identity [32]byte) { r.identity = identit
 // and the advanced state replaces the live one only after success. Callers
 // that persist sessions should save the updated state through their store.
 func (r *Receiver) handleEnc(ctx context.Context, node *binary.Node) {
+	// A group stanza can carry more than one <enc>: the sender-key
+	// distribution for this device (pkmsg/msg) and the group ciphertext
+	// (skmsg, PF-093). The distribution rides a 1:1 session and is worth
+	// opening — it is what a later sender-key implementation builds on —
+	// while the group ciphertext is not decryptable without sender keys.
+	if hasEncCarrier(node, stanza.CarrierSKMsg) {
+		r.logger.DebugContext(ctx, "group sender-key message: sender keys are not implemented, skipping", "from", node.Attrs["from"], "id", node.Attrs["id"])
+	}
 	envelope, err := stanza.ParseEncryptedText(node)
 	if err != nil {
 		r.logger.WarnContext(ctx, "dropping malformed encrypted message", "error", err)
 		r.decryptFailed(node)
 		return
 	}
-	if envelope.Carrier == stanza.CarrierPKMsg {
-		r.handlePreKey(ctx, node)
+	// The session belongs to the sender's device, not to the chat: on a group
+	// stanza "from" is the group and "participant" names the member whose
+	// device encrypted. Keying the session by the group JID would create a
+	// peer that never exists and lose the real one.
+	peer := envelope.From
+	if peer.Server == stanza.GroupServer {
+		if envelope.Participant.IsEmpty() {
+			r.logger.WarnContext(ctx, "dropping group message without a participant", "from", peer.String(), "id", envelope.ID)
+			return
+		}
+		peer = envelope.Participant
+	}
+	if envelope.Carrier == stanza.CarrierSKMsg {
 		return
 	}
-	r.decryptWithSession(ctx, node, envelope)
+	if envelope.Carrier == stanza.CarrierPKMsg {
+		r.handlePreKey(ctx, node, peer)
+		return
+	}
+	r.decryptWithSession(ctx, node, envelope, peer)
+}
+
+// hasEncCarrier reports whether any <enc> child of node carries the given
+// carrier. A group stanza has several; only the first is the 1:1 envelope.
+func hasEncCarrier(node *binary.Node, carrier string) bool {
+	for i := range node.Children {
+		child := node.Children[i]
+		if child.Tag == "enc" && child.Attrs["type"] == carrier {
+			return true
+		}
+	}
+	return false
 }
 
 // decryptWithSession decrypts with an existing session.
-func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, envelope *stanza.EncryptedText) {
-	// The session belongs to whoever encrypted to us: the sender (see
-	// handlePreKey). The live service omits "to" on inbound stanzas, so the
-	// old lookup keyed on it could never have matched a real message.
-	peer := envelope.From
+func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, envelope *stanza.EncryptedText, peer stanza.JID) {
 	session := r.peers[peer.String()]
 	if session == nil {
 		r.logger.WarnContext(ctx, "dropping encrypted message without session", "peer", peer)
@@ -95,7 +126,7 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 		r.logger.InfoContext(ctx, "decrypted a message with no usable payload", "peer", peer, "error", err)
 		return
 	}
-	r.publishIncoming(ctx, envelope.ID, peer, timestampOf(node), payload)
+	r.publishIncoming(ctx, envelope.ID, peer, envelope.From, timestampOf(node), payload)
 }
 
 // publishIncoming turns one decoded payload into the event the rest of the
@@ -104,8 +135,13 @@ func (r *Receiver) decryptWithSession(ctx context.Context, node *binary.Node, en
 // A device-sent copy is the account's own message mirrored from another
 // device, so it belongs to the chat it names and is outgoing — not to a chat
 // with the sending device.
-func (r *Receiver) publishIncoming(ctx context.Context, id string, peer stanza.JID, timestamp time.Time, payload *stanza.Payload) {
-	chat := peer
+func (r *Receiver) publishIncoming(ctx context.Context, id string, peer, from stanza.JID, timestamp time.Time, payload *stanza.Payload) {
+	// peer is the device that wrote the message; from is the chat it belongs
+	// to. They differ on a group stanza, where from is the group JID.
+	chat := from
+	if chat.IsEmpty() {
+		chat = peer
+	}
 	direction := events.DirectionIncoming
 	if payload.Destination != "" {
 		dest, err := stanza.ParseJID(payload.Destination)

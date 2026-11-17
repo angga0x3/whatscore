@@ -180,3 +180,45 @@ func TestBuildEncryptedTextPeerAddressing(t *testing.T) {
 		t.Fatal("account-addressed stanza carries device_fanout")
 	}
 }
+
+// TestParseEncryptedTextReadsTheParticipant pins the group shape: "from" is
+// the group and "participant" is the member whose device wrote the stanza,
+// which is the only address that names a Signal session.
+func TestParseEncryptedTextReadsTheParticipant(t *testing.T) {
+	node := &binary.Node{
+		Tag: "message",
+		Attrs: binary.Attrs{
+			"id": "G1", "from": "120363046767601853@g.us", "type": "text",
+			"participant": "200506840473775@lid",
+		},
+		Children: []binary.Node{{
+			Tag: "enc", Attrs: binary.Attrs{"v": "2", "type": CarrierPKMsg}, Bytes: []byte{7},
+		}},
+	}
+	envelope, err := ParseEncryptedText(node)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if envelope.From.String() != "120363046767601853@g.us" {
+		t.Fatalf("from = %q", envelope.From)
+	}
+	if envelope.Participant.String() != "200506840473775@lid" {
+		t.Fatalf("participant = %q", envelope.Participant)
+	}
+
+	// A 1:1 stanza leaves it empty.
+	node.Attrs = binary.Attrs{"id": "D1", "from": "628123@s.whatsapp.net", "type": "text"}
+	envelope, err = ParseEncryptedText(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !envelope.Participant.IsEmpty() {
+		t.Fatalf("participant = %q on a 1:1 stanza", envelope.Participant)
+	}
+
+	// A malformed participant is a malformed stanza.
+	node.Attrs["participant"] = "not a jid"
+	if _, err := ParseEncryptedText(node); err == nil {
+		t.Fatal("malformed participant accepted")
+	}
+}

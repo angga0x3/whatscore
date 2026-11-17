@@ -25,6 +25,7 @@ run.
 | Send media | **partially proven** | upload accepted live 2026-11-17 (HTTP 200, url + direct_path) and a media-class message was acknowledged; probe and REST both send; phone rendering unproven (PF-092) |
 | Own-device copy of a send | **untested live** | implemented in the probe and the REST runtime (PF-090); the copy needs a session with the phone, and no live run has shown it on the phone yet |
 | App-state sync | **supported** | 11 key shares, 15 patches, 39/39 mutations verified and decoded live (2026-11-16) |
+| Group messaging | **unsupported** | the stanza is understood (PF-093); sender-key decryption is not implemented, so group ciphertexts are skipped |
 
 ## Against the fake server (in-repo)
 

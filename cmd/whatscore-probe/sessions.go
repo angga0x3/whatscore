@@ -121,6 +121,12 @@ func (s *sessionsFile) installSender(sender *coremessaging.Sender) (int, error) 
 	}
 	installed := 0
 	for peer, rec := range s.Sessions {
+		if strings.HasSuffix(peer, "@g.us") {
+			// A 1:1 Signal session cannot belong to a group. Older builds
+			// keyed group stanzas by their "from", which wrote exactly that;
+			// installing it would shadow the real sender's session.
+			continue
+		}
 		raw, err := base64.StdEncoding.DecodeString(rec.State)
 		if err != nil {
 			return installed, fmt.Errorf("decode session for %s: %w", peer, err)
@@ -147,6 +153,10 @@ func (s *sessionsFile) installSender(sender *coremessaging.Sender) (int, error) 
 // outbound send (the app state key request) rides the same chain.
 func (s *sessionsFile) install(r *coremessaging.Receiver, sender *coremessaging.Sender) error {
 	for peer, rec := range s.Sessions {
+		if strings.HasSuffix(peer, "@g.us") {
+			// See installSender: a group can never own a 1:1 session.
+			continue
+		}
 		raw, err := base64.StdEncoding.DecodeString(rec.State)
 		if err != nil {
 			return fmt.Errorf("decode session for %s: %w", peer, err)

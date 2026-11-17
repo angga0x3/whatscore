@@ -328,3 +328,18 @@ A real client must:
 | **Proving test** | `internal/mediaupload` (request shape, media connection parse), `TestEncodeMediaMessageImage`, `TestEncodeMediaMessageDocument`, `TestEncodeMediaMessageRejectsIncomplete`, live run 2026-11-17 |
 | **Related findings** | PF-040, PF-043, PF-045, PF-089 |
 | **Notes** | The media connection is an iq with `xmlns="w:m"`, `type="set"`, `to="s.whatsapp.net"` and a `<media_conn/>` child; the reply carries `auth`, `ttl` and a list of `<host hostname="…"/>`. The upload is `POST https://{host}/mms/{type}/{token}?auth=…&token=…`, where the token is the URL-safe base64 of the encrypted blob's SHA-256, the body is the blob exactly as `core/media` produced it (ciphertext ‖ MAC), and `Origin`/`Referer` name the web client. The reply names `url` and `direct_path`. The message then carries `fileSHA256` (plaintext), `fileEncSHA256` (blob as uploaded), `mediaKey`, `fileLength`, the MIME type and the location; the stanza's type attr is `media` (PF-089). The probe sends images and documents (`-send -file …`) and wraps the same inner message for the own-device copy (PF-090). Live on 2026-11-17: the media connection query answered, the 166-byte PNG upload was accepted (HTTP 200 with `url` and `direct_path`), and a media-class message naming it was accepted by the server (`ack class="message"`). Deliberately unproven: whether the phone renders the attachment — no device observation was recorded, so the claim stops at "the server accepted the stanza". |
+
+## PF-093: A group stanza names the group in `from` and the member in `participant`
+
+| Field | Value |
+|-------|-------|
+| **ID** | PF-093 |
+| **Title** | Group messages carry `<message from="{group}@g.us" participant="{member}@lid">` with two `<enc>` children — a `pkmsg`/`msg` sender-key distribution for this device and an `skmsg` group ciphertext; the Signal session belongs to the participant, never to the group |
+| **Layer** | messaging |
+| **Source** | direct observation of own session (2026-11-17, queue drain) |
+| **Observed date** | 2026-11-17 |
+| **Confidence** | Confirmed for the stanza shape; sender-key decryption not implemented |
+| **Status** | Observed-only (shape); the group ciphertext is deliberately skipped |
+| **Proving test** | `TestGroupPreKeyUsesTheParticipant`, `TestGroupSenderKeyMessageIsSkipped`, `TestParseEncryptedTextReadsTheParticipant` |
+| **Related findings** | PF-036, PF-083, PF-087 |
+| **Notes** | Live stanza: `<message id=… from=120363046767601853@g.us type=text notify=Zenero participant=200506840473775@lid><enc type=pkmsg>…</enc><reporting/><meta/><enc type=skmsg>…</enc></message>`. Keying the 1:1 session by `from` — which the receiver did — installed a peer named after the group and lost the real sender; the fix uses `participant` and publishes the message in the group chat with the participant as sender. The `skmsg` ciphertext is a libsignal SenderKeyMessage: version byte, protobuf (id, iteration, ciphertext), 64-byte XEdDSA signature; its key comes from a SenderKeyDistributionMessage (`Message.senderKeyDistributionMessage`, field 2) carried in the `pkmsg` payload, with chain derivation `HMAC-SHA256(chainKey, 0x01)` → `HKDF(info="WhisperGroup", 48)` (iv 16 ‖ cipher key 32) and `HMAC-SHA256(chainKey, 0x02)` for the next chain key. Implementing that is the next milestone; until then the group ciphertext is logged and skipped, and no session is invented for it. |

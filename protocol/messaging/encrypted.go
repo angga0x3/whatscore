@@ -23,12 +23,16 @@ const (
 // EncryptedText is an encrypted text message: the plaintext message envelope
 // plus the Signal ciphertext in an <enc> child (PF-036).
 type EncryptedText struct {
-	ID         string
-	To         JID // the recipient on outbound stanzas; the live service omits it inbound
-	From       JID // the sender on inbound stanzas; the reference omits it outbound
-	Version    string
-	Carrier    string
-	Ciphertext []byte
+	ID   string
+	To   JID // the recipient on outbound stanzas; the live service omits it inbound
+	From JID // the sender on inbound stanzas; the reference omits it outbound
+	// Participant is the member whose device wrote a group stanza. "from" on
+	// a group stanza is the group, so this is the only address that names a
+	// Signal session. Empty on 1:1 stanzas.
+	Participant JID
+	Version     string
+	Carrier     string
+	Ciphertext  []byte
 	// Type names the transport class: "text" (default) or "media". The live
 	// service stamps "media" on encrypted image/sticker/video/audio/document
 	// stanzas (PF-089); the payload inside decides what a client renders.
@@ -143,6 +147,16 @@ func ParseEncryptedText(node *binary.Node) (*EncryptedText, error) {
 		return nil, fmt.Errorf("%w: from %q has no user", ErrInvalidMessage, from)
 	}
 	envelope.From = from
+	if raw := node.Attrs["participant"]; raw != "" {
+		participant, err := ParseJID(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%w: participant: %w", ErrInvalidMessage, err)
+		}
+		if participant.User == "" {
+			return nil, fmt.Errorf("%w: participant %q has no user", ErrInvalidMessage, participant)
+		}
+		envelope.Participant = participant
+	}
 
 	enc := firstChild(node, tagEnc)
 	if enc == nil {
