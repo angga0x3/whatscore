@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	gosignal "os/signal"
@@ -41,6 +42,9 @@ type sendConfig struct {
 	Timeout    time.Duration
 	KeyPath    string
 	MediaDir   string
+	// Trace prints every stanza the send run receives, so a silent server is
+	// distinguishable from an ack that never matched.
+	Trace bool
 	// AutoRead marks every decrypted inbound message as read — the blue
 	// ticks on the sender's phone. Off by default: reading is a choice.
 	AutoRead bool
@@ -92,6 +96,11 @@ func runSend(cfg sendConfig) error {
 		d.shutdown()
 		<-loopDone
 	}()
+	if cfg.Trace {
+		d.onNode = func(_ context.Context, node *wabinary.Node) {
+			fmt.Printf("TRACE %s%s\n", node.Tag, attrSummary(node))
+		}
+	}
 	if err := awaitSuccessVerdict(ctx, d); err != nil {
 		return err
 	}
@@ -117,7 +126,7 @@ func runSend(cfg sendConfig) error {
 
 	// 3. Encrypt and send.
 	identityPair := signal.KeyPair{Private: record.IdentityPriv, Public: record.IdentityPub}
-	sender, err := messaging.NewSender(frameWriter{sc}, messaging.WithCodec(codec))
+	sender, err := messaging.NewSender(frameWriter{sc: sc, trace: cfg.Trace, codec: codec}, messaging.WithCodec(codec))
 	if err != nil {
 		return err
 	}
@@ -147,12 +156,17 @@ func runSend(cfg sendConfig) error {
 	// content, the SKDM pairwise to every member device, phash for the
 	// fanout. The sender key is ephemeral (v1).
 	if peerJID.Server == "g.us" {
-		id, devices, groupErr := sendGroupText(ctx, d, sc, codec, record, peerJID.String(), cfg.Text)
+		groupID, idErr := randomID()
+		if idErr != nil {
+			return idErr
+		}
+		verdict := watchAck(d, groupID)
+		devices, groupErr := sendGroupText(ctx, d, sc, codec, record, peerJID.String(), groupID, cfg.Text)
 		if groupErr != nil {
 			return fmt.Errorf("group send: %w", groupErr)
 		}
-		fmt.Printf("\nSENT (group): id=%s to=%s, SKDM to %d devices\n", id, peerJID.String(), len(devices))
-		return awaitAck(ctx, d, id, 20*time.Second)
+		fmt.Printf("\nSENT (group): id=%s to=%s, SKDM to %d devices\n", groupID, peerJID.String(), len(devices))
+		return awaitAck(ctx, verdict, groupID, 20*time.Second)
 	}
 
 	// The id is minted here, not inside the sender, because the own-device
@@ -162,9 +176,13 @@ func runSend(cfg sendConfig) error {
 	if err != nil {
 		return err
 	}
+	// Watch for the ack before the frame leaves: a fast ack must not race the
+	// handler that is waiting for it.
+	verdict := watchAck(d, id)
 	id, deviceSessions, err := sender.SendDirect(ctx, directDevices{d}, messaging.DirectMessage{
 		To: peerJID.String(), ID: id, Type: msgType, Message: inner,
 		OwnJID: record.JID, OwnLID: record.LID, RegistrationID: record.RegistrationID,
+		SessionKey: messaging.AccountAlias(record.JID, record.LID),
 		Persist: func(_ context.Context, peer string, session *messaging.PeerSession) error {
 			return sessions.persist(sessionsPath, peer, session)
 		},
@@ -176,11 +194,12 @@ func runSend(cfg sendConfig) error {
 
 	// Writing the frame only proves the bytes left. The server answers with an
 	// ack, an error, or silence, and only the first two mean anything.
-	return awaitAck(ctx, d, id, 20*time.Second)
+	return awaitAck(ctx, verdict, id, 20*time.Second)
 }
 
-// awaitAck waits for the server's acknowledgement of a message id.
-func awaitAck(ctx context.Context, d *dispatcher, id string, timeout time.Duration) error {
+// watchAck installs the handler that collects the server's verdict for id.
+// It runs before the send so a fast ack is not dropped.
+func watchAck(d *dispatcher, id string) <-chan string {
 	verdict := make(chan string, 4)
 	d.mu.Lock()
 	previous := d.onNode
@@ -219,7 +238,11 @@ func awaitAck(ctx context.Context, d *dispatcher, id string, timeout time.Durati
 		}
 	}
 	d.mu.Unlock()
+	return verdict
+}
 
+// awaitAck waits for the server's acknowledgement of a message id.
+func awaitAck(ctx context.Context, verdict <-chan string, id string, timeout time.Duration) error {
 	select {
 	case class := <-verdict:
 		if len(class) > 6 && class[:6] == "ERROR:" {
@@ -235,6 +258,17 @@ func awaitAck(ctx context.Context, d *dispatcher, id string, timeout time.Durati
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// printNode renders a stanza tree for -trace.
+func printNode(node *wabinary.Node, indent string) {
+	fmt.Printf("%s<%s %v>\n", indent, node.Tag, node.Attrs)
+	for i := range node.Children {
+		printNode(&node.Children[i], indent+"  ")
+	}
+	if len(node.Bytes) > 0 {
+		fmt.Printf("%s  [%d bytes]\n", indent, len(node.Bytes))
 	}
 }
 
@@ -265,10 +299,17 @@ func fetchPreKeyBundle(ctx context.Context, d *dispatcher, jid string) (*signal.
 
 // frameWriter adapts a secure connection to the sender's one-method interface.
 type frameWriter struct {
-	sc noise.SecureConn
+	sc    noise.SecureConn
+	trace bool
+	codec wabinary.Codec
 }
 
 func (w frameWriter) WriteFrame(ctx context.Context, frame []byte) error {
+	if w.trace && w.codec != nil {
+		if node, err := w.codec.Decode(bytes.NewReader(frame)); err == nil {
+			printNode(node, "")
+		}
+	}
 	return w.sc.WriteFrame(ctx, frame)
 }
 

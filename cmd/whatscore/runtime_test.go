@@ -318,11 +318,13 @@ func TestRuntimeSkipsTheCopyForSelfSend(t *testing.T) {
 		t.Fatalf("identity: %v", err)
 	}
 	ownLID := "266988689592415:39@lid"
-	_, selfSession, _ := peerConversation(t, identity)
+	// The account's other device: device 0 under the LID. A self-send must
+	// reach it once, through the recipient copy, and not twice.
+	_, phoneSession, _ := peerConversation(t, identity)
 	_, selfSessionPN, _ := peerConversation(t, identity)
 
 	vault := newTestVault(t)
-	seedPeerSession(t, vault, "session-1", ownLID, selfSession)
+	seedPeerSession(t, vault, "session-1", "266988689592415@lid", phoneSession)
 	seedPeerSession(t, vault, "session-1", "628994340905@s.whatsapp.net", selfSessionPN)
 
 	runtime, writer := newVaultBackedRuntime(t, "session-1", identity, vault)

@@ -2,8 +2,11 @@ package messaging
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/angga0x3/whatscore/protocol/binary"
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
@@ -25,6 +28,11 @@ type DirectMessage struct {
 	OwnJID, OwnLID string
 	RegistrationID uint32
 	Message        *protobuf.Message
+	// SessionKey maps a wire device address to the address its Signal session
+	// is stored under. WhatsApp routes with LID addresses while a device query
+	// on a phone number returns PN addresses; the two name the same device.
+	// Nil means the wire address is the session address.
+	SessionKey func(device string) string
 	// Persist must finish before the frame leaves. This prevents a restart
 	// from reusing a message key that a remote device has already received.
 	Persist func(context.Context, string, *PeerSession) error
@@ -86,6 +94,7 @@ func (s *Sender) SendDirect(ctx context.Context, source DeviceSource, request Di
 		}
 	}
 	participants := []binary.Node{}
+	deviceJIDs := []string{}
 	updated := map[string]*PeerSession{}
 	seen := map[string]bool{}
 	recipientCount := 0
@@ -103,7 +112,13 @@ func (s *Sender) SendDirect(ctx context.Context, source DeviceSource, request Di
 		if !own && (jid.User != to.User || jid.Server != to.Server) {
 			return "", nil, fmt.Errorf("%w: unrelated device in query", ErrInvalidMessage)
 		}
-		peer := jid.String()
+		wire := jid.String()
+		peer := wire
+		if request.SessionKey != nil {
+			if alias := request.SessionKey(wire); alias != "" {
+				peer = alias
+			}
+		}
 		if seen[peer] {
 			continue
 		}
@@ -119,6 +134,12 @@ func (s *Sender) SendDirect(ctx context.Context, source DeviceSource, request Di
 		// message authenticated that session, a new bundle is required; a
 		// bare msg cannot bootstrap a remote device that never got the pkmsg.
 		if session == nil || (!session.State.HasReceived() && !session.State.HasPendingPreKey()) {
+			// Another device of this account cannot be bootstrapped: the
+			// server serves no bundle for it by its own address, and only the
+			// session that device created can carry its copy.
+			if own {
+				continue
+			}
 			if s.bundles == nil {
 				return "", nil, ErrNoSession
 			}
@@ -160,15 +181,21 @@ func (s *Sender) SendDirect(ctx context.Context, source DeviceSource, request Di
 			carrier = stanza.CarrierPKMsg
 			includeIdentity = true
 		}
-		participants = append(participants, binary.Node{Tag: "to", Attrs: binary.Attrs{"jid": peer},
+		deviceJIDs = append(deviceJIDs, wire)
+		participants = append(participants, binary.Node{Tag: "to", Attrs: binary.Attrs{"jid": wire},
 			Children: []binary.Node{{Tag: "enc", Attrs: binary.Attrs{"v": "2", "type": carrier}, Bytes: ciphertext}}})
 		updated[peer] = session
 	}
 	if len(participants) == 0 || (!isOwn(to) && recipientCount == 0) {
 		return "", nil, fmt.Errorf("%w: no devices for destination", ErrInvalidMessage)
 	}
-	node := &binary.Node{Tag: "message", Attrs: binary.Attrs{"to": to.String(), "id": id, "type": msgType},
-		Children: []binary.Node{{Tag: "participants", Children: participants}}}
+	sort.Strings(deviceJIDs)
+	node := &binary.Node{Tag: "message", Attrs: binary.Attrs{
+		"to": to.String(), "id": id, "type": msgType,
+		// The participant list hash the server compares its own fan-out
+		// against; a mismatch means some devices were addressed differently.
+		"phash": participantListHash(deviceJIDs),
+	}, Children: []binary.Node{{Tag: "participants", Children: participants}}}
 	if includeIdentity {
 		node.Children = append(node.Children, binary.Node{Tag: "device-identity", Bytes: append([]byte(nil), s.deviceIdentity...)})
 	}
@@ -188,4 +215,32 @@ func (s *Sender) SendDirect(ctx context.Context, source DeviceSource, request Di
 		return id, updated, fmt.Errorf("direct write (state already persisted): %w", err)
 	}
 	return id, updated, nil
+}
+
+// AccountAlias maps a device of this account from its phone-number address to
+// the same device under its LID. A device query for the account's PN returns
+// PN device addresses, while the sessions those devices created are stored
+// under their LID addresses.
+func AccountAlias(pnJID, lidJID string) func(string) string {
+	pn, pnErr := stanza.ParseJID(pnJID)
+	lid, lidErr := stanza.ParseJID(lidJID)
+	if pnErr != nil || lidErr != nil || pn.User == "" || lid.User == "" || pn.User == lid.User {
+		return nil
+	}
+	return func(device string) string {
+		jid, err := stanza.ParseJID(device)
+		if err != nil || jid.User != pn.User || jid.Server != pn.Server {
+			return ""
+		}
+		alias := stanza.JID{User: lid.User, Device: jid.Device, Server: lid.Server}
+		return alias.String()
+	}
+}
+
+// participantListHash is the phash attribute: SHA-256 over the sorted device
+// JIDs, first six bytes, base64, "2:" prefix (whatsmeow's
+// participantListHashV2).
+func participantListHash(devices []string) string {
+	hash := sha256.Sum256([]byte(strings.Join(devices, "")))
+	return "2:" + base64.RawStdEncoding.EncodeToString(hash[:6])
 }

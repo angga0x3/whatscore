@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	stanza "github.com/angga0x3/whatscore/protocol/messaging"
@@ -23,7 +24,11 @@ func (s directDevices) Devices(ctx context.Context, accounts []string) ([]string
 	if err != nil {
 		return nil, err
 	}
-	return stanza.ParseDeviceQuery(reply)
+	devices, err := stanza.ParseDeviceQuery(reply)
+	if err == nil {
+		fmt.Printf("devices: %v\n", devices)
+	}
+	return devices, err
 }
 
 type directBundles struct{ d *dispatcher }

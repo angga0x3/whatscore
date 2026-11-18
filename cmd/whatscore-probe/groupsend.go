@@ -90,32 +90,32 @@ func jidUser(jid string) string {
 // sendGroupText sends one text message to a group. The sender key is
 // ephemeral: a fresh chain, signing pair and id per send, with the SKDM
 // delivered pairwise to every member device in the same flow.
-func sendGroupText(ctx context.Context, d *dispatcher, sc noise.SecureConn, codec wabinary.Codec, record *credentialRecord, groupJID, text string) (string, []string, error) {
+func sendGroupText(ctx context.Context, d *dispatcher, sc noise.SecureConn, codec wabinary.Codec, record *credentialRecord, groupJID, messageID, text string) ([]string, error) {
 	members, err := fetchGroupParticipants(ctx, d, groupJID)
 	if err != nil {
-		return "", nil, fmt.Errorf("group members: %w", err)
+		return nil, fmt.Errorf("group members: %w", err)
 	}
 
 	// The sender key: ephemeral, fresh per send.
 	dist, state, err := signal.CreateSenderKeyDistribution(uint32(time.Now().Unix() & 0x7fffffff))
 	if err != nil {
-		return "", nil, fmt.Errorf("create sender key: %w", err)
+		return nil, fmt.Errorf("create sender key: %w", err)
 	}
 
 	// SKDM wire form.
 	distWire, err := signal.SerializeSenderKeyDistribution(dist)
 	if err != nil {
-		return "", nil, fmt.Errorf("serialize skdm: %w", err)
+		return nil, fmt.Errorf("serialize skdm: %w", err)
 	}
 
 	// Group content: one encryption under the sender chain.
 	innerPayload, err := stanza.EncodeTextMessage(text)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	wire, _, err := signal.EncryptSenderKeyMessage(state, stanza.PadMessage(innerPayload))
 	if err != nil {
-		return "", nil, fmt.Errorf("group encrypt: %w", err)
+		return nil, fmt.Errorf("group encrypt: %w", err)
 	}
 
 	identityPair := signal.KeyPair{Private: record.IdentityPriv, Public: record.IdentityPub}
@@ -198,10 +198,6 @@ func sendGroupText(ctx context.Context, d *dispatcher, sc noise.SecureConn, code
 	}
 
 	// The group message: one skmsg for the content, phash for the fanout.
-	messageID, err := randomID()
-	if err != nil {
-		return "", nil, err
-	}
 	node := &wabinary.Node{
 		Tag: "message",
 		Attrs: wabinary.Attrs{
@@ -216,12 +212,12 @@ func sendGroupText(ctx context.Context, d *dispatcher, sc noise.SecureConn, code
 	}
 	frame, err := codec.Encode(node)
 	if err != nil {
-		return "", nil, err
+		return nil, err
 	}
 	if err := sc.WriteFrame(ctx, frame); err != nil {
-		return "", nil, err
+		return nil, err
 	}
-	return messageID, devices, nil
+	return devices, nil
 }
 
 // protoStr returns a pointer to a string, for proto2 optional fields.

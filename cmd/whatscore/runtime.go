@@ -812,6 +812,7 @@ func (r *sessionRuntime) deliverDirect(ctx context.Context, to, msgType string, 
 	id, _, err := r.sender.SendDirect(ctx, source, coremessaging.DirectMessage{
 		To: to, Type: msgType, Message: message, OwnJID: r.ownJID, OwnLID: r.ownLID,
 		RegistrationID: r.registrationID,
+		SessionKey:     coremessaging.AccountAlias(r.ownJID, r.ownLID),
 		Persist: func(ctx context.Context, peer string, ps *coremessaging.PeerSession) error {
 			if r.signals == nil {
 				return fmt.Errorf("session %s: no persistent Signal store", r.id)

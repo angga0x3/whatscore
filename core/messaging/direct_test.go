@@ -367,3 +367,25 @@ func TestSendDirectRefusesWithoutRecipientDevices(t *testing.T) {
 		t.Fatal("a frame was written without a recipient device")
 	}
 }
+
+// TestAccountAliasMapsOnlyThisAccountsDevices pins the PN→LID session lookup:
+// a device query for the account's phone number returns PN addresses, while
+// the sessions those devices created live under their LID addresses.
+func TestAccountAliasMapsOnlyThisAccountsDevices(t *testing.T) {
+	alias := AccountAlias("628994340905:39@s.whatsapp.net", "266988689592415:39@lid")
+	if alias == nil {
+		t.Fatal("no alias")
+	}
+	if got := alias("628994340905@s.whatsapp.net"); got != "266988689592415@lid" {
+		t.Fatalf("device 0 = %q", got)
+	}
+	if got := alias("628994340905:35@s.whatsapp.net"); got != "266988689592415:35@lid" {
+		t.Fatalf("device 35 = %q", got)
+	}
+	if got := alias("628555@s.whatsapp.net"); got != "" {
+		t.Fatalf("another account mapped to %q", got)
+	}
+	if alias := AccountAlias("", "266988689592415:39@lid"); alias != nil {
+		t.Fatal("alias built without a PN")
+	}
+}

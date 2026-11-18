@@ -76,6 +76,7 @@ func main() {
 	sendMime := flag.String("mime", "", "MIME type for -file (default: from the extension)")
 	sendCaption := flag.String("caption", "", "caption for -file")
 	uploadOnly := flag.Bool("upload-only", false, "with -file, upload to the CDN and stop without sending")
+	sendTrace := flag.Bool("trace", false, "with -send, print every stanza received")
 	listenFlag := flag.Bool("listen", false, "log in, publish prekeys, and decrypt inbound messages")
 	keyPath := flag.String("keys", "", "key file for -listen (default: <creds>.keys.json)")
 	mediaDir := flag.String("media", "media", "directory inbound media is written to")
@@ -136,6 +137,7 @@ func main() {
 			MimeType:   *sendMime,
 			Caption:    *sendCaption,
 			UploadOnly: *uploadOnly,
+			Trace:      *sendTrace,
 			Timeout:    *timeout,
 			KeyPath:    resolvedKeys,
 		})
