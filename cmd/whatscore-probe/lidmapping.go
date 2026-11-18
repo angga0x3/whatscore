@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -80,4 +81,16 @@ func (m *lidMapping) record(lid, pn string) {
 	if changed {
 		m.save()
 	}
+}
+
+// jidUser strips the device suffix and server from a JID.
+func jidUser(jid string) string {
+	user := jid
+	if at := strings.Index(jid, "@"); at >= 0 {
+		user = jid[:at]
+	}
+	if colon := strings.Index(user, ":"); colon >= 0 {
+		user = user[:colon]
+	}
+	return user
 }
